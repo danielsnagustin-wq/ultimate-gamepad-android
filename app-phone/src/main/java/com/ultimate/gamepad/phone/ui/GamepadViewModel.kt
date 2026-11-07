@@ -3,23 +3,41 @@ package com.ultimate.gamepad.phone.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.view.Surface
+import android.view.WindowManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultimate.gamepad.core.DiscoveredTv
+import com.ultimate.gamepad.core.ExtrasProtocol
 import com.ultimate.gamepad.core.GameProfile
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadExtraButtons
+import com.ultimate.gamepad.core.GamepadMacro
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
+import com.ultimate.gamepad.core.GyroMapper
 import com.ultimate.gamepad.core.HidAvailability
+import com.ultimate.gamepad.core.KeyMap
+import com.ultimate.gamepad.core.MacroRecorder
 import com.ultimate.gamepad.core.PairingInfo
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.TransportSelector
 import com.ultimate.gamepad.core.TransportStatus
+import com.ultimate.gamepad.core.Turbo
+import com.ultimate.gamepad.core.TurboConfig
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.DiscoveryClient
+import com.ultimate.gamepad.phone.network.ExtrasSender
 import com.ultimate.gamepad.phone.network.GamepadProfilePrefs
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
@@ -34,6 +52,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import kotlin.math.atan2
+import kotlin.math.sqrt
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
@@ -62,6 +82,12 @@ data class GamepadUiState(
     val showGameProfiles: Boolean = false,
     val showControllerTest: Boolean = false,
     val showPerformance: Boolean = false,
+    // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
+    val showExtras: Boolean = false,
+    /** Teclado virtual activado en la TV (dispositivo uinput aparte). */
+    val keyboardEnabled: Boolean = false,
+    /** Modo ratón activado en la TV (dispositivo uinput aparte). */
+    val mouseEnabled: Boolean = false,
     /** Perfil de emulación activo (visual + emulación a la vez). */
     val activeProfileId: Int = GamepadProfiles.XBOX_360_ID,
     /** Perfil anterior, para "Volver al perfil anterior". */
@@ -98,6 +124,49 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
 
+    // --- Extras Fase 4 (estado; van ANTES del init porque el init
+    // los lee: en Kotlin los inicializadores corren en orden textual
+    // y un init que leyera un flow declarado después lo encontraría
+    // sin inicializar). ---
+    /** Botones con turbo (Fase 4, ExtrasPrefs). */
+    private val _turboButtons = MutableStateFlow(ExtrasPrefs.loadTurbo(application).buttons)
+    val turboButtons: StateFlow<Set<Int>> = _turboButtons.asStateFlow()
+    /** Velocidad del turbo en Hz (10 por defecto). */
+    private val _turboRateHz = MutableStateFlow(ExtrasPrefs.loadTurbo(application).rateHz)
+    val turboRateHz: StateFlow<Int> = _turboRateHz.asStateFlow()
+    /** Vibrar al pulsar en el teléfono (Fase 4). */
+    private val _vibrationEnabled = MutableStateFlow(ExtrasPrefs.loadVibration(application))
+    val vibrationEnabled: StateFlow<Boolean> = _vibrationEnabled.asStateFlow()
+    /** Macros guardadas (Fase 4). */
+    private val _macros = MutableStateFlow(ExtrasPrefs.loadMacros(application))
+    val macros: StateFlow<List<GamepadMacro>> = _macros.asStateFlow()
+    /** Nombre de la macro que se está grabando (null = no se graba). */
+    private val _recordingMacro = MutableStateFlow<String?>(null)
+    val recordingMacro: StateFlow<String?> = _recordingMacro.asStateFlow()
+    /** Nombre de la macro que se está reproduciendo (null = ninguna). */
+    private val _playingMacro = MutableStateFlow<String?>(null)
+    val playingMacro: StateFlow<String?> = _playingMacro.asStateFlow()
+    /** Giroscopio activado (Fase 4): la inclinación mueve el stick derecho. */
+    private val _gyroEnabled = MutableStateFlow(ExtrasPrefs.loadGyroEnabled(application))
+    val gyroEnabled: StateFlow<Boolean> = _gyroEnabled.asStateFlow()
+    /** Sensibilidad del giroscopio (0.5..2; 1.0 = 45° recorre el stick). */
+    private val _gyroSensitivity = MutableStateFlow(ExtrasPrefs.loadGyroSensitivity(application))
+    val gyroSensitivity: StateFlow<Float> = _gyroSensitivity.asStateFlow()
+
+    /** Fase del pulso de turbo (true = botón activo, false = soltado). */
+    private var turboPhaseOn: Boolean = true
+    private var turboJob: Job? = null
+    private var macroRecorder: MacroRecorder? = null
+    private var macroPlayJob: Job? = null
+    /** Stick derecho que manda el giroscopio (Fase 4); publish() lo usa en vez del táctil cuando el giro está activado. */
+    private var gyroX: Float = 0f
+    private var gyroY: Float = 0f
+    private var gyroListener: SensorEventListener? = null
+    /** Envío UDP de extras (teclado/ratón) a la TV. */
+    private val extrasSender = ExtrasSender()
+    /** Botones del ratón mantenidos (bitmask de ExtrasProtocol). */
+    private var mouseButtons: Int = 0
+
     init {
         // La caída de Bluetooth llegaba solo al servicio y nadie se
         // enteraba: ahora el ViewModel reacciona (fallback a Wi-Fi
@@ -123,6 +192,17 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 .firstOrNull { it.name == name }
                 ?.let { applyGameProfile(it, announce = false) }
         }
+        // Giroscopio (Fase 4): si quedó activado al cerrar la app,
+        // el sensor vuelve a arrancar solo; si no, queda apagado.
+        if (_gyroEnabled.value) startGyroSensor()
+    }
+
+    override fun onCleared() {
+        turboJob?.cancel()
+        macroPlayJob?.cancel()
+        stopGyroSensor()
+        extrasSender.close()
+        super.onCleared()
     }
 
     /** Diseño del mando a gusto del usuario (tamaño/posición/quitar). */
@@ -226,6 +306,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         setCurve(p.curve)
         setTriggerScale(p.triggerScale)
         setButtonRemap(p.remap)
+        // Vibración (Fase 4): el perfil de juego manda mientras
+        // está activo; su ajuste (guardado en la Fase 3) se aplica
+        // aquí y pisa el interruptor global de Extras.
+        _vibrationEnabled.value = p.vibrationEnabled
         p.layoutJson?.let { json ->
             runCatching { LayoutPrefs.fromJson(json) }.getOrNull()?.let { layout ->
                 _layout.value = layout
@@ -254,6 +338,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private var buttons = 0
+    /** Botones extra L4/R4 (Fase 4, GamepadExtraButtons, byte 29 del protocolo). */
+    private var extraButtons = 0
     private var leftX = 0f
     private var leftY = 0f
     private var rightX = 0f
@@ -265,7 +351,17 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Los botones se guardan SIN mapear: el remapeo se aplica
         // una sola vez, en publish(). Si se mapeara aquí y en
         // publish(), un intercambio A<->B se desharía solo.
+        val was = (buttons and button) != 0
         buttons = if (pressed) buttons or button else buttons and button.inv()
+        if (pressed && !was) vibrateOnPress()
+        publish()
+    }
+
+    /** L4/R4 (Fase 4): como setButton, pero en el bitmask extra del byte 29 (no pasan por remapeo ni por HID). */
+    fun setExtraButton(button: Int, pressed: Boolean) {
+        val was = (extraButtons and button) != 0
+        extraButtons = if (pressed) extraButtons or button else extraButtons and button.inv()
+        if (pressed && !was) vibrateOnPress()
         publish()
     }
     fun setLeftStick(x: Float, y: Float) { leftX = x; leftY = y; publish() }
@@ -284,6 +380,328 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // ================= Extras — Fase 4 =================
+
+    /** Turbo: activa o quita el turbo de un botón (A/B/X/Y/LB/RB). Se guarda en ExtrasPrefs. */
+    fun setTurbo(button: Int, enabled: Boolean) {
+        val next = if (enabled) _turboButtons.value + button else _turboButtons.value - button
+        _turboButtons.value = next
+        ExtrasPrefs.saveTurbo(getApplication(), TurboConfig(next, _turboRateHz.value))
+        publish()
+    }
+
+    /** Velocidad del turbo en pulsos por segundo (5..20 en la UI; el núcleo admite 1..30). */
+    fun setTurboRate(rateHz: Int) {
+        _turboRateHz.value = rateHz.coerceIn(1, 30)
+        ExtrasPrefs.saveTurbo(getApplication(), TurboConfig(_turboButtons.value, _turboRateHz.value))
+    }
+
+    /**
+     * Arranca el generador de pulsos si hay algún botón con turbo
+     * mantenido. Alterna la fase cada medio periodo y republica;
+     * cuando ya no queda ningún botón con turbo pulsado, se para
+     * solo y la fase vuelve a ON (la siguiente pulsación empieza
+     * activa, como un botón normal).
+     */
+    private fun maybeStartTurbo() {
+        if (turboJob != null) return
+        val mask = _turboButtons.value.fold(0) { acc, b -> acc or b }
+        if (mask == 0 || buttons and mask == 0) return
+        turboPhaseOn = true
+        turboJob = viewModelScope.launch {
+            while (isActive) {
+                delay(Turbo.halfPeriodMs(_turboRateHz.value))
+                turboPhaseOn = !turboPhaseOn
+                publish()
+                val m = _turboButtons.value.fold(0) { acc, b -> acc or b }
+                if (buttons and m == 0) {
+                    turboPhaseOn = true
+                    publish()
+                    turboJob = null
+                    break
+                }
+            }
+        }
+    }
+
+    /** Vibración al pulsar (Fase 4): interruptor global de Extras. El perfil de juego activo la pisa en applyGameProfile(). */
+    fun setVibrationEnabled(enabled: Boolean) {
+        _vibrationEnabled.value = enabled
+        ExtrasPrefs.saveVibration(getApplication(), enabled)
+    }
+
+    /**
+     * Vibración corta (15 ms) al pulsar un botón del teléfono.
+     * Solo teléfono: la vibración DEL JUEGO (que el juego haga
+     * vibrar el mando, EV_FF/FF_RUMBLE en uinput) NO existe en
+     * esta versión y ninguna pantalla la promete (ver
+     * docs/PLAN-GAMEPAD-PRO.md, Fase 4). El permiso VIBRATE ya
+     * estaba declarado en el manifest y no se usaba.
+     */
+    private fun vibrateOnPress() {
+        if (!_vibrationEnabled.value) return
+        val vibrator = getApplication<Application>().getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+        runCatching {
+            if (vibrator.hasVibrator()) {
+                vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        }
+    }
+
+    /** Empieza a grabar una macro (Fase 4). Si se estaba reproduciendo otra, se para. */
+    fun startMacroRecording(name: String) {
+        val clean = name.ifBlank { "Macro" }.take(40)
+        stopMacroPlayback()
+        macroRecorder = MacroRecorder().apply { start(System.currentTimeMillis()) }
+        _recordingMacro.value = clean
+        _ui.update { it.copy(info = "Grabando macro \"$clean\": pulsa los botones; para con «Parar y guardar». Máx. 30 s.") }
+    }
+
+    /** Para la grabación y guarda la macro (si se pulsó algo). Mismo nombre = se sustituye. */
+    fun stopMacroRecording() {
+        val recorder = macroRecorder ?: return
+        val name = _recordingMacro.value ?: return
+        val macro = recorder.stop(System.currentTimeMillis(), name)
+        macroRecorder = null
+        _recordingMacro.value = null
+        if (macro == null) {
+            _ui.update { it.copy(info = "Macro vacía: no se grabó ningún botón.") }
+            return
+        }
+        val next = (_macros.value.filter { it.name != macro.name } + macro).sortedBy { it.name }
+        _macros.value = next
+        ExtrasPrefs.saveMacros(getApplication(), next)
+        _ui.update { it.copy(info = "Macro guardada: ${macro.name} (${macro.events.size} eventos, ${macro.durationMs} ms).") }
+    }
+
+    /** Reproduce una macro (Fase 4): aplica cada evento en su momento, como si se pulsaran esos botones. */
+    fun playMacro(name: String) {
+        if (_recordingMacro.value != null) return // No reproducir mientras se graba: se grabaría la reproducción.
+        val macro = _macros.value.firstOrNull { it.name == name } ?: return
+        stopMacroPlayback()
+        _playingMacro.value = name
+        macroPlayJob = viewModelScope.launch {
+            val startMs = System.currentTimeMillis()
+            for (event in macro.events) {
+                val wait = event.delayMs - (System.currentTimeMillis() - startMs)
+                if (wait > 0) delay(wait)
+                if (!isActive) break
+                buttons = event.buttons
+                extraButtons = event.extraButtons
+                publish()
+            }
+            _playingMacro.value = null
+            macroPlayJob = null
+        }
+    }
+
+    /** Para la reproducción (y suelta todo para no dejar botones atascados). */
+    fun stopMacroPlayback() {
+        macroPlayJob?.cancel()
+        macroPlayJob = null
+        if (_playingMacro.value != null) {
+            _playingMacro.value = null
+            buttons = 0
+            extraButtons = 0
+            publish()
+        }
+    }
+
+    fun deleteMacro(name: String) {
+        val next = _macros.value.filter { it.name != name }
+        _macros.value = next
+        ExtrasPrefs.saveMacros(getApplication(), next)
+    }
+
+    // --- Giroscopio (Fase 4) ---
+
+    fun setGyroEnabled(enabled: Boolean) {
+        _gyroEnabled.value = enabled
+        ExtrasPrefs.saveGyroEnabled(getApplication(), enabled)
+        if (enabled) startGyroSensor() else stopGyroSensor()
+    }
+
+    fun setGyroSensitivity(value: Float) {
+        _gyroSensitivity.value = value.coerceIn(0.5f, 2f)
+        ExtrasPrefs.saveGyroSensitivity(getApplication(), _gyroSensitivity.value)
+    }
+
+    /**
+     * Arranca el sensor de rotación (vector de rotación de juego,
+     * sin brújula; si no existe, vector normal; si tampoco,
+     * acelerómetro como respaldo aproximado). La inclinación se
+     * convierte a stick derecho en cada evento del sensor
+     * (GyroMapper) y publish() la envía como el stick normal.
+     * Si no hay ningún sensor, el interruptor vuelve a NO y la UI
+     * dice por qué (sin fingir que funciona).
+     */
+    private fun startGyroSensor() {
+        if (gyroListener != null) return
+        val sm = getApplication<Application>().getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        if (sm == null) {
+            _gyroEnabled.value = false
+            _ui.update { it.copy(error = "Sin acceso a sensores en este teléfono: el giroscopio no está disponible.") }
+            return
+        }
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+            ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            ?: sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (sensor == null) {
+            _gyroEnabled.value = false
+            _ui.update { it.copy(error = "Este teléfono no tiene sensor de rotación ni acelerómetro: el giroscopio no está disponible.") }
+            return
+        }
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val (pitch, roll) = tiltFromEvent(event) ?: return
+                val (x, y) = GyroMapper.mapTilt(pitch, roll, _gyroSensitivity.value)
+                gyroX = x
+                gyroY = y
+                publish()
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        gyroListener = listener
+        sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
+    }
+
+    private fun stopGyroSensor() {
+        val sm = getApplication<Application>().getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        gyroListener?.let { sm?.unregisterListener(it) }
+        gyroListener = null
+        gyroX = 0f
+        gyroY = 0f
+        publish()
+    }
+
+    /**
+     * Inclinación (pitch, roll) en radianes desde un evento del
+     * sensor. Para el vector de rotación se reorienta la matriz
+     * según la rotación actual de la pantalla, para que "hacia
+     * adelante" sea siempre hacia adelante en la pantalla, juegue
+     * el usuario en vertical o en horizontal. El acelerómetro es
+     * un respaldo aproximado (gravedad, sin giroscopio).
+     * La convención de signo exacta está pendiente de verificar en
+     * el teléfono real (ver GyroMapper).
+     */
+    private fun tiltFromEvent(event: SensorEvent): Pair<Float, Float>? {
+        if (event.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+            val ax = event.values[0]
+            val ay = event.values[1]
+            val az = event.values[2]
+            val pitch = atan2(-ax, sqrt(ay * ay + az * az))
+            val roll = atan2(ay, az)
+            return pitch to roll
+        }
+        val rotationMatrix = FloatArray(9)
+        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+        val remapped = FloatArray(9)
+        val (axisX, axisY) = when (displayRotation()) {
+            Surface.ROTATION_0 -> SensorManager.AXIS_X to SensorManager.AXIS_Y
+            Surface.ROTATION_90 -> SensorManager.AXIS_Y to SensorManager.AXIS_MINUS_X
+            Surface.ROTATION_180 -> SensorManager.AXIS_MINUS_X to SensorManager.AXIS_MINUS_Y
+            else -> SensorManager.AXIS_MINUS_Y to SensorManager.AXIS_X
+        }
+        if (!SensorManager.remapCoordinateSystem(rotationMatrix, axisX, axisY, remapped)) return null
+        val orientation = FloatArray(3)
+        SensorManager.getOrientation(remapped, orientation)
+        return orientation[1] to orientation[2]
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getApplication<Application>().display?.rotation ?: Surface.ROTATION_0
+        } else {
+            val wm = getApplication<Application>().getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            wm?.defaultDisplay?.rotation ?: Surface.ROTATION_0
+        }
+    }
+
+    // --- Teclado virtual y modo ratón (Fase 4) ---
+
+    /** Envía un paquete de extras a la TV por UDP. false si no hay TV conectada (la UI lo dice). */
+    private fun sendExtras(packet: ByteArray, quiet: Boolean = false): Boolean {
+        val host = _ui.value.host
+        if (host.isBlank()) {
+            if (!quiet) _ui.update { it.copy(error = "Conecta primero a la TV: los extras van por Wi-Fi a la TV.") }
+            return false
+        }
+        return extrasSender.send(packet, host, _ui.value.port)
+    }
+
+    /** Activa o desactiva el teclado virtual en la TV (dispositivo uinput aparte, nunca parte del mando). */
+    fun setKeyboardEnabled(enabled: Boolean) {
+        val action = if (enabled) ExtrasProtocol.ACTION_CREATE else ExtrasProtocol.ACTION_DESTROY
+        if (!sendExtras(ExtrasProtocol.encodeKeyboard(0, action))) return
+        _ui.update {
+            it.copy(
+                keyboardEnabled = enabled,
+                info = if (enabled) "Teclado virtual activado en la TV (dispositivo aparte, no es parte del mando)." else "Teclado virtual desactivado en la TV.",
+            )
+        }
+    }
+
+    /** Activa o desactiva el modo ratón en la TV (dispositivo uinput aparte, nunca parte del mando). */
+    fun setMouseEnabled(enabled: Boolean) {
+        val action = if (enabled) ExtrasProtocol.ACTION_CREATE else ExtrasProtocol.ACTION_DESTROY
+        if (!sendExtras(ExtrasProtocol.encodeMouse(0, 0, 0, action))) return
+        _ui.update {
+            it.copy(
+                mouseEnabled = enabled,
+                info = if (enabled) "Modo ratón activado en la TV (dispositivo aparte). Arrastra en el panel para mover el cursor." else "Modo ratón desactivado en la TV.",
+            )
+        }
+    }
+
+    /** Escribe un texto en la TV, tecla a tecla (SHIFT + tecla para mayúsculas y símbolos). Los caracteres sin tecla (p. ej. ñ) se saltan y se cuentan. */
+    fun typeText(text: String) {
+        if (_ui.value.host.isBlank()) {
+            _ui.update { it.copy(error = "Conecta primero a la TV: el teclado va por Wi-Fi a la TV.") }
+            return
+        }
+        viewModelScope.launch {
+            var skipped = 0
+            for (c in text) {
+                val (code, shift) = KeyMap.forChar(c) ?: run { skipped++; continue }
+                if (shift) sendExtras(ExtrasProtocol.encodeKeyboard(KeyMap.KEY_LEFTSHIFT, ExtrasProtocol.ACTION_PRESS), quiet = true)
+                sendExtras(ExtrasProtocol.encodeKeyboard(code, ExtrasProtocol.ACTION_PRESS), quiet = true)
+                delay(15)
+                sendExtras(ExtrasProtocol.encodeKeyboard(code, ExtrasProtocol.ACTION_RELEASE), quiet = true)
+                if (shift) sendExtras(ExtrasProtocol.encodeKeyboard(KeyMap.KEY_LEFTSHIFT, ExtrasProtocol.ACTION_RELEASE), quiet = true)
+                delay(15)
+            }
+            if (skipped > 0) _ui.update { it.copy(info = "Texto enviado ($skipped caracteres sin tecla, p. ej. ñ, no se escribieron).") }
+        }
+    }
+
+    /** Una tecla especial: "enter", "backspace", "space", "tab", "escape", "up", "down", "left", "right". */
+    fun sendSpecialKey(name: String) {
+        val code = KeyMap.forSpecial(name) ?: return
+        viewModelScope.launch {
+            sendExtras(ExtrasProtocol.encodeKeyboard(code, ExtrasProtocol.ACTION_PRESS), quiet = true)
+            delay(30)
+            sendExtras(ExtrasProtocol.encodeKeyboard(code, ExtrasProtocol.ACTION_RELEASE), quiet = true)
+        }
+    }
+
+    /** Mueve el cursor del ratón en la TV (movimiento relativo en píxeles). */
+    fun mouseMove(dx: Int, dy: Int) {
+        if (dx == 0 && dy == 0) return
+        sendExtras(ExtrasProtocol.encodeMouse(dx, dy, mouseButtons), quiet = true)
+    }
+
+    /** Clic de ratón: pulsa y suelta el botón (izquierdo, derecho o central, ExtrasProtocol). */
+    fun mouseClick(button: Int) {
+        viewModelScope.launch {
+            mouseButtons = mouseButtons or button
+            sendExtras(ExtrasProtocol.encodeMouse(0, 0, mouseButtons), quiet = true)
+            delay(80)
+            mouseButtons = mouseButtons and button.inv()
+            sendExtras(ExtrasProtocol.encodeMouse(0, 0, mouseButtons), quiet = true)
+        }
+    }
+
     private fun publish() {
         // Sensibilidad: la zona muerta (ajustable en Ajustes,
         // 0.05 por defecto) es el % del recorrido que no hace
@@ -292,21 +710,37 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // volverse brusco, para que responda desde el primer toque.
         // Los gatillos se escalan por el perfil de juego (x1.0 por
         // defecto) y los botones pasan por el remapeo activo.
+        // Turbo (Fase 4) ANTES del remapeo: el turbo es del botón
+        // físico que se mantiene; el remapeo traduce después.
+        // L4/R4 (Fase 4) viajan en extraButtons, fuera del bitmask.
+        val turboed = Turbo.apply(buttons, _turboButtons.value, turboPhaseOn)
         val state = GamepadState(
-            buttons = remapButtons(buttons), leftX = leftX, leftY = leftY,
+            buttons = remapButtons(turboed), leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
             leftTrigger = (leftTrigger * _triggerScale.value).coerceIn(0f, 1f),
             rightTrigger = (rightTrigger * _triggerScale.value).coerceIn(0f, 1f),
+            extraButtons = extraButtons,
         ).withDeadZone(_deadZone.value).withResponseCurve(_curve.value)
-        GamepadSender.currentState = state
+        // Giroscopio (Fase 4): si está activado, el stick derecho
+        // lo manda la inclinación (gyroX/gyroY), no el táctil. Se
+        // aplica DESPUÉS de zona muerta y curva para no distorsionar
+        // la inclinación con la curva de los sticks.
+        val finalState = if (_gyroEnabled.value) state.copy(rightX = gyroX, rightY = gyroY) else state
+        GamepadSender.currentState = finalState
+        // Macro grabando (Fase 4): se anota el estado de botones
+        // SIN turbo ni remapeo (los botones físicos), para que la
+        // reproducción pulse lo mismo que se grabó.
+        macroRecorder?.onState(System.currentTimeMillis(), buttons, extraButtons)
+        maybeStartTurbo()
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.
-        if (hidService.status == TransportStatus.CONNECTED) hidService.sendReport(state)
+        // L4/R4 no van por HID (el descriptor no tiene hueco).
+        if (hidService.status == TransportStatus.CONNECTED) hidService.sendReport(finalState)
     }
 
     /** La pantalla del mando es solo el mando: todo lo de conexión vive en Ajustes (⚙). */
     fun openSettings() = _ui.update { it.copy(showSettings = true, error = null) }
-    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false, showControllerType = false, showGameProfiles = false, showControllerTest = false, showPerformance = false) }
+    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false, showControllerType = false, showGameProfiles = false, showControllerTest = false, showPerformance = false, showExtras = false) }
     fun openQrScanner() = _ui.update { it.copy(showQrScanner = true) }
 
     /** Pantallas Fase 3: se abren desde Ajustes y se vuelve a Ajustes al cerrar. */
@@ -318,6 +752,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun closeControllerTest() = _ui.update { it.copy(showControllerTest = false, showSettings = true) }
     fun openPerformance() = _ui.update { it.copy(showPerformance = true, showSettings = false) }
     fun closePerformance() = _ui.update { it.copy(showPerformance = false, showSettings = true) }
+
+    /** Pantalla Fase 4 (Extras): se abre desde Ajustes y se vuelve a Ajustes al cerrar. */
+    fun openExtras() = _ui.update { it.copy(showExtras = true, showSettings = false) }
+    fun closeExtras() = _ui.update { it.copy(showExtras = false, showSettings = true) }
 
     /** Panel visual de botones: se abre desde Ajustes y se cierra volviendo al mando. */
     fun openLayoutEditor() = _ui.update { it.copy(showLayoutEditor = true, showSettings = false) }
@@ -597,6 +1035,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     fun disconnect(silent: Boolean = false) {
         hidRetryJob?.cancel(); hidRetryJob = null
+        // Al desconectar, parar la macro y el turbo: si no, el
+        // generador seguiría publicando estados que el servicio
+        // ya no envía, y la siguiente conexión empezaría con la
+        // macro a medias.
+        stopMacroPlayback()
+        turboJob?.cancel(); turboJob = null; turboPhaseOn = true
         GamepadSenderService.resetHealth()
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
         getApplication<Application>().startService(intent)
@@ -671,10 +1115,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun setDpad(up: Boolean, down: Boolean, left: Boolean, right: Boolean) {
         // Igual que setButton: se guardan los bits sin mapear; el
         // remapeo se aplica una sola vez, en publish().
+        val before = buttons
         if (up) buttons = buttons or GamepadButtons.DPAD_UP else buttons = buttons and GamepadButtons.DPAD_UP.inv()
         if (down) buttons = buttons or GamepadButtons.DPAD_DOWN else buttons = buttons and GamepadButtons.DPAD_DOWN.inv()
         if (left) buttons = buttons or GamepadButtons.DPAD_LEFT else buttons = buttons and GamepadButtons.DPAD_LEFT.inv()
         if (right) buttons = buttons or GamepadButtons.DPAD_RIGHT else buttons = buttons and GamepadButtons.DPAD_RIGHT.inv()
+        // Vibración (Fase 4): si alguna dirección se acaba de pulsar.
+        val dpadMask = GamepadButtons.DPAD_UP or GamepadButtons.DPAD_DOWN or GamepadButtons.DPAD_LEFT or GamepadButtons.DPAD_RIGHT
+        if ((buttons and dpadMask) and before.inv() != 0) vibrateOnPress()
         publish()
     }
 }
