@@ -37,7 +37,13 @@ object GyroMapper {
     fun mapTilt(pitchRad: Float, rollRad: Float, sensitivity: Float): Pair<Float, Float> {
         val s = sensitivity.coerceIn(0.5f, 2f)
         val x = (rollRad / FULL_TILT_RAD * s).coerceIn(-1f, 1f)
-        val y = (-pitchRad / FULL_TILT_RAD * s).coerceIn(-1f, 1f)
+        // Y SIN el signo menos: pitch positivo = parte superior
+        // hacia el usuario = stick hacia abajo (Y positiva, como
+        // el stick táctil); pitch negativo (parte superior hacia
+        // adelante, alejándola de ti) = stick hacia arriba
+        // (Y negativa). Con el menos, el test de CI fallaba: a
+        // pitch -45° salía Y +1 en vez de -1.
+        val y = (pitchRad / FULL_TILT_RAD * s).coerceIn(-1f, 1f)
         return x to y
     }
 }
