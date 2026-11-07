@@ -167,7 +167,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Comprueba HID en el A17 y actualiza su estado real. Llamar al abrir la pantalla de conexión. */
+    /** Comprueba HID en el teléfono y actualiza su estado real. Llamar al abrir la pantalla de conexión. */
     fun refreshHidStatus() {
         hidService.checkAvailability { availability ->
             val status = when (availability) {
@@ -253,7 +253,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private fun connectHid() {
         if (hidService.availability != HidAvailability.AVAILABLE) {
             _ui.update {
-                it.copy(error = "Bluetooth HID no disponible en este teléfono (el A17 no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+                it.copy(error = "Bluetooth HID no disponible en este teléfono (no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
             }
             return
         }

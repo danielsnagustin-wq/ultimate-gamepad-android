@@ -32,9 +32,9 @@ Dato del usuario (2026-11-07): **la Hyundai Google TV no tiene la opción de dep
 
 Por tanto:
 - El arranque de Shizuku por "Wireless Debugging" (emparejamiento con código) **no aplica** aquí.
-- El arranque válido es **ADB por red clásico, puerto 5555**, con el teléfono Samsung como host ADB (app Bugjaeger, gratuita, sin root):
+- El arranque válido es **ADB por red clásico, puerto 5555**, con el teléfono como host ADB (app Bugjaeger, gratuita, sin root):
   - TV: activar depuración USB/ADB y ADB por red en `:5555`.
-  - Samsung con Bugjaeger: conectar a `<IP-TV>:5555` y ejecutar `sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`.
+  - Teléfono con Bugjaeger: conectar a `<IP-TV>:5555` y ejecutar `sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh`.
   - Conceder permiso a Ultimate Gamepad TV dentro de Shizuku.
   - Tras cada reinicio de la TV, hay que repetir el arranque de Shizuku. Sin root no hay arranque automático.
 - Si la Hyundai no expone ADB por red o lo bloquea en su firmware, la Ruta B no arranca y habrá que documentarlo en Etapa 0 y buscar alternativa (por ejemplo, un mando Bluetooth físico como respaldo, o un TV Box externo). No se inventa que funciona.

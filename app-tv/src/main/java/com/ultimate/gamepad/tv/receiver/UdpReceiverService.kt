@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ultimate.gamepad.core.ConnectionHealth
@@ -105,7 +104,10 @@ class UdpReceiverService : Service() {
                         val ip = ShizukuHelper.localIpFromWifi(wifi)
                         if (ip != null) {
                             val response = Discovery.buildResponse(
-                                Build.MODEL, ip, GamepadProtocol.DEFAULT_PORT,
+                                // Nombre genérico, sin modelo del
+                                // dispositivo: la TV se identifica en
+                                // la lista por este nombre + su IP.
+                                "TV Ultimate Gamepad", ip, GamepadProtocol.DEFAULT_PORT,
                                 TvPairing.getOrCreatePin(this@UdpReceiverService),
                             )
                             socket?.send(DatagramPacket(response, response.size, packet.address, packet.port))

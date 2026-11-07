@@ -19,7 +19,7 @@ import java.net.InetAddress
  *   1. En la TV: Ajustes > Opciones de desarrollador > Depuración USB
  *      (o "ADB") activada, y "ADB por red" / depuración por red en el
  *      puerto 5555, si la TV lo expone.
- *   2. En el Samsung: app Bugjaeger (gratis, sin root) como host ADB.
+ *   2. En el teléfono: app Bugjaeger (gratis, sin root) como host ADB.
  *      Conectar a <IP-TV>:5555 y ejecutar:
  *        sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh
  *   3. En la TV, abrir Shizuku y conceder permiso a Ultimate Gamepad TV.
@@ -40,7 +40,7 @@ object ShizukuHelper {
         }.isSuccess
         if (!installed) return Status(
             false, "NO INSTALADO",
-            "Instala Shizuku (moe.shizuku.privileged.api) en la TV desde Play Store / APKMirror, y arráncalo por ADB por red :5555 con Bugjaeger desde el Samsung. Ver docs/SETUP-SIN-PC.md.",
+            "Instala Shizuku (moe.shizuku.privileged.api) en la TV desde Play Store / APKMirror, y arráncalo por ADB por red :5555 con Bugjaeger desde el teléfono. Ver docs/SETUP-SIN-PC.md.",
         )
         if (!Shizuku.pingBinder()) return Status(
             false, "INSTALADO PERO NO ACTIVO",

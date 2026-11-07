@@ -2,7 +2,7 @@
 
 Mando virtual multi-transporte para jugar en una **Hyundai Google TV** con **OpenNOW** (cliente no oficial y open-source de GeForce NOW, no la app oficial de NVIDIA).
 
-Teléfono Samsung SM-A175F → TV Hyundai → OpenNOW.
+Teléfono (MediaTek Helio G99) → TV Hyundai → OpenNOW.
 
 > **Estado honesto — Etapa 1 (2026-11-07):** esqueleto funcional real, NO un mando completo y NO verificado en TV. El protocolo, el mando básico del teléfono y el receptor de la TV existen y compilan por GitHub Actions. **No está verificado que OpenNOW reconozca el mando todavía.** Eso es la Etapa 0 y requiere probarlo en la Hyundai real. Lee `docs/VIABILITY-OPENNOW.md` antes de esperar que funcione en un juego.
 
@@ -30,9 +30,9 @@ Si un método no logra esa identidad, se marca como **FALLO** en la UI aunque el
 |---|---|---|---|---|---|
 | 1 | Wi-Fi UDP, misma red | Principal | Misma Wi-Fi, TV con receptor en puerto 51999 | Pasa a TCP | Completo |
 | 2 | Wi-Fi TCP, misma red | Respaldo | Misma Wi-Fi, puerto TCP 52000 | Pasa a Bluetooth datos | Completo (básico) |
-| 3 | Hotspot del teléfono | Sin router | Hotspot del Samsung, TV conectada a él, IP 192.168.43.x | Volver a Wi-Fi con router | Mismo UDP/TCP, modo en UI + docs |
+| 3 | Hotspot del teléfono | Sin router | Hotspot del teléfono, TV conectada a él, IP 192.168.43.x | Volver a Wi-Fi con router | Mismo UDP/TCP, modo en UI + docs |
 | 5 | Bluetooth datos (BLE/SPP) a la app receptora | Respaldo si falla todo el Wi-Fi | Emparejamiento BT, app receptora | Pasa a Bluetooth HID | Estructura / interfaz, Pendiente Etapa 2 |
-| 4 | Bluetooth HID, teléfono como mando real | Directo, sin receptora ni Shizuku | A17 expone HID_DEVICE, emparejar "Xbox 360 Controller" | Ninguno (último) | Estructura + comprobación de disponibilidad |
+| 4 | Bluetooth HID, teléfono como mando real | Directo, sin receptora ni Shizuku | el teléfono expone HID_DEVICE, emparejar "Xbox 360 Controller" | Ninguno (último) | Estructura + comprobación de disponibilidad |
 
 El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un método manualmente. Ningún método se muestra "Conectado" sin paquetes reales; lo no implementado dice "Pendiente Etapa 2".
 
@@ -67,11 +67,11 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
    > Bloqueo conocido (2026-11-07): la creación automática del repo desde la integración de GitHub falló con `403 Resource not accessible by integration`, y el push a un repo inexistente con `404 Not Found`. La integración no tiene permiso para crear repositorios nuevos. El repo debe crearlo el usuario a mano; después Coco puede subir los archivos.
 2. Sube estos archivos a la rama `main`.
 3. Abre la pestaña **Actions** → última ejecución → **Artifacts** → descarga `app-phone-apks` y `app-tv-apks`.
-4. Instala `app-phone-debug.apk` en el Samsung y `app-tv-debug.apk` en la Hyundai (permitiendo "instalar apps desconocidas" solo para esa instalación).
+4. Instala `app-phone-debug.apk` en el teléfono y `app-tv-debug.apk` en la TV (permitiendo "instalar apps desconocidas" solo para esa instalación).
 
 ## Probar en la TV (Etapa 0, imprescindible)
 
-La Hyundai **no tiene depuración inalámbrica**. Shizuku se arranca por **ADB por red en el puerto 5555**, con el Samsung como host ADB (app Bugjaeger). Pasos exactos en `docs/SETUP-SIN-PC.md`.
+La Hyundai **no tiene depuración inalámbrica**. Shizuku se arranca por **ADB por red en el puerto 5555**, con el teléfono como host ADB (app Bugjaeger). Pasos exactos en `docs/SETUP-SIN-PC.md`.
 
 Prueba mínima: en la TV, abre el diagnóstico "¿Cómo me ve Android?" — ¿dice **"Parece mando real: SÍ"**? Y en OpenNOW, ¿responde el juego a A / joystick? Si dice NO, anota el motivo que muestra el diagnóstico (nombre, vendor/product, sources, ejes que faltan) y no sigas a Etapa 2 hasta resolverlo.
 

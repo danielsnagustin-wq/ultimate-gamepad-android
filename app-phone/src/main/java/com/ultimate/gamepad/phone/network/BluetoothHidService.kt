@@ -20,7 +20,7 @@ import com.ultimate.gamepad.core.TransportStatus
  * Etapa 1: estructura real + comprobación de disponibilidad.
  *
  * NO se finge: [checkAvailability] pregunta al sistema si el perfil
- * HID_DEVICE está expuesto en este A17. Si no lo está, la UI muestra
+ * HID_DEVICE está expuesto en este teléfono. Si no lo está, la UI muestra
  * "No disponible en este teléfono" y el método queda en FAILED.
  * Si está expuesto, [register] registra el descriptor Xbox 360 y
  * [sendReport] envía reportes HID. La confirmación real (la TV
@@ -50,7 +50,7 @@ class BluetoothHidService(private val context: Context) {
     private var hidDevice: BluetoothHidDevice? = null
     private var proxyReady = false
 
-    /** Comprueba si el A17 expone HID_DEVICE. No empareja nada. */
+    /** Comprueba si el teléfono expone HID_DEVICE. No empareja nada. */
     fun checkAvailability(onResult: (HidAvailability) -> Unit) {
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {

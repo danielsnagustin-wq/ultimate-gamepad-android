@@ -32,9 +32,9 @@ identidad, se marca FALLO en la UI aunque el Wi-Fi funcione.
 |---|---|---|---|---|---|
 | 1 | Wi-Fi UDP, misma red | Principal | Misma Wi-Fi, puerto 51999 | Pasa a TCP | Completo |
 | 2 | Wi-Fi TCP, misma red | Respaldo | Misma Wi-Fi, puerto 52000 | Pasa a Bluetooth datos | Completo (básico) |
-| 3 | Hotspot del teléfono | Sin router | Hotspot Samsung, TV en esa red, IP 192.168.43.x | Volver a Wi-Fi | Mismo UDP/TCP, modo en UI + docs |
+| 3 | Hotspot del teléfono | Sin router | Hotspot del teléfono, TV en esa red, IP 192.168.43.x | Volver a Wi-Fi | Mismo UDP/TCP, modo en UI + docs |
 | 5 | Bluetooth datos (BLE/SPP) | Respaldo si falla todo el Wi-Fi | Emparejamiento BT | Pasa a Bluetooth HID | Estructura, Pendiente Etapa 2 |
-| 4 | Bluetooth HID | Directo, sin receptora ni Shizuku | A17 expone HID_DEVICE | Ninguno (último) | Estructura + comprobación |
+| 4 | Bluetooth HID | Directo, sin receptora ni Shizuku | el teléfono (Helio G99) expone HID_DEVICE | Ninguno (último) | Estructura + comprobación |
 
 Modo Automático: prueba en orden **1 → 2 → 5 → 4**. Manual: el usuario
 fuerza un método. Todos llevan el mismo paquete de 32 bytes de
@@ -119,7 +119,7 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 - `MainActivity`: tema oscuro, una pantalla.
 - `GamepadViewModel`: estado de botones/sticks, dead zone 0.12 en Etapa 1, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID.
 - `GamepadSenderService`: servicio en primer plano, envía a 60 Hz por UDP o TCP, ping real por eco UDP cada segundo, reconexión automática (reintento 1 s sin cerrar el servicio). Si el socket falla, guarda `lastError` y la UI lo muestra.
-- `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el A17 no expone el perfil, queda en FAILED.
+- `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el teléfono no expone el perfil, queda en FAILED.
 - `BluetoothDataTransport`: solo interfaz, PENDING_STAGE2.
 - `ConnectSheet` / `QrScannerScreen`: escaneo QR real con CameraX + ML Kit. Sin permiso de cámara, queda la entrada manual. Modo Hotspot documentado en la hoja.
 - Editor y perfiles: TODO en `ui/TodoScreens.kt` — Etapa 2 y 3, no se presentan como funciones.

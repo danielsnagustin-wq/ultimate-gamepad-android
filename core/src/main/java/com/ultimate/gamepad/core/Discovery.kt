@@ -13,7 +13,7 @@ package com.ultimate.gamepad.core
  * Formato (texto UTF-8, sin CRC: no es un paquete de juego):
  * - Petición (teléfono -> broadcast 255.255.255.255:51999): "UGDISC1"
  * - Respuesta (TV -> teléfono): "UGRSP1|<nombre>|<ip>|<puerto>|<pin>"
- *   Ej: "UGRSP1|Hyundai TV|192.168.1.20|51999|4821"
+ *   Ej: "UGRSP1|TV Ultimate Gamepad|192.168.1.20|51999|4821"
  *
  * No choca con los paquetes de juego de 32 bytes: esos empiezan
  * por el magic "UG" pero miden 32 bytes y nunca son exactamente

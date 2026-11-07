@@ -124,7 +124,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(8.dp))
         Text("1) Abre Ultimate Gamepad en la TV y anota su IP y PIN, o escanea su QR.")
         Spacer(Modifier.height(4.dp))
-        Text("Modo Sin router / Hotspot: activa el hotspot del Samsung, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Modo Sin router / Hotspot: activa el hotspot del teléfono, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.openQrScanner() }) { Text("Escanear QR de la TV") }
         Spacer(Modifier.height(12.dp))

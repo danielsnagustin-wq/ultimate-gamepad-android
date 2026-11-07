@@ -61,7 +61,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         if (ui.hotspotMode) {
             Text(
-                "Modo Hotspot: activa el hotspot del Samsung y conecta la TV a esa red. " +
+                "Modo Hotspot: activa el hotspot del teléfono y conecta la TV a esa red. " +
                     "Escribe la IP del hotspot (normalmente 192.168.43.x) en Conectar.",
                 color = Color(0xFF9AA0B0), fontSize = 12.sp,
             )

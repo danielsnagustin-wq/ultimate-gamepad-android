@@ -4,7 +4,7 @@
 
 > Bloqueo conocido (2026-11-07): la creación automática del repo desde la integración de GitHub falló con `403 Resource not accessible by integration`. La integración no tiene permiso para crear repositorios nuevos en la cuenta. Por eso este paso lo hace el usuario a mano; es un solo repo y no se vuelve a repetir.
 
-1. En el Samsung, abre la app de GitHub → `+` → **New repository**.
+1. En el teléfono, abre la app de GitHub → `+` → **New repository**.
 2. Nombre: `ultimate-gamepad-android`. Descripción: la del README. **Public**. Sin README inicial, sin .gitignore, sin licencia (ya vienen en los archivos).
 3. **Create repository**.
 4. Sube los archivos de Etapa 1: en la web de GitHub (Chrome en el teléfono) → el repo nuevo → **Add file → Upload files** → selecciona la carpeta del proyecto, o usa la app de GitHub para subir por lotes. Alternativa: pide a Coco que suba los archivos una vez creado el repo vacío.
@@ -17,7 +17,7 @@ Si el workflow falla, abre el log del paso que falló y copia el error: sin ese 
 - **Teléfono:** instala `app-phone-debug.apk`. Acepta instalar apps desconocidas solo para esa instalación.
 - **TV Hyundai:** instala `app-tv-debug.apk`. Si la TV no deja instalar APKs por USB, usa la app **Send Files to TV** (o similar) desde el teléfono, o un USB.
 
-Versiones: teléfono Samsung SM-A175F, Android con minSdk 26. TV Hyundai Google TV, Android TV / Google TV.
+Versiones: teléfono con procesador MediaTek Helio G99 (Mali-G57 MC2), Android con minSdk 26. TV Hyundai Google TV, Android TV / Google TV.
 
 ## 3. Shizuku en la Hyundai — paso crítico (Etapa 0)
 
@@ -26,7 +26,7 @@ La Hyundai **no tiene depuración inalámbrica**. No busques esa opción: no est
 ### 3.1 Instalar Shizuku y Bugjaeger
 
 - En la TV: instala **Shizuku** (`moe.shizuku.privileged.api`) desde Play Store. Si no aparece en la TV, descarga su APK en el teléfono y envíalo a la TV.
-- En el Samsung: instala **Bugjaeger** (gratis, sin root) desde Play Store. Es el host ADB.
+- En el teléfono: instala **Bugjaeger** (gratis, sin root) desde Play Store. Es el host ADB.
 
 ### 3.2 Activar ADB por red en la TV
 
@@ -38,7 +38,7 @@ Si la TV no muestra ninguna opción de ADB por red, anótalo: es un resultado de
 
 ### 3.3 Arrancar Shizuku con Bugjaeger
 
-1. Samsung y TV en la **misma Wi-Fi**.
+1. Teléfono y TV en la **misma Wi-Fi**.
 2. Bugjaeger → icono de enchufe / `adb connect` → escribe `<IP-TV>:5555` → Connect.
 3. Cuando conecte, abre la consola de Bugjaeger (shell) y ejecuta exactamente:
    ```
@@ -64,7 +64,7 @@ Probar en este orden y anotar el resultado de cada uno:
 1. [ ] Teléfono conectado, ping con valor (no "—").
 2. [ ] Al mover el joystick / pulsar A, la pantalla de la TV muestra la entrada en vivo y cuenta paquetes recibidos.
 3. [ ] Si se apaga el Wi-Fi 3 s, la TV dice "Sin conexión"; al volver, se reconecta sola.
-4. [ ] Hotspot (si se prueba): TV conectada al hotspot del Samsung, mismo resultado que con router.
+4. [ ] Hotspot (si se prueba): TV conectada al hotspot del teléfono, mismo resultado que con router.
 5. [ ] Shizuku activo en la TV tras el arranque por Bugjaeger (ADB :5555; la Hyundai no tiene depuración inalámbrica).
 6. [ ] **Parece mando real: SÍ** en el diagnóstico de la TV (nombre "Xbox 360 Controller", vendor 0x045E, product 0x028E, GAMEPAD+JOYSTICK, ejes completos). En Etapa 1 se espera **NO** — la librería uinput nativa falta. Anotar NO con su motivo es un resultado válido, no un fracaso: es lo que define el trabajo de Etapa 0.
 7. [ ] En OpenNOW, con el mando virtual o el fallback, ¿responde el menú / el juego a A y al joystick? ¿Lo lista OpenNOW como controller?

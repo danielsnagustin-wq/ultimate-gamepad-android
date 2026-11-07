@@ -2,7 +2,7 @@ package com.ultimate.gamepad.core
 
 /**
  * Transportes Bluetooth — Etapa 1: estructura e interfaces, sin
- * fingir que funcionan antes de probarlos en el Samsung A17.
+ * fingir que funcionan antes de probarlos en el teléfono (Helio G99).
  *
  * Hay DOS cosas distintas que no hay que confundir:
  *
@@ -11,7 +11,7 @@ package com.ultimate.gamepad.core
  *    BluetoothHidDevice (API 28+). La TV lo ve como un mando
  *    Bluetooth más, sin app receptora y sin Shizuku. La inyección
  *    es directa: no pasa por OpenNOW ni por /dev/uinput.
- *    Requisito: que el firmware del A17 exponga el perfil
+ *    Requisito: que el firmware del teléfono (Helio G99) exponga el perfil
  *    HID_DEVICE. Eso se comprueba en tiempo de ejecución
  *    (ver app-phone BluetoothHidService) y la pantalla dice
  *    "Disponible" o "No disponible en este teléfono". Si no está
