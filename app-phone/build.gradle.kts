@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.ultimate.gamepad.phone"
-    compileSdk = 34
+    compileSdk = 35
     defaultConfig {
         applicationId = "com.ultimate.gamepad.phone"
         minSdk = 26

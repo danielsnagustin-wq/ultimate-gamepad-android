@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.ultimate.gamepad.tv"
-    compileSdk = 34
+    compileSdk = 35
     defaultConfig {
         applicationId = "com.ultimate.gamepad.tv"
         minSdk = 26
