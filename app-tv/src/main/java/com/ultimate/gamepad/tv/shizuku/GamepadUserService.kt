@@ -4,20 +4,22 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
 import android.os.IBinder
-import android.view.InputManager
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.tv.IGamepadInputService
 import com.ultimate.gamepad.tv.receiver.InputMapper
 import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuUserService
 
 /**
  * UserService de Shizuku: este proceso corre como shell (uid 2000)
  * y por eso tiene android.permission.INJECT_EVENTS.
  *
- * Hereda de rikka.shizuku.ShizukuUserService (API Shizuku 13).
- * Shizuku lo lanza; la app normal solo se enlaza a él.
+ * La clase extiende directamente IGamepadInputService.Stub (un
+ * Binder): así lo pide la API de Shizuku — "the service class must
+ * implement IBinder; the usual usage is YourService extends
+ * IYouAidlInterface.Stub". NO existe una clase
+ * rikka.shizuku.ShizukuUserService en la API pública; Shizuku
+ * instancia esta clase y la usa como IBinder.
  *
  * Estado honesto en Etapa 1:
  * - createVirtualGamepad(): intenta la vía uinput nativa. Esa vía
@@ -30,7 +32,7 @@ import rikka.shizuku.ShizukuUserService
  *   con el mapeo de InputMapper. Devuelve true solo si la inyección
  *   no lanzó excepción.
  */
-class GamepadUserService : ShizukuUserService() {
+class GamepadUserService : IGamepadInputService.Stub() {
     companion object {
         @Volatile var boundService: IGamepadInputService? = null
             private set
@@ -49,29 +51,26 @@ class GamepadUserService : ShizukuUserService() {
     }
 
     private var previousState: GamepadState = GamepadState()
-    private val binder = object : IGamepadInputService.Stub() {
-        override fun createVirtualGamepad(): Boolean {
-            // Etapa 0 pendiente: UinputGamepad.create() aún no tiene
-            // su .so nativo. Devolver false es correcto aquí.
-            return UinputGamepad.create()
-        }
 
-        override fun sendReport(packet32: ByteArray): Boolean {
-            val state = GamepadProtocol.decode(packet32) ?: return false
-            return injectState(state)
-        }
-
-        override fun injectGamepadEvent(packet32: ByteArray): Boolean {
-            val state = GamepadProtocol.decode(packet32) ?: return false
-            return injectState(state)
-        }
-
-        override fun isVirtualGamepadReady(): Boolean = UinputGamepad.isReady()
-
-        override fun destroyVirtualGamepad() { UinputGamepad.destroy() }
+    override fun createVirtualGamepad(): Boolean {
+        // Etapa 0 pendiente: UinputGamepad.create() aún no tiene
+        // su .so nativo. Devolver false es correcto aquí.
+        return UinputGamepad.create()
     }
 
-    override fun onBind(intent: android.content.Intent?): IBinder = binder
+    override fun sendReport(packet32: ByteArray): Boolean {
+        val state = GamepadProtocol.decode(packet32) ?: return false
+        return injectState(state)
+    }
+
+    override fun injectGamepadEvent(packet32: ByteArray): Boolean {
+        val state = GamepadProtocol.decode(packet32) ?: return false
+        return injectState(state)
+    }
+
+    override fun isVirtualGamepadReady(): Boolean = UinputGamepad.isReady()
+
+    override fun destroyVirtualGamepad() { UinputGamepad.destroy() }
 
     private fun injectState(state: GamepadState): Boolean {
         return runCatching {

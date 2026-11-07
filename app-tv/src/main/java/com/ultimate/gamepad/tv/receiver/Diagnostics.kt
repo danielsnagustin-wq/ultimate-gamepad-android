@@ -91,7 +91,7 @@ object Diagnostics {
     }
 
     fun scan(): List<DeviceReport> {
-        return InputDevice.getDeviceIds().mapNotNull { id ->
+        return InputDevice.getDeviceIds().toList().mapNotNull { id ->
             val device = InputDevice.getDevice(id) ?: return@mapNotNull null
             val sources = device.sources
             val hasGamepad = (sources and InputDevice.SOURCE_GAMEPAD) != 0
