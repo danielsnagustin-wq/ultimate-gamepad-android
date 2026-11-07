@@ -40,14 +40,14 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 
 | Método | Qué es | Si falla | Estado Etapa 1 |
 |---|---|---|---|
-| A. Shizuku + /dev/uinput, mando virtual Xbox 360 | Principal | Pasa a B | Estructura, .so nativo pendiente Etapa 0 |
+| A. Shizuku + /dev/uinput, mando virtual Xbox 360 | Principal | Pasa a B | Implementado, .so nativo compilado en CI; falta verificar en la TV real (Fase 0) |
 | B. Shizuku + `injectInputEvent`, SOURCE_GAMEPAD | Respaldo si uinput falla | Queda en "ninguno", UI lo dice | Fallback implementado |
 | C. Bluetooth HID | Inyección directa, no necesita Shizuku | Ninguno | Estructura + comprobación |
 
 ## Cómo funciona (resumen)
 
 1. La TV muestra su IP, puertos (UDP 51999 / TCP 52000) y un PIN, o un QR `UGP1|<ip>|51999|<pin>`.
-2. El teléfono escanea el QR (CameraX + ML Kit, real) o escribe IP/PIN, y envía el estado del mando a 60 Hz por UDP (o TCP) en paquetes binarios de 32 bytes (`:core`, ver `docs/ARCHITECTURE.md`).
+2. El teléfono escanea el QR (CameraX + ML Kit, real) o escribe IP/PIN, y envía el estado del mando a 120 Hz por UDP (o TCP) en paquetes binarios de 32 bytes (`:core`, ver `docs/ARCHITECTURE.md`).
 3. La TV recibe los paquetes en un servicio en primer plano, los muestra en vivo (botones, sticks, último paquete, paquetes recibidos) y hace eco de ping.
 4. Si Shizuku está activo (Fase 2), el proceso shell intenta crear el **mando virtual "Xbox 360 Controller" vía `/dev/uinput`**, y si falla, usa `injectInputEvent()` con SOURCE_GAMEPAD. Si Shizuku no está, la inyección queda en "ninguno" y la pantalla lo dice claro.
 
@@ -56,10 +56,10 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 | Módulo | Qué hace de verdad |
 |---|---|
 | `:core` | Protocolo 32 bytes (magic, versión, secuencia, timestamp, bitmask, sticks, gatillos, CRC-16), dead zones, curvas, emparejamiento QR/PIN, UDP + TCP, selector multi-transporte, clasificación GAMEPAD, tests unitarios |
-| `:app-phone` | Mando con joystick izquierdo, cruceta, A/B/X/Y, Start/Select; selector de método con estado real por método; modo Automático y manual; Hotspot; ping real (eco UDP); conexión por QR real o IP/PIN; comprobación Bluetooth HID |
+| `:app-phone` | Mando completo estilo Xbox (dos sticks, cruceta, A/B/X/Y, LB/RB, LT/RT analógicos, L3/R3, VIEW/MENU/SHARE) + editor visual de botones, zona muerta ajustable; selector de método con estado real por método; modo Automático y manual; Hotspot; ping real por eco (UDP y TCP); conexión por QR real o IP/PIN; comprobación Bluetooth HID |
 | `:app-tv` | Receptor UDP 51999 + TCP 52000, pantalla de estado en vivo, diagnóstico "¿Cómo me ve Android?" con "Parece mando real: SÍ/NO", Shizuku UserService + fallback `injectInputEvent` |
 
-**No hay en Etapa 1 (y no se finge):** joystick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3, editor de controles, perfiles por juego, import/export, mando virtual uinput nativo terminado, Bluetooth datos completo. Esos llegan en Etapas 2–3 y están marcados TODO / "Pendiente Etapa 2" en el código y la UI.
+**No hay en Etapa 1 (y no se finge):** perfiles por juego, import/export, Bluetooth datos completo. El mando completo (stick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3), el editor de controles y el mando virtual uinput nativo YA existen; lo que falta es verificarlos en la TV real (Fase 0). Lo demás llega en Etapas 2–3 y está marcado TODO / "Pendiente Etapa 2" en el código y la UI.
 
 ## Compilar sin PC
 

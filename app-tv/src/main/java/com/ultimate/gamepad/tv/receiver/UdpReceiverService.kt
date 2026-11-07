@@ -40,6 +40,9 @@ import java.net.InetSocketAddress
  * Pérdida de conexión: si no llega ningún paquete en 2 s
  * (ConnectionHealth.TIMEOUT_MS), la pantalla muestra "Sin
  * conexión". Cuando vuelve un paquete, se recupera solo.
+ * Watchdog (Fase 1): pasados esos 2 s sin paquetes, se envía un
+ * estado cero al mando virtual para que ningún botón/stick quede
+ * atascado; el último estado en pantalla también vuelve a cero.
  *
  * Inyección (Fase 2, opcional): si ReceiverConfig lo permite y
  * Shizuku está activo, intenta A (uinput Xbox 360) y luego B
@@ -94,10 +97,55 @@ class UdpReceiverService : Service() {
             lastState = state
             activeTransport = method
         }
+
+        /**
+         * Punto único de entrega de paquetes (UDP y TCP): mismo
+         * paquete, misma inyección. Es función del companion para
+         * que TcpReceiverService pueda entregar sin duplicar la
+         * lógica (H1: antes solo el bucle UDP inyectaba y por TCP
+         * la TV mostraba la entrada pero OpenNOW no recibía nada).
+         */
+        fun deliver(context: Context, state: GamepadState, rawPacket: ByteArray) {
+            if (!ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
+                injectionMethod = "ninguno"
+                return
+            }
+            // Inyección A: uinput Xbox 360. B: injectInputEvent SOURCE_GAMEPAD.
+            // ShizukuHelper devuelve false si Shizuku no está activo;
+            // en ese caso la inyección queda en "ninguno", no en "conectado".
+            val ok = ShizukuHelper.sendToGamepad(context, rawPacket, state)
+            virtualGamepadReady = ok
+            injectionMethod = when {
+                com.ultimate.gamepad.tv.shizuku.UinputGamepad.isReady() -> "uinput"
+                ok -> "inject"
+                else -> "ninguno"
+            }
+            if (!ok) lastError = "Sin inyección: Shizuku no listo o uinput no creado (Fase 2, ver Etapa 0)."
+        }
+
+        /**
+         * Watchdog (H2): si pasan más de TIMEOUT_MS sin paquetes y
+         * el último estado no es cero, envía un estado cero al
+         * mando virtual para que ningún botón/stick quede atascado,
+         * y marca lastState como cero. Devuelve true si liberó algo.
+         * Solo dispara una vez por episodio: tras liberar, lastState
+         * ya es cero y no vuelve a enviar hasta que llegue otro
+         * paquete con entrada.
+         */
+        fun releaseStaleControls(context: Context): Boolean {
+            val now = System.currentTimeMillis()
+            if (lastState == GamepadState()) return false
+            if (now - lastPacketAtMs <= ConnectionHealth.TIMEOUT_MS) return false
+            val zero = GamepadState()
+            deliver(context, zero, GamepadProtocol.encode(zero))
+            lastState = zero
+            return true
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    private var watchdogJob: Job? = null
     private var socket: DatagramSocket? = null
     /** WifiLock de baja latencia: se toma al escuchar y se suelta al parar. */
     private val wifiLock: WifiLatencyLock by lazy { WifiLatencyLock(this) }
@@ -181,7 +229,7 @@ class UdpReceiverService : Service() {
                         }
                         val state = GamepadProtocol.decode(data) ?: continue
                         recordPacket(state, TransportMethod.WIFI_UDP)
-                        deliver(state, data)
+                        deliver(this@UdpReceiverService, state, data)
                     } catch (e: Exception) {
                         // Un error en un paquete no mata el receptor:
                         // se anota y se sigue. Si es nuestro propio
@@ -198,29 +246,25 @@ class UdpReceiverService : Service() {
                 if (socket === s) socket = null
             }
         }
+        // Watchdog (H2): si el teléfono deja de enviar (Wi-Fi caído,
+        // app muerta, desconexión sin aviso), el último reporte
+        // quedaría activo en el mando virtual. Cada 500 ms se
+        // comprueba lastPacketAtMs y se suelta todo con un estado
+        // cero. Corre en el mismo scope (Dispatchers.IO) que
+        // deliver(); el estado compartido es @Volatile y el envío
+        // cero es idempotente (solo dispara una vez por episodio).
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            while (isActive) {
+                delay(500)
+                releaseStaleControls(this@UdpReceiverService)
+            }
+        }
         return START_STICKY
     }
 
-    private fun deliver(state: GamepadState, rawPacket: ByteArray) {
-        if (!ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
-            injectionMethod = "ninguno"
-            return // Fase 1: solo mostrar en pantalla, sin inyectar.
-        }
-        // Inyección A: uinput Xbox 360. B: injectInputEvent SOURCE_GAMEPAD.
-        // ShizukuHelper devuelve false si Shizuku no está activo;
-        // en ese caso la inyección queda en "ninguno", no en "conectado".
-        val ok = ShizukuHelper.sendToGamepad(this, rawPacket, state)
-        virtualGamepadReady = ok
-        injectionMethod = when {
-            com.ultimate.gamepad.tv.shizuku.UinputGamepad.isReady() -> "uinput"
-            ok -> "inject"
-            else -> "ninguno"
-        }
-        if (!ok) lastError = "Sin inyección: Shizuku no listo o uinput no creado (Fase 2, ver Etapa 0)."
-    }
-
     override fun onDestroy() {
-        job?.cancel(); runCatching { socket?.close() }; socket = null
+        job?.cancel(); watchdogJob?.cancel(); watchdogJob = null; runCatching { socket?.close() }; socket = null
         wifiLock.release()
         stopService(Intent(this, TcpReceiverService::class.java))
         scope.cancel()

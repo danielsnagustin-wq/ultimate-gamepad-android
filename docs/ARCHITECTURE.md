@@ -53,10 +53,10 @@ no cambia el modelo de entrada.
 
 ```
 Teléfono (Compose)                Red Wi-Fi local / BT           TV (Hyundai)
-┌────────────────────┐   UDP 51999 / TCP 52000, 32 B, 60 Hz  ┌──────────────────────┐
+┌────────────────────┐   UDP 51999 / TCP 52000, 32 B, 120 Hz  ┌──────────────────────┐
 │ Joystick/D-pad/ABXY│ ─────────────────────────────────────▶│ UdpReceiverService   │
-│ GamepadViewModel   │   eco ping cada 1 s ◀──────────────── │  + TcpReceiverService│
-│ GamepadSenderService│  (UDP; TCP: ping "—" en Etapa 1)     │  ShizukuHelper       │
+│ GamepadViewModel   │   eco ping cada 500 ms ◀──────────────── │  + TcpReceiverService│
+│ GamepadSenderService│  (eco ping UDP y TCP)             │  ShizukuHelper       │
 │ BluetoothHidService│ ── HID directo ──────────────────────▶│  GamepadUserService  │
 └────────────────────┘   (sin receptora)                     │   (shell uid 2000)   │
                                                               │   ├─ uinput Xbox 360 │
@@ -117,8 +117,8 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 ## Teléfono — :app-phone
 
 - `MainActivity`: tema oscuro, una pantalla.
-- `GamepadViewModel`: estado de botones/sticks, dead zone 0.12 en Etapa 1, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID.
-- `GamepadSenderService`: servicio en primer plano, envía a 60 Hz por UDP o TCP, ping real por eco UDP cada segundo, reconexión automática (reintento 1 s sin cerrar el servicio). Si el socket falla, guarda `lastError` y la UI lo muestra.
+- `GamepadViewModel`: estado de botones/sticks, dead zone 0.05, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID.
+- `GamepadSenderService`: servicio en primer plano, envía a 120 Hz por UDP o TCP, ping real por eco (UDP y TCP) cada 500 ms, reconexión automática (reintento 1 s sin cerrar el servicio). Si el socket falla, guarda `lastError` y la UI lo muestra.
 - `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el teléfono no expone el perfil, queda en FAILED.
 - `BluetoothDataTransport`: solo interfaz, PENDING_STAGE2.
 - `ConnectSheet` / `QrScannerScreen`: escaneo QR real con CameraX + ML Kit. Sin permiso de cámara, queda la entrada manual. Modo Hotspot documentado en la hoja.

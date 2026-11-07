@@ -80,6 +80,15 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         if (ui.hidAvailability.name == "UNAVAILABLE") {
             Text("Bluetooth HID: no disponible en este teléfono o sin comprobar. Ver Etapa 0.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
         }
+        if (ui.selectedMethod == TransportMethod.BLUETOOTH_HID) {
+            // H3 / Fase 1: no prometer lo que el HID no da. Por
+            // Bluetooth HID los gatillos LT/RT son digitales
+            // (pulsados o no), sin recorrido analógico.
+            Text(
+                "Por Bluetooth HID los gatillos LT/RT son digitales, sin recorrido analógico.",
+                color = Color(0xFF9AA0B0), fontSize = 12.sp,
+            )
+        }
         if (ui.hidAvailability.name == "PERMISSION_DENIED") {
             Spacer(Modifier.height(4.dp))
             Text("Bluetooth HID: falta el permiso de Bluetooth (Android 12+). Sin él, el teléfono no puede exponerse como mando.", color = Color(0xFFFFC107), fontSize = 12.sp)

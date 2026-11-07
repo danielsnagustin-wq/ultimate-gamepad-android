@@ -7,7 +7,7 @@ import java.nio.ByteOrder
  * Protocolo UDP binario Ultimate Gamepad, versión 1.
  *
  * Paquete fijo de 32 bytes, little-endian, sin servidores externos.
- * Diseñado para enviarse a 60 Hz por Wi-Fi local; si se pierde un
+ * Diseñado para enviarse a 120 Hz por Wi-Fi local; si se pierde un
  * paquete, el siguiente lo reemplaza (no hay retransmisión: un botón
  * tarde vale menos que un botón perdido y reenviado tarde).
  *

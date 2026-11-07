@@ -21,16 +21,16 @@ import rikka.shizuku.Shizuku
  * rikka.shizuku.ShizukuUserService en la API pública; Shizuku
  * instancia esta clase y la usa como IBinder.
  *
- * Estado honesto en Etapa 1:
- * - createVirtualGamepad(): intenta la vía uinput nativa. Esa vía
- *   necesita una librería JNI (libuinput.so) que abre /dev/uinput
- *   y registra un Xbox 360. Esa librería NO está en Etapa 1: es el
- *   trabajo de la Etapa 0 en la Hyundai real (ver UinputGamepad.kt).
- *   Por eso este método devuelve false hasta que la Etapa 0 lo
- *   demuestre en la TV. No se devuelve true para "que parezca".
- * - sendReport(): usa injectInputEvent (fallback) mientras tanto,
- *   con el mapeo de InputMapper. Devuelve true solo si la inyección
- *   no lanzó excepción.
+ * Estado honesto (Fase 1):
+ * - createVirtualGamepad(): intenta la vía uinput nativa con la
+ *   librería JNI (libuinput_gamepad.so, compilada en CI) que abre
+ *   /dev/uinput y registra un Xbox 360. Si el .so no carga o el
+ *   kernel lo deniega, devuelve false sin fingir nada; lo que
+ *   falta es la verificación en la TV real (Fase 0).
+ * - sendReport(): primero la vía A (uinput) si el mando virtual
+ *   está listo; si no, la vía B (injectInputEvent) con el mapeo
+ *   de InputMapper. Devuelve true solo si la inyección no lanzó
+ *   excepción.
  */
 class GamepadUserService : IGamepadInputService.Stub() {
     companion object {
@@ -63,8 +63,10 @@ class GamepadUserService : IGamepadInputService.Stub() {
     private var previousState: GamepadState = GamepadState()
 
     override fun createVirtualGamepad(): Boolean {
-        // Etapa 0 pendiente: UinputGamepad.create() aún no tiene
-        // su .so nativo. Devolver false es correcto aquí.
+        // La librería nativa (libuinput_gamepad.so) se compila en
+        // CI; create() intenta abrir /dev/uinput de verdad y
+        // devuelve false si no puede (sin fingir). Falta la
+        // verificación en la TV real (Fase 0).
         return UinputGamepad.create()
     }
 

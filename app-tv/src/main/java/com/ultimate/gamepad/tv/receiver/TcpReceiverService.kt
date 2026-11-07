@@ -19,10 +19,12 @@ import kotlinx.coroutines.launch
  * Receptor TCP en la TV — Etapa 1, real y básico.
  * Puerto TCP 52000 (UDP sigue en 51999). Acepta una conexión,
  * lee paquetes de 32 bytes y los entrega al mismo punto que UDP:
- * UdpReceiverService.recordPacket(). Si el teléfono se desconecta,
+ * UdpReceiverService.recordPacket() + deliver(), así TCP inyecta
+ * en el mando virtual igual que UDP. Si el teléfono se desconecta,
  * acepta de nuevo sin reiniciar el servicio (reconexión automática).
- * El eco de ping TCP queda para Etapa 2; en Etapa 1 el ping por
- * TCP se muestra como "—" en el teléfono y no se inventa.
+ * Eco de ping TCP (Fase 1): los paquetes de ping se devuelven por
+ * el mismo socket en vez de tratarse como entrada, para que el
+ * teléfono mida un ping real por TCP y no "—".
  */
 class TcpReceiverService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -64,6 +66,14 @@ class TcpReceiverService : Service() {
                         continue
                     }
                     UdpReceiverService.recordPacket(state, TransportMethod.WIFI_TCP)
+                    // H1 (Fase 1): antes solo se registraba el paquete;
+                    // ahora también se entrega al mando virtual por el
+                    // mismo punto único que UDP, así TCP inyecta de
+                    // verdad y OpenNOW recibe la entrada por TCP igual
+                    // que por UDP. El paquete se re-codifica desde el
+                    // estado decodificado (byte a byte idéntico: misma
+                    // secuencia, mismo timestamp, mismo CRC).
+                    UdpReceiverService.deliver(this@TcpReceiverService, state, GamepadProtocol.encode(state))
                 }
             } finally {
                 val r = localReceiver; localReceiver = null

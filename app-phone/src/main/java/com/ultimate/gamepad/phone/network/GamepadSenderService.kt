@@ -43,6 +43,8 @@ import java.net.InetAddress
  * FLAG_PING y se mide el tiempo hasta que la TV lo devuelve
  * (eco). Si la TV no hace eco, el ping se muestra como "—" y
  * [isTvResponding] es false. Nunca se muestra 0 ms inventado.
+ * Por TCP el eco llega por el mismo socket y lo lee una
+ * corrutina lectora (Fase 1); antes el ping TCP era "—".
  *
  * Latencia: el estado se envía a 120 Hz (cada 8 ms) por UDP,
  * no a 60 Hz: en red local 32 bytes a 120 Hz no cuestan nada y
@@ -62,7 +64,7 @@ class GamepadSenderService : Service() {
             private set
         @Volatile var lastEchoAtMs: Long = 0L
             private set
-        /** Último envío TCP sin excepción: TCP no tiene eco de ping en Etapa 1. */
+        /** Último envío TCP sin excepción (prueba de vida por TCP; el ping con eco también actualiza lastEchoAtMs desde la Fase 1). */
         @Volatile var lastTcpSendAtMs: Long = 0L
             private set
         @Volatile var activeMethod: TransportMethod = TransportMethod.WIFI_UDP
@@ -70,9 +72,11 @@ class GamepadSenderService : Service() {
 
         fun isTvResponding(): Boolean =
             if (activeMethod == TransportMethod.WIFI_TCP) {
-                // TCP no tiene eco de ping en Etapa 1: si el envío
-                // no lanzó excepción en los últimos 3 s, la TV
-                // está ahí. Antes esto siempre era false y TCP
+                // TCP tiene eco de ping desde la Fase 1 (también
+                // alimenta lastEchoAtMs), pero la prueba de vida
+                // sigue siendo el envío sin excepción en los
+                // últimos 3 s: si el envío no lanzó excepción, la
+                // TV está ahí. Antes esto siempre era false y TCP
                 // nunca llegaba a "Conectado": a los 3 s el modo
                 // AUTO lo abandonaba aunque funcionara.
                 lastTcpSendAtMs > 0 &&
@@ -128,10 +132,15 @@ class GamepadSenderService : Service() {
         job = scope.launch {
             var udp: UdpTransport? = null
             var tcp: TcpGamepadTransport? = null
+            var tcpReaderJob: Job? = null
+            // Fuera del try: el finally (estado cero al parar) usa
+            // address y sequence, y lo declarado dentro del try no
+            // es visible en el finally.
+            var address: InetAddress? = null
+            var sequence = 0
             try {
-                val address = runCatching { InetAddress.getByName(host) }.getOrNull()
+                address = runCatching { InetAddress.getByName(host) }.getOrNull()
                 if (address == null) { lastError = "IP no válida: $host"; return@launch }
-                var sequence = 0
                 var lastPingSentAt = 0L
                 var pingSequence = -1
                 lastTcpSendAtMs = 0L
@@ -161,6 +170,28 @@ class GamepadSenderService : Service() {
                                 if (tcp == null) {
                                     tcp = TcpGamepadTransport(address, port + 1)
                                     tcp.connect()
+                                    // Lector de ecos TCP (Fase 1): el eco del
+                                    // ping llega por el mismo socket y hay
+                                    // que leerlo en otra corrutina, o el
+                                    // ping TCP no tendría valor. Hijo del
+                                    // bucle: al cancelar el job, el lector
+                                    // muere con él; al reconectar, se
+                                    // cancela el viejo y se lanza otro.
+                                    val connectedTcp = tcp
+                                    tcpReaderJob?.cancel()
+                                    tcpReaderJob = launch {
+                                        while (isActive && tcp === connectedTcp) {
+                                            val raw = try {
+                                                connectedTcp.readRaw(1000)
+                                            } catch (_: Exception) {
+                                                break // Socket muerto: el bucle principal reconecta.
+                                            } ?: continue
+                                            if (!GamepadProtocol.isPing(raw)) continue
+                                            val echoed = GamepadProtocol.decode(raw) ?: continue
+                                            lastPingMs = System.currentTimeMillis() - echoed.timestampMs
+                                            lastEchoAtMs = System.currentTimeMillis()
+                                        }
+                                    }
                                 }
                                 // La escritura TCP puede bloquearse para siempre si la TV
                                 // deja de leer (ventana llena): con timeout, un envío
@@ -170,11 +201,16 @@ class GamepadSenderService : Service() {
                                 val currentTcp = tcp ?: throw java.io.IOException("TCP no conectado")
                                 val sent = withTimeoutOrNull(500) { currentTcp.send(state); true } ?: false
                                 if (!sent) throw java.io.IOException("TCP sin respuesta (escritura bloqueada)")
-                                // TCP no tiene eco de ping en Etapa 1: el
-                                // envío sin excepción ES la prueba de que
-                                // la TV está ahí (ver isTvResponding()).
-                                // El ping TCP sigue como "—" hasta que la
-                                // TV implemente eco TCP en Etapa 2.
+                                // Ping TCP con eco (Fase 1): cada 500 ms
+                                // igual que por UDP. El lector de arriba
+                                // mide el RTT real; el envío sin
+                                // excepción sigue siendo la prueba de
+                                // vida (ver isTvResponding()).
+                                val now = System.currentTimeMillis()
+                                if (now - lastPingSentAt >= 500) {
+                                    lastPingSentAt = now; pingSequence = sequence
+                                    runCatching { currentTcp.sendPing(pingSequence, now) }
+                                }
                                 lastTcpSendAtMs = System.currentTimeMillis()
                             }
                             else -> { lastError = "Método $method no es de este servicio"; delay(1000) }
@@ -186,6 +222,7 @@ class GamepadSenderService : Service() {
                         if (e is CancellationException) throw e
                         // Reconexión automática: no salir del bucle.
                         lastError = e.message ?: e.javaClass.simpleName
+                        tcpReaderJob?.cancel(); tcpReaderJob = null
                         runCatching { tcp?.close() }; tcp = null
                         runCatching { udp?.close() }; udp = null
                         delay(1000)
@@ -193,6 +230,21 @@ class GamepadSenderService : Service() {
                     delay(8) // ~120 Hz: el mando responde el doble de rápido que a 60 Hz.
                 }
             } finally {
+                // H2: al parar, soltar los controles en la TV con un
+                // estado cero ANTES de cerrar los sockets. Es el
+                // envío que evita el botón/stick atascado al
+                // desconectar (también al cambiar de método en AUTO).
+                // Mejor esfuerzo: si la red ya murió, el watchdog
+                // de la TV lo suelta a los 2 s. Una escritura de
+                // 32 bytes no se bloquea en la práctica (o el
+                // kernel la acepta, o el socket roto lanza
+                // excepción); va con runCatching para no alargar
+                // el cierre.
+                tcpReaderJob?.cancel(); tcpReaderJob = null
+                val zero = GamepadState(sequence = sequence, timestampMs = System.currentTimeMillis())
+                val addr = address
+                if (addr != null) runCatching { udp?.send(zero, addr, port) }
+                runCatching { tcp?.send(zero) }
                 // Al cancelar o salir, los sockets no quedan abiertos.
                 runCatching { tcp?.close() }; tcp = null
                 runCatching { udp?.close() }; udp = null

@@ -11,7 +11,7 @@ package com.ultimate.gamepad.core
  * eso es la reconexión automática en esta Fase 1.
  */
 object ConnectionHealth {
-    /** Sin paquete en 2 s = pérdida de conexión (a 60 Hz es ~120 paquetes perdidos). */
+    /** Sin paquete en 2 s = pérdida de conexión (a 120 Hz es ~240 paquetes perdidos). */
     const val TIMEOUT_MS: Long = 2000L
     /** Sin eco de ping en 3 s = la TV no responde (teléfono). */
     const val PING_TIMEOUT_MS: Long = 3000L

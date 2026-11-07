@@ -29,6 +29,7 @@ class TcpGamepadTransport(
     override val method: TransportMethod = TransportMethod.WIFI_TCP
     private var socket: Socket? = null
     private var out: DataOutputStream? = null
+    private var input: DataInputStream? = null
 
     fun connect(timeoutMs: Int = 3000) {
         close()
@@ -37,6 +38,7 @@ class TcpGamepadTransport(
         s.tcpNoDelay = true
         socket = s
         out = DataOutputStream(s.getOutputStream())
+        input = DataInputStream(s.getInputStream())
     }
 
     override fun send(state: GamepadState) {
@@ -46,13 +48,39 @@ class TcpGamepadTransport(
         o.flush()
     }
 
+    /** Ping TCP (Fase 1): mismo paquete FLAG_PING que por UDP; la TV lo devuelve tal cual. */
+    fun sendPing(sequence: Int, timestampMs: Long) {
+        val o = out ?: throw IllegalStateException("TCP no conectado")
+        o.write(GamepadProtocol.encodePing(sequence, timestampMs))
+        o.flush()
+    }
+
+    /**
+     * Lee exactamente 32 bytes con timeout; null solo por timeout
+     * (no es un error). Lanza IOException si el socket murió: el
+     * llamador debe cerrar y reconectar, no seguir leyendo de un
+     * socket muerto.
+     */
+    fun readRaw(timeoutMs: Int): ByteArray? {
+        val stream = input ?: throw java.io.IOException("TCP no conectado")
+        socket?.soTimeout = timeoutMs
+        val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
+        return try {
+            stream.readFully(buf)
+            buf
+        } catch (_: SocketTimeoutException) {
+            null
+        }
+    }
+
     /** Reconexión: cierra y vuelve a conectar. Devuelve false si sigue sin haber TV. */
     fun reconnect(): Boolean = runCatching { connect(); true }.getOrDefault(false)
 
     override fun close() {
         runCatching { out?.close() }
+        runCatching { input?.close() }
         runCatching { socket?.close() }
-        out = null; socket = null
+        out = null; input = null; socket = null
     }
 }
 
@@ -64,6 +92,7 @@ class TcpGamepadReceiver(
     private val server = ServerSocket(port)
     private var client: Socket? = null
     private var input: DataInputStream? = null
+    private var output: DataOutputStream? = null
 
     override fun receive(timeoutMs: Int): GamepadState? {
         if (client == null || client?.isClosed == true) {
@@ -72,6 +101,7 @@ class TcpGamepadReceiver(
                 client = server.accept()
                 client?.tcpNoDelay = true
                 input = DataInputStream(client?.getInputStream())
+                output = DataOutputStream(client?.getOutputStream())
             } catch (_: SocketTimeoutException) {
                 return null
             } catch (_: java.io.IOException) {
@@ -85,6 +115,21 @@ class TcpGamepadReceiver(
         val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
         return try {
             stream.readFully(buf)
+            if (GamepadProtocol.isPing(buf)) {
+                // Eco TCP (Fase 1): el ping se devuelve tal cual por
+                // el mismo socket y NO se trata como entrada. Sin
+                // este cheque, un ping se decodificaría como un
+                // estado todo-cero y borraría el mando 2 veces por
+                // segundo. Si el eco falla, el cliente está muerto.
+                try {
+                    val o = output ?: throw java.io.IOException("Sin salida TCP")
+                    o.write(buf)
+                    o.flush()
+                } catch (_: java.io.IOException) {
+                    closeClient()
+                }
+                return null
+            }
             GamepadProtocol.decode(buf)
         } catch (_: SocketTimeoutException) {
             null
@@ -104,13 +149,15 @@ class TcpGamepadReceiver(
     }
 
     private fun closeClient() {
+        runCatching { output?.close() }
         runCatching { client?.close() }
-        client = null; input = null
+        client = null; input = null; output = null
     }
 
     override fun close() {
+        runCatching { output?.close() }
         runCatching { client?.close() }
         runCatching { server.close() }
-        client = null; input = null
+        client = null; input = null; output = null
     }
 }
