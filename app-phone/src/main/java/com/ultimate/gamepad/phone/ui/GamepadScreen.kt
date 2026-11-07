@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -90,6 +91,14 @@ fun GamepadScreen(vm: GamepadViewModel) {
             .padding(12.dp),
     ) {
         val isLandscape = maxWidth > maxHeight
+        // Ajuste de tamaño: con los sticks a 180 dp y la cruceta
+        // a 196 dp, el mando ya no cabe en pantallas pequeñas y se
+        // cortaba por los bordes (en horizontal manda la altura,
+        // en vertical el ancho). Se escala todo el área de
+        // controles para que quepa siempre, sin tocar el diseño
+        // guardado por el usuario (eso se suma aparte).
+        val fitScale = if (isLandscape) (maxHeight / 500.dp).coerceIn(0.55f, 1f)
+        else (maxWidth / 440.dp).coerceIn(0.55f, 1f)
         NeonBackground(Modifier.fillMaxSize())
         Column(modifier = Modifier.fillMaxSize()) {
             ShoulderRow(vm, ui, layout)
@@ -103,7 +112,8 @@ fun GamepadScreen(vm: GamepadViewModel) {
             }
             if (isLandscape) {
                 Row(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer { scaleX = fitScale; scaleY = fitScale },
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -112,24 +122,38 @@ fun GamepadScreen(vm: GamepadViewModel) {
                     RightControls(vm, layout)
                 }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
+                // En vertical la escala se ancla arriba: si se
+                // anclara al centro, el mando quedaría flotando
+                // en medio de la pantalla con huecos arriba y abajo.
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = fitScale
+                            scaleY = fitScale
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        },
                 ) {
-                    LayoutElement(layout, LayoutConfig.LEFT_STICK) { StickWithLabel(vm, left = true) }
-                    LayoutElement(layout, LayoutConfig.ABXY) { AbxyPad(vm) }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LayoutElement(layout, LayoutConfig.LEFT_STICK) { StickWithLabel(vm, left = true) }
+                            LayoutElement(layout, LayoutConfig.ABXY) { AbxyPad(vm) }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LayoutElement(layout, LayoutConfig.DPAD) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }) }
+                            LayoutElement(layout, LayoutConfig.RIGHT_STICK) { StickWithLabel(vm, left = false) }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        CenterControls(vm, layout, horizontal = true)
+                    }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LayoutElement(layout, LayoutConfig.DPAD) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }) }
-                    LayoutElement(layout, LayoutConfig.RIGHT_STICK) { StickWithLabel(vm, left = false) }
-                }
-                Spacer(Modifier.height(12.dp))
-                CenterControls(vm, layout, horizontal = true)
             }
         }
         if (ui.showSettings) SettingsScreen(vm, ui)

@@ -63,11 +63,15 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     var selected by remember { mutableStateOf<String?>(LayoutConfig.LEFT_STICK) }
     val density = LocalDensity.current
 
+    // La vista previa NO va dentro del scroll: antes toda la
+    // pantalla tenía scroll y al arrastrar un botón en vertical
+    // el scroll se lo robaba y el botón no se movía (o se movía
+    // a trompicones). Ahora la previa es fija y solo la barra de
+    // herramientas de abajo tiene scroll.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .verticalScroll(rememberScrollState())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -86,7 +90,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
         )
         Spacer(Modifier.height(12.dp))
 
-        // --- Vista previa del mando (arrastrable) ---
+        // --- Vista previa del mando (arrastrable, fija) ---
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -138,76 +142,84 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             }
         }
 
-        // --- Botones ocultos: volver a mostrarlos ---
-        val hidden = LayoutConfig.NAMES.keys.filter { !draft.element(it).visible }
-        if (hidden.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            Text("Ocultos (tócalos para volver a mostrarlos):", color = Color(0xFF9AA0B0), fontSize = 12.sp)
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (id in hidden) {
-                    Button(onClick = {
-                        val next = draft.element(id).copy(visible = true)
-                        draft = draft.withElement(id, next)
-                        vm.updateElement(id, next)
-                        selected = id
-                    }) { Text(LayoutConfig.NAMES[id] ?: id, fontSize = 12.sp) }
+        // --- Barra de herramientas (con scroll, la previa es fija) ---
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            // --- Botones ocultos: volver a mostrarlos ---
+            val hidden = LayoutConfig.NAMES.keys.filter { !draft.element(it).visible }
+            if (hidden.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Ocultos (tócalos para volver a mostrarlos):", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (id in hidden) {
+                        Button(onClick = {
+                            val next = draft.element(id).copy(visible = true)
+                            draft = draft.withElement(id, next)
+                            vm.updateElement(id, next)
+                            selected = id
+                        }) { Text(LayoutConfig.NAMES[id] ?: id, fontSize = 12.sp) }
+                    }
                 }
             }
-        }
 
-        // --- Ajustes del botón elegido ---
-        val selId = selected
-        if (selId != null) {
-            val el = draft.element(selId)
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text(LayoutConfig.NAMES[selId] ?: selId, fontSize = 15.sp)
-                Switch(
-                    checked = el.visible,
-                    onCheckedChange = {
-                        val next = el.copy(visible = it)
-                        draft = draft.withElement(selId, next)
-                        vm.updateElement(selId, next)
-                    },
-                )
-            }
-            if (el.visible) {
-                Text("Tamaño: ${"%.2f".format(el.scale)}x", fontSize = 12.sp, color = Color(0xFF9AA0B0))
-                Slider(
-                    value = el.scale,
-                    onValueChange = { draft = draft.withElement(selId, el.copy(scale = it)) },
-                    onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
-                    valueRange = 0.7f..1.6f,
-                )
-                Text("Opacidad: ${(el.opacity * 100).roundToInt()}%", fontSize = 12.sp, color = Color(0xFF9AA0B0))
-                Slider(
-                    value = el.opacity,
-                    onValueChange = { draft = draft.withElement(selId, el.copy(opacity = it)) },
-                    onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
-                    valueRange = 0.3f..1f,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    EditorStepper("← →", el.offsetXdp) {
-                        val next = el.copy(offsetXdp = it)
-                        draft = draft.withElement(selId, next)
-                        vm.updateElement(selId, next)
-                    }
-                    EditorStepper("↑ ↓", el.offsetYdp) {
-                        val next = el.copy(offsetYdp = it)
-                        draft = draft.withElement(selId, next)
-                        vm.updateElement(selId, next)
+            // --- Ajustes del botón elegido ---
+            val selId = selected
+            if (selId != null) {
+                val el = draft.element(selId)
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Text(LayoutConfig.NAMES[selId] ?: selId, fontSize = 15.sp)
+                    Switch(
+                        checked = el.visible,
+                        onCheckedChange = {
+                            val next = el.copy(visible = it)
+                            draft = draft.withElement(selId, next)
+                            vm.updateElement(selId, next)
+                        },
+                    )
+                }
+                if (el.visible) {
+                    Text("Tamaño: ${"%.2f".format(el.scale)}x", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+                    Slider(
+                        value = el.scale,
+                        onValueChange = { draft = draft.withElement(selId, el.copy(scale = it)) },
+                        onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
+                        valueRange = 0.7f..1.6f,
+                    )
+                    Text("Opacidad: ${(el.opacity * 100).roundToInt()}%", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+                    Slider(
+                        value = el.opacity,
+                        onValueChange = { draft = draft.withElement(selId, el.copy(opacity = it)) },
+                        onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
+                        valueRange = 0.3f..1f,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        EditorStepper("← →", el.offsetXdp) {
+                            val next = el.copy(offsetXdp = it)
+                            draft = draft.withElement(selId, next)
+                            vm.updateElement(selId, next)
+                        }
+                        EditorStepper("↑ ↓", el.offsetYdp) {
+                            val next = el.copy(offsetYdp = it)
+                            draft = draft.withElement(selId, next)
+                            vm.updateElement(selId, next)
+                        }
                     }
                 }
             }
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = {
+                draft = LayoutConfig()
+                vm.resetLayout()
+            }) { Text("Restablecer diseño") }
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onClose) { Text("Volver al mando") }
         }
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = {
-            draft = LayoutConfig()
-            vm.resetLayout()
-        }) { Text("Restablecer diseño") }
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = onClose) { Text("Volver al mando") }
     }
 }
 

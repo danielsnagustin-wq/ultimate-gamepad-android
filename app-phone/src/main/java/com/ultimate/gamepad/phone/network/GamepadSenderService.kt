@@ -57,10 +57,24 @@ class GamepadSenderService : Service() {
             private set
         @Volatile var lastEchoAtMs: Long = 0L
             private set
+        /** Último envío TCP sin excepción: TCP no tiene eco de ping en Etapa 1. */
+        @Volatile var lastTcpSendAtMs: Long = 0L
+            private set
         @Volatile var activeMethod: TransportMethod = TransportMethod.WIFI_UDP
             private set
 
-        fun isTvResponding(): Boolean = ConnectionHealth.isTvResponding(lastEchoAtMs)
+        fun isTvResponding(): Boolean =
+            if (activeMethod == TransportMethod.WIFI_TCP) {
+                // TCP no tiene eco de ping en Etapa 1: si el envío
+                // no lanzó excepción en los últimos 3 s, la TV
+                // está ahí. Antes esto siempre era false y TCP
+                // nunca llegaba a "Conectado": a los 3 s el modo
+                // AUTO lo abandonaba aunque funcionara.
+                lastTcpSendAtMs > 0 &&
+                    System.currentTimeMillis() - lastTcpSendAtMs <= ConnectionHealth.PING_TIMEOUT_MS
+            } else {
+                ConnectionHealth.isTvResponding(lastEchoAtMs)
+            }
     }
 
     private var job: Job? = null
@@ -94,6 +108,7 @@ class GamepadSenderService : Service() {
             var sequence = 0
             var lastPingSentAt = 0L
             var pingSequence = -1
+            lastTcpSendAtMs = 0L
             while (isActive) {
                 try {
                     val state = GamepadSender.currentState.copy(
@@ -122,10 +137,12 @@ class GamepadSenderService : Service() {
                                 tcp?.connect()
                             }
                             tcp?.send(state)
-                            // TCP no tiene eco de ping en Etapa 1: la
-                            // respuesta se considera el propio envío sin
-                            // excepción. El ping TCP queda como "—" hasta
-                            // que la TV implemente eco TCP en Etapa 2.
+                            // TCP no tiene eco de ping en Etapa 1: el
+                            // envío sin excepción ES la prueba de que
+                            // la TV está ahí (ver isTvResponding()).
+                            // El ping TCP sigue como "—" hasta que la
+                            // TV implemente eco TCP en Etapa 2.
+                            lastTcpSendAtMs = System.currentTimeMillis()
                         }
                         else -> { lastError = "Método $method no es de este servicio"; delay(1000) }
                     }

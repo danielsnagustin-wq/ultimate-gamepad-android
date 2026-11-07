@@ -335,7 +335,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             }
             ConnectionStatus.CONNECTED -> {
                 // En modo AUTO, la falta de eco dispara el fallback.
-                if (!responding && GamepadSenderService.lastEchoAtMs > 0) {
+                // Vale para UDP (sin eco) y para TCP (sin envío
+                // bueno reciente): si nunca hubo ni eco ni envío,
+                // no se dispara nada (recién conectado).
+                if (!responding && (GamepadSenderService.lastEchoAtMs > 0 || GamepadSenderService.lastTcpSendAtMs > 0)) {
                     tryNextTransport()
                 }
             }
