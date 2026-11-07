@@ -174,9 +174,13 @@ fun GamepadScreen(vm: GamepadViewModel) {
         val contentW = leftW + centerW + rightW + 32f + 2f * maxOffX
         // En vertical la escala se calcula por el ancho (la pantalla es alta y sobra sitio).
         val fitScale = (maxWidth / 440.dp).coerceIn(0.55f, 1f)
+        // Ancho de la fila de hombros: se captura aquí porque dentro del
+        // Column el receptor es ColumnScope y maxWidth ya no se puede
+        // usar con receptor implícito.
+        val shoulderRowWidth = maxWidth - 24.dp
         NeonBackground(Modifier.fillMaxSize())
         Column(modifier = Modifier.fillMaxSize()) {
-            ShoulderRow(vm, ui, layout, maxWidth - 24.dp)
+            ShoulderRow(vm, ui, layout, shoulderRowWidth)
             if (ui.error != null) {
                 Spacer(Modifier.height(6.dp))
                 Text(ui.error!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
