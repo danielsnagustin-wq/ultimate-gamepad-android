@@ -1,5 +1,6 @@
 package com.ultimate.gamepad.phone.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -90,15 +92,25 @@ private fun statusColor(status: TransportStatus): Color = when (status) {
 
 @Composable
 private fun Chip(label: String, selected: Boolean, dotColor: Color, onClick: () -> Unit) {
+    // El texto no se veía: ButtonDefaults solo ponía el fondo
+    // (morado si estaba elegido, gris si no) y el color del texto
+    // lo ponía el tema (morado sobre gris = ilegible). Ahora el
+    // texto es blanco siempre, con borde visible si no está elegido.
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) Color(0xFF7C4DFF) else Color(0xFF2A3040),
+            containerColor = if (selected) Color(0xFF7C4DFF) else Color(0xFF1A1D27),
+            contentColor = Color.White,
         ),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-        modifier = Modifier.height(36.dp),
+        modifier = Modifier.height(36.dp)
+            .border(
+                1.dp,
+                if (selected) Color(0xFF7C4DFF) else Color(0xFF7C4DFF).copy(alpha = 0.6f),
+                RoundedCornerShape(18.dp),
+            ),
     ) {
         Text("● ", color = dotColor, fontSize = 12.sp)
-        Text(label, fontSize = 12.sp)
+        Text(label, fontSize = 12.sp, color = Color.White)
     }
 }
