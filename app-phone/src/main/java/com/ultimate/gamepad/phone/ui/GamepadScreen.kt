@@ -49,7 +49,10 @@ fun GamepadScreen(vm: GamepadViewModel) {
     val ui by vm.ui.collectAsState()
     LaunchedEffect(ui.status) {
         vm.refreshHidStatus()
-        while (ui.status == ConnectionStatus.CONNECTED) { vm.refreshPing(); delay(1000) }
+        // El ping se vigila también en CONECTANDO: si no, el estado
+        // CONECTANDO nunca se resolvería y la pantalla se quedaría
+        // tiesa esperando un eco que nadie comprueba.
+        while (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) { vm.refreshPing(); delay(1000) }
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFF0B0E14)).padding(12.dp)) {
