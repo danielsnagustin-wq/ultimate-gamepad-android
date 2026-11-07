@@ -326,7 +326,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 // queda colgado el bucle.
                 val ok = withTimeoutOrNull(5000) {
                     suspendCancellableCoroutine<Boolean> { cont ->
-                        hidService.reRegister(profileId = GamepadSender.activeProfileId) { cont.resume(it) }
+                        // La lambda NO puede ir como trailing lambda:
+                        // el último parámetro es profileId (Int), no
+                        // onResult; va explícita como primer argumento.
+                        hidService.reRegister({ cont.resume(it) }, profileId = GamepadSender.activeProfileId)
                     }
                 } ?: false
                 if (ok) {
