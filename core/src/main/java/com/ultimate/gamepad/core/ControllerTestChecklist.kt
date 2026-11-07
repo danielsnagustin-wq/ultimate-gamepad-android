@@ -12,7 +12,9 @@ package com.ultimate.gamepad.core
  *
  * Las etiquetas de los botones salen del perfil activo
  * (GamepadProfiles.labelFor): en un DualShock 4, A se llama
- * "Cross", no "A".
+ * "Cross", no "A". L4/R4 (Fase 4) son paletas traseras y se llaman
+ * igual en todos los perfiles: no pasan por labelFor porque no
+ * son bits del bitmask de 16.
  */
 class ControllerTestChecklist {
     data class Item(val id: String, val label: String, val tested: Boolean)
@@ -41,14 +43,28 @@ class ControllerTestChecklist {
 
         fun buttonId(bit: Int): String = "btn_$bit"
 
-        /** Total de controles de la checklist: 16 botones + 2 sticks + 2 gatillos. */
-        const val TOTAL_COUNT: Int = 20
+        /** Botones extra L4/R4 (Fase 4, GamepadExtraButtons, byte 29 del protocolo). */
+        val EXTRA_BUTTON_BITS: List<Int> = listOf(GamepadExtraButtons.L4, GamepadExtraButtons.R4)
+
+        fun extraButtonId(bit: Int): String = "extra_$bit"
+
+        fun extraButtonLabel(bit: Int): String = when (bit) {
+            GamepadExtraButtons.L4 -> "L4"
+            GamepadExtraButtons.R4 -> "R4"
+            else -> "Extra $bit"
+        }
+
+        /** Total de controles de la checklist: 16 botones + L4/R4 + 2 sticks + 2 gatillos. */
+        const val TOTAL_COUNT: Int = 22
     }
 
     /** Alimenta la checklist con un estado (el último recibido o enviado). */
     fun update(state: GamepadState) {
         for (bit in BUTTON_BITS) {
             if (state.isPressed(bit)) tested += buttonId(bit)
+        }
+        for (bit in EXTRA_BUTTON_BITS) {
+            if (state.isExtraPressed(bit)) tested += extraButtonId(bit)
         }
         if (kotlin.math.abs(state.leftX) > MOVE_THRESHOLD || kotlin.math.abs(state.leftY) > MOVE_THRESHOLD) tested += STICK_LEFT_ID
         if (kotlin.math.abs(state.rightX) > MOVE_THRESHOLD || kotlin.math.abs(state.rightY) > MOVE_THRESHOLD) tested += STICK_RIGHT_ID
@@ -61,6 +77,9 @@ class ControllerTestChecklist {
         val out = mutableListOf<Item>()
         for (bit in BUTTON_BITS) {
             out += Item(buttonId(bit), GamepadProfiles.labelFor(profileId, bit), buttonId(bit) in tested)
+        }
+        for (bit in EXTRA_BUTTON_BITS) {
+            out += Item(extraButtonId(bit), extraButtonLabel(bit), extraButtonId(bit) in tested)
         }
         out += Item(STICK_LEFT_ID, "Stick izquierdo (mover)", STICK_LEFT_ID in tested)
         out += Item(STICK_RIGHT_ID, "Stick derecho (mover)", STICK_RIGHT_ID in tested)

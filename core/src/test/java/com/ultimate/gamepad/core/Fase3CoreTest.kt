@@ -9,12 +9,12 @@ import org.junit.Test
 class Fase3CoreTest {
     // --- ControllerTestChecklist ---
 
-    @Test fun `la checklist empieza vacia con 20 controles`() {
+    @Test fun `la checklist empieza vacia con 22 controles`() {
         val c = ControllerTestChecklist()
         assertEquals(0, c.testedCount)
-        assertEquals(20, c.totalCount)
+        assertEquals(22, c.totalCount)
         assertFalse(c.allDone)
-        assertEquals(20, c.items().size)
+        assertEquals(22, c.items().size)
         assertTrue(c.items().none { it.tested })
     }
 
@@ -58,9 +58,9 @@ class Fase3CoreTest {
             GamepadButtons.LB or GamepadButtons.RB or GamepadButtons.START or GamepadButtons.SELECT or
             GamepadButtons.L3 or GamepadButtons.R3 or GamepadButtons.DPAD_UP or GamepadButtons.DPAD_DOWN or
             GamepadButtons.DPAD_LEFT or GamepadButtons.DPAD_RIGHT or GamepadButtons.HOME or GamepadButtons.CAPTURE
-        c.update(GamepadState(buttons = all, leftX = 1f, rightX = -1f, leftTrigger = 1f, rightTrigger = 1f))
+        c.update(GamepadState(buttons = all, extraButtons = GamepadExtraButtons.L4 or GamepadExtraButtons.R4, leftX = 1f, rightX = -1f, leftTrigger = 1f, rightTrigger = 1f))
         assertTrue(c.allDone)
-        assertEquals(20, c.testedCount)
+        assertEquals(22, c.testedCount)
         c.reset()
         assertEquals(0, c.testedCount)
         assertFalse(c.allDone)

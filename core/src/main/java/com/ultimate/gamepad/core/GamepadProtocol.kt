@@ -32,7 +32,14 @@ import java.nio.ByteOrder
  *             cubre 0..25, como en v1, para no romper la
  *             compatibilidad con los APK ya instalados); un id
  *             desconocido o corrupto se sanea a Xbox 360 en destino.
- *  29  : 3 : reservado, debe ser 0
+ *  29  : 1 : extraButtons (Fase 4, GamepadExtraButtons): bit 0 =
+ *             L4, bit 1 = R4. El bitmask de 16 bits está lleno
+ *             (16/16) y no se puede ampliar sin romper el
+ *             protocolo, así que L4/R4 viajan aquí. Tampoco va
+ *             cubierto por el CRC (igual que el profileId): un bit
+ *             corrupto solo pulsa L4/R4 un instante y el siguiente
+ *             paquete lo corrige. Los paquetes viejos llevan 0.
+ *  30  : 2 : reservado, debe ser 0
  *
  * La TV descarta cualquier paquete con magic, versión o checksum
  * incorrectos, y nunca aplica un paquete con sequence más viejo que
@@ -75,7 +82,7 @@ object GamepadProtocol {
         val crc = crc16(buf.array(), 0, 26)
         buf.putShort(crc.toShort())
         buf.put((profileId and 0xFF).toByte()) // offset 28: profileId
-        buf.put(0) // offset 29: reservado
+        buf.put((state.extraButtons and 0xFF).toByte()) // offset 29: L4/R4 (Fase 4)
         buf.put(0) // offset 30: reservado
         buf.put(0) // offset 31: reservado
         return buf.array()
@@ -84,6 +91,12 @@ object GamepadProtocol {
     /** Lee el profileId del byte 28 de un paquete en bruto (0 si no hay). Sin validar: el llamador debe haber decodificado el paquete antes; el id se sanea con GamepadProfiles.fromId(). */
     fun profileIdOf(bytes: ByteArray, length: Int = bytes.size): Int =
         if (length > PROFILE_OFFSET) bytes[PROFILE_OFFSET].toInt() and 0xFF else GamepadProfiles.XBOX_360_ID
+
+    const val EXTRA_BUTTONS_OFFSET: Int = 29
+
+    /** Lee los botones extra (L4/R4, GamepadExtraButtons) del byte 29 de un paquete en bruto (0 si no hay). */
+    fun extraButtonsOf(bytes: ByteArray, length: Int = bytes.size): Int =
+        if (length > EXTRA_BUTTONS_OFFSET) bytes[EXTRA_BUTTONS_OFFSET].toInt() and 0xFF else 0
 
     /** Devuelve null si el paquete no es válido. Nunca lanza por datos corruptos. */
     fun decode(bytes: ByteArray, length: Int = bytes.size): GamepadState? {
@@ -104,12 +117,18 @@ object GamepadProtocol {
         val rightY = i16ToFloat(buf.short)
         val leftTrigger = (buf.get().toInt() and 0xFF) / 255f
         val rightTrigger = (buf.get().toInt() and 0xFF) / 255f
+        // Bytes 26-27 = CRC (ya validado), 28 = profileId (se lee
+        // aparte con profileIdOf, no es parte del estado), 29 =
+        // extraButtons (L4/R4, Fase 4).
+        buf.position(EXTRA_BUTTONS_OFFSET)
+        val extraButtons = buf.get().toInt() and 0xFF
         return GamepadState(
             buttons = buttons,
             leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
             leftTrigger = leftTrigger, rightTrigger = rightTrigger,
             sequence = sequence, timestampMs = timestampMs,
+            extraButtons = extraButtons,
         )
     }
 

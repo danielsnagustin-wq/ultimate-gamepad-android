@@ -9,6 +9,12 @@ import kotlin.math.sqrt
  * Botones como bitmask (ver GamepadButtons). Sticks en [-1, 1],
  * gatillos en [0, 1]. Esta clase no sabe nada de Android UI,
  * Bluetooth ni red: es pura lógica y se comparte entre teléfono y TV.
+ *
+ * [extraButtons] (Fase 4): botones extra que NO caben en el
+ * bitmask de 16 bits (GamepadExtraButtons: L4/R4). Viajan en el
+ * byte reservado 29 del protocolo (GamepadProtocol), NO en el
+ * bitmask; por eso el remapeo de GameProfile NO los cubre y el
+ * descriptor HID (12/14 botones) tampoco los envía por Bluetooth.
  */
 data class GamepadState(
     val buttons: Int = 0,
@@ -20,8 +26,11 @@ data class GamepadState(
     val rightTrigger: Float = 0f,
     val sequence: Int = 0,
     val timestampMs: Long = 0L,
+    val extraButtons: Int = 0,
 ) {
     fun isPressed(button: Int): Boolean = (buttons and button) != 0
+
+    fun isExtraPressed(button: Int): Boolean = (extraButtons and button) != 0
 
     fun withDeadZone(deadZone: Float): GamepadState {
         require(deadZone in 0f..0.9f) { "deadZone debe estar entre 0 y 0.9" }
@@ -78,4 +87,19 @@ object GamepadButtons {
     const val DPAD_RIGHT: Int = 1 shl 13
     const val HOME: Int = 1 shl 14
     const val CAPTURE: Int = 1 shl 15
+}
+
+/**
+ * Botones extra (Fase 4). El bitmask de 16 bits está lleno
+ * (16/16) y NO se puede ampliar sin romper el protocolo: L4/R4
+ * viajan en el byte reservado 29 (bit 0 = L4, bit 1 = R4) y se
+ * guardan en GamepadState.extraButtons, separados del bitmask.
+ * En la TV se inyectan como BTN_TRIGGER_HAPPY2/3 (uinput); por
+ * Bluetooth HID NO se envían (el descriptor declara 12/14
+ * botones y no hay hueco para L4/R4) y el remapeo por juego
+ * tampoco los cubre.
+ */
+object GamepadExtraButtons {
+    const val L4: Int = 1 shl 0
+    const val R4: Int = 1 shl 1
 }
