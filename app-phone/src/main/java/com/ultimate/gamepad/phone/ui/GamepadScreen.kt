@@ -4,12 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +38,11 @@ import kotlinx.coroutines.delay
  * Joystick izquierdo + cruceta + A/B/X/Y + Start/Select.
  * Joystick derecho, gatillos LT/RT analógicos, LB/RB y L3/R3
  * llegan en Etapa 2; no se dibujan como botones falsos.
+ *
+ * Orientación: horizontal Y vertical (el manifest usa fullSensor).
+ * En horizontal, el mando clásico de tres columnas; en vertical,
+ * stick + cruceta a la izquierda, A/B/X/Y a la derecha y
+ * SELECT/START abajo. Todo cabe en el A17 vertical (~412x914 dp).
  */
 @Composable
 fun GamepadScreen(vm: GamepadViewModel) {
@@ -43,7 +52,8 @@ fun GamepadScreen(vm: GamepadViewModel) {
         while (ui.status == ConnectionStatus.CONNECTED) { vm.refreshPing(); delay(1000) }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0B0E14)).padding(12.dp)) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color(0xFF0B0E14)).padding(12.dp)) {
+        val isLandscape = maxWidth > maxHeight
         Column(modifier = Modifier.fillMaxSize()) {
             // Barra de estado real, no decorativa.
             Row(
@@ -79,33 +89,65 @@ fun GamepadScreen(vm: GamepadViewModel) {
             // Selector multi-transporte con estado REAL por método.
             TransportSelectorRow(vm, ui)
 
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Izquierda: joystick + cruceta.
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    JoystickView(onMove = { x, y -> vm.setLeftStick(x, y) }, onRelease = { vm.setLeftStick(0f, 0f) })
-                    DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) })
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LeftControls(vm)
+                    // Centro: Start / Select.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SmallButton("SELECT") { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) }
+                        SmallButton("START") { pressed -> vm.setButton(GamepadButtons.START, pressed) }
+                        Text("Etapa 1: stick derecho y gatillos en Etapa 2", color = Color(0xFF666C7A), fontSize = 11.sp)
+                    }
+                    AbxyPad(vm)
                 }
-                // Centro: Start / Select.
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LeftControls(vm)
+                    AbxyPad(vm)
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     SmallButton("SELECT") { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) }
+                    Spacer(Modifier.width(16.dp))
                     SmallButton("START") { pressed -> vm.setButton(GamepadButtons.START, pressed) }
-                    Text("Etapa 1: stick derecho y gatillos en Etapa 2", color = Color(0xFF666C7A), fontSize = 11.sp)
                 }
-                // Derecha: A/B/X/Y.
-                Box(modifier = Modifier.size(180.dp)) {
-                    GamepadButton("Y", Color(0xFFFFC107), Modifier.align(Alignment.TopCenter)) { p -> vm.setButton(GamepadButtons.Y, p) }
-                    GamepadButton("X", Color(0xFF2196F3), Modifier.align(Alignment.CenterStart)) { p -> vm.setButton(GamepadButtons.X, p) }
-                    GamepadButton("B", Color(0xFFF44336), Modifier.align(Alignment.CenterEnd)) { p -> vm.setButton(GamepadButtons.B, p) }
-                    GamepadButton("A", Color(0xFF4CAF50), Modifier.align(Alignment.BottomCenter)) { p -> vm.setButton(GamepadButtons.A, p) }
-                }
+                Spacer(Modifier.height(8.dp))
+                Text("Etapa 1: stick derecho y gatillos en Etapa 2", color = Color(0xFF666C7A), fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
         }
         if (ui.showConnectSheet) ConnectSheet(vm, ui)
         if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeConnect() })
+    }
+}
+
+/** Izquierda: joystick + cruceta. */
+@Composable
+private fun LeftControls(vm: GamepadViewModel) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        JoystickView(onMove = { x, y -> vm.setLeftStick(x, y) }, onRelease = { vm.setLeftStick(0f, 0f) })
+        DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) })
+    }
+}
+
+/** Derecha: A/B/X/Y. */
+@Composable
+private fun AbxyPad(vm: GamepadViewModel) {
+    Box(modifier = Modifier.size(180.dp)) {
+        GamepadButton("Y", Color(0xFFFFC107), Modifier.align(Alignment.TopCenter)) { p -> vm.setButton(GamepadButtons.Y, p) }
+        GamepadButton("X", Color(0xFF2196F3), Modifier.align(Alignment.CenterStart)) { p -> vm.setButton(GamepadButtons.X, p) }
+        GamepadButton("B", Color(0xFFF44336), Modifier.align(Alignment.CenterEnd)) { p -> vm.setButton(GamepadButtons.B, p) }
+        GamepadButton("A", Color(0xFF4CAF50), Modifier.align(Alignment.BottomCenter)) { p -> vm.setButton(GamepadButtons.A, p) }
     }
 }
 

@@ -9,11 +9,18 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -36,17 +43,37 @@ import com.google.mlkit.vision.common.InputImage
 fun ConnectSheet(vm: GamepadViewModel, ui: GamepadUiState) {
     var host by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
-    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    // Pantalla completa OPACA con scroll: antes esta hoja se dibujaba
+    // sin fondo encima del mando y todos los textos se solapaban
+    // (estado, selector de transporte, campos IP/PIN). El fondo
+    // opaco tapa el mando, el scroll cabe en horizontal, y el
+    // clickable vacío se traga los toques para que no lleguen al
+    // joystick de detrás.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0E14))
+            .verticalScroll(rememberScrollState())
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { }
+            .padding(16.dp),
+    ) {
         Text("Conectar a la TV — misma red Wi-Fi")
         Spacer(Modifier.height(8.dp))
         Text("1) Abre Ultimate Gamepad en la TV y anota su IP y PIN, o escanea su QR.")
-        Text("Modo Sin router / Hotspot: activa el hotspot del Samsung, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = androidx.compose.ui.graphics.Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Modo Sin router / Hotspot: activa el hotspot del Samsung, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.openQrScanner() }) { Text("Escanear QR de la TV") }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
         OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("IP de la TV, ej. 192.168.1.20") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
+        OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos") }, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
+        Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.closeConnect() }) { Text("Cancelar") }
     }
 }
@@ -64,36 +91,52 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> hasPermission = granted }
-    if (!hasPermission) {
-        Column(Modifier.padding(16.dp)) {
+    // Igual que ConnectSheet: pantalla completa OPACA. Antes el
+    // PreviewView y el botón se emitían sueltos dentro del Box del
+    // mando y se dibujaban uno encima del otro y sobre el mando.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0E14))
+            .verticalScroll(rememberScrollState())
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { }
+            .padding(16.dp),
+    ) {
+        if (!hasPermission) {
             Text("Se necesita la cámara para escanear el QR de la TV.")
+            Spacer(Modifier.height(12.dp))
             Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Dar permiso de cámara") }
+            Spacer(Modifier.height(8.dp))
             Button(onClick = onClose) { Text("Volver a IP / PIN") }
+            return@Column
         }
-        return
+        AndroidView(factory = { ctx ->
+            PreviewView(ctx).also { previewView ->
+                val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                providerFuture.addListener({
+                    val provider = providerFuture.get()
+                    val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                    val scanner = BarcodeScanning.getClient()
+                    val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
+                    analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                        val mediaImage = imageProxy.image
+                        if (mediaImage == null) { imageProxy.close(); return@setAnalyzer }
+                        val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                        scanner.process(input)
+                            .addOnSuccessListener { barcodes ->
+                                barcodes.firstOrNull()?.rawValue?.let { onResult(it) }
+                            }
+                            .addOnCompleteListener { imageProxy.close() }
+                    }
+                    provider.unbindAll()
+                    provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                }, ContextCompat.getMainExecutor(ctx))
+            }
+        }, modifier = Modifier.fillMaxWidth().height(320.dp))
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onClose) { Text("Cancelar escaneo") }
     }
-    AndroidView(factory = { ctx ->
-        PreviewView(ctx).also { previewView ->
-            val providerFuture = ProcessCameraProvider.getInstance(ctx)
-            providerFuture.addListener({
-                val provider = providerFuture.get()
-                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-                val scanner = BarcodeScanning.getClient()
-                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-                analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                    val mediaImage = imageProxy.image
-                    if (mediaImage == null) { imageProxy.close(); return@setAnalyzer }
-                    val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                    scanner.process(input)
-                        .addOnSuccessListener { barcodes ->
-                            barcodes.firstOrNull()?.rawValue?.let { onResult(it) }
-                        }
-                        .addOnCompleteListener { imageProxy.close() }
-                }
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-            }, ContextCompat.getMainExecutor(ctx))
-        }
-    }, modifier = Modifier.fillMaxWidth().height(320.dp))
-    Button(onClick = onClose) { Text("Cancelar escaneo") }
 }
