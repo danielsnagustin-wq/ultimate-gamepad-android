@@ -663,7 +663,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             var skipped = 0
             for (c in text) {
-                val (code, shift) = KeyMap.forChar(c) ?: run { skipped++; continue }
+                // Sin Elvis + run { continue }: el `continue` dentro
+                // de una lambda inline es experimental ("break
+                // continue in inline lambdas") y el compilador de
+                // CI lo rechaza (run 42421440729, paso 6). La forma
+                // explícita compila siempre.
+                val mapped = KeyMap.forChar(c)
+                if (mapped == null) { skipped++; continue }
+                val (code, shift) = mapped
                 if (shift) sendExtras(ExtrasProtocol.encodeKeyboard(KeyMap.KEY_LEFTSHIFT, ExtrasProtocol.ACTION_PRESS), quiet = true)
                 sendExtras(ExtrasProtocol.encodeKeyboard(code, ExtrasProtocol.ACTION_PRESS), quiet = true)
                 delay(15)
