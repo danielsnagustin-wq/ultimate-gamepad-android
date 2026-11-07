@@ -134,7 +134,7 @@ fun GamepadScreen(vm: GamepadViewModel) {
 /** Izquierda: joystick + cruceta. */
 @Composable
 private fun LeftControls(vm: GamepadViewModel) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         JoystickView(onMove = { x, y -> vm.setLeftStick(x, y) }, onRelease = { vm.setLeftStick(0f, 0f) })
         DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) })
     }
