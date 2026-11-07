@@ -198,6 +198,11 @@ fun GamepadScreen(vm: GamepadViewModel) {
         if (ui.showSettings) SettingsScreen(vm, ui)
         if (ui.showLayoutEditor) LayoutEditorScreen(vm) { vm.closeLayoutEditor() }
         if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeSettings() })
+        // Pantallas Fase 3 (se abren desde Ajustes, vuelven a Ajustes al cerrar).
+        if (ui.showControllerType) ControllerTypeScreen(vm, ui) { vm.closeControllerType() }
+        if (ui.showGameProfiles) GameProfilesScreen(vm) { vm.closeGameProfiles() }
+        if (ui.showControllerTest) ControllerTestScreen(vm, ui) { vm.closeControllerTest() }
+        if (ui.showPerformance) PerformanceScreen(vm, ui) { vm.closePerformance() }
     }
 }
 

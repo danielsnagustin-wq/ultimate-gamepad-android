@@ -152,6 +152,27 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             valueRange = 0f..0.15f,
         )
         Spacer(Modifier.height(16.dp))
+        // --- Mando PRO (Fase 3) ---
+        Text("Mando PRO", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Tipo de mando, perfiles por juego, prueba de mando y rendimiento.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openControllerType() }, modifier = Modifier.fillMaxWidth()) {
+            Text("🎮  Tipo de mando (Xbox / PlayStation)")
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openGameProfiles() }, modifier = Modifier.fillMaxWidth()) {
+            Text("🗂️  Perfiles por juego")
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openControllerTest() }, modifier = Modifier.fillMaxWidth()) {
+            Text("🧪  Prueba de mando (qué se envía)")
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openPerformance() }, modifier = Modifier.fillMaxWidth()) {
+            Text("📶  Rendimiento (latencia y red)")
+        }
+        Spacer(Modifier.height(16.dp))
         Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }
     }
 }

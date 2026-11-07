@@ -6,15 +6,17 @@ import androidx.compose.runtime.Composable
 /**
  * PANTALLAS PENDIENTES, NO FUNCIONES FALSAS.
  *
- * Los PERFILES por juego NO están implementados todavía. El editor
- * de controles SÍ existe ya (ui/LayoutEditorScreen.kt: panel visual
- * para mover, tamaño, transparencia, dead zones) y se abre desde
- * Ajustes > Personalizar botones; el EditorTodoScreen de aquí es
- * solo un marcador y no se enlaza desde ningún botón. Estas
- * pantallas existen para reservar la navegación y dejar claro qué
- * falta. No se enlazan desde ningún botón que prometa que ya
- * funcionan. Los perfiles llegan en Etapa 3 (perfiles por juego +
- * import/export).
+ * Los PERFILES por juego YA están implementados (Fase 3):
+ * GameProfilesScreen.kt, enlazada desde Ajustes > Mando PRO >
+ * Perfiles por juego. El ProfilesTodoScreen de aquí es solo el
+ * puente histórico y delega en la pantalla real.
+ * El editor de controles SÍ existe ya (ui/LayoutEditorScreen.kt:
+ * panel visual para mover, tamaño, transparencia, dead zones) y
+ * se abre desde Ajustes > Personalizar botones; el
+ * EditorTodoScreen de aquí es solo un marcador y no se enlaza
+ * desde ningún botón.
  */
 @Composable fun EditorTodoScreen() = Text("El editor de controles ya existe: Ajustes > Personalizar botones (panel visual).")
-@Composable fun ProfilesTodoScreen() = Text("TODO Etapa 3 — Perfiles por juego, guardar / importar / exportar.")
+
+/** Perfiles por juego (Fase 3): pantalla real, no TODO. */
+@Composable fun ProfilesTodoScreen(vm: GamepadViewModel) = GameProfilesScreen(vm) {}

@@ -22,6 +22,7 @@ import com.ultimate.gamepad.core.GamepadProfiles
 object GamepadProfilePrefs {
     private const val PREFS = "ultimate_gamepad_profile"
     private const val KEY_PROFILE_ID = "profile_id"
+    private const val KEY_PREVIOUS_PROFILE_ID = "previous_profile_id"
 
     fun load(context: Context): Int =
         GamepadProfiles.fromId(
@@ -33,5 +34,17 @@ object GamepadProfilePrefs {
         val id = GamepadProfiles.fromId(profileId).id
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putInt(KEY_PROFILE_ID, id).apply()
+    }
+
+    /** Perfil anterior al último cambio (Fase 3: "Volver al perfil anterior"). Null si nunca se cambió. */
+    fun loadPrevious(context: Context): Int? {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_PREVIOUS_PROFILE_ID, -1)
+        return if (raw < 0) null else GamepadProfiles.fromId(raw).id
+    }
+
+    fun savePrevious(context: Context, profileId: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putInt(KEY_PREVIOUS_PROFILE_ID, GamepadProfiles.fromId(profileId).id).apply()
     }
 }

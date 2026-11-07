@@ -75,6 +75,36 @@ object LayoutPrefs {
     fun load(context: Context): LayoutConfig {
         val json = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_JSON, null)
             ?: return LayoutConfig()
+        return fromJson(json)
+    }
+
+    fun save(context: Context, config: LayoutConfig) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_JSON, toJson(config)).apply()
+    }
+
+    /**
+     * Serialización del diseño como JSON (Fase 3: los perfiles por
+     * juego guardan el diseño dentro del perfil). Extraída de
+     * load()/save() sin cambiar el formato: el JSON que guardaba
+     * un perfil es el mismo que guarda el diseño global.
+     */
+    fun toJson(config: LayoutConfig): String {
+        val root = JSONObject()
+        for ((id, layout) in config.elements) {
+            root.put(id, JSONObject().apply {
+                put("visible", layout.visible)
+                put("scale", layout.scale.toDouble())
+                put("x", layout.offsetXdp)
+                put("y", layout.offsetYdp)
+                put("opacity", layout.opacity.toDouble())
+            })
+        }
+        return root.toString()
+    }
+
+    fun fromJson(json: String?): LayoutConfig {
+        if (json == null) return LayoutConfig()
         return runCatching {
             val root = JSONObject(json)
             val elements = LayoutConfig.NAMES.keys.associateWith { id ->
@@ -89,20 +119,5 @@ object LayoutPrefs {
             }
             LayoutConfig(elements)
         }.getOrDefault(LayoutConfig())
-    }
-
-    fun save(context: Context, config: LayoutConfig) {
-        val root = JSONObject()
-        for ((id, layout) in config.elements) {
-            root.put(id, JSONObject().apply {
-                put("visible", layout.visible)
-                put("scale", layout.scale.toDouble())
-                put("x", layout.offsetXdp)
-                put("y", layout.offsetYdp)
-                put("opacity", layout.opacity.toDouble())
-            })
-        }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_JSON, root.toString()).apply()
     }
 }

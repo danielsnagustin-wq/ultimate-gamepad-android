@@ -11,6 +11,7 @@ import com.ultimate.gamepad.core.ConnectionHealth
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
+import com.ultimate.gamepad.core.NetworkStats
 import com.ultimate.gamepad.core.TcpGamepadTransport
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.UdpTransport
@@ -70,6 +71,42 @@ class GamepadSenderService : Service() {
             private set
         @Volatile var activeMethod: TransportMethod = TransportMethod.WIFI_UDP
             private set
+        // --- Estadísticas de rendimiento (Fase 3, pantalla Rendimiento) ---
+        /** Paquetes de estado enviados desde que se conectó. */
+        @Volatile var packetsSent: Long = 0
+            private set
+        /** Paquetes/s enviados (ventana deslizante de 1 s; objetivo ~120). */
+        @Volatile var packetsPerSec: Int = 0
+            private set
+        /** Jitter del ping (ms, media de |ping[i]-ping[i-1]|, últimas 20 muestras); null con menos de 2 ecos. */
+        @Volatile var pingJitterMs: Long? = null
+            private set
+        private val pingSamples = ArrayDeque<Long>()
+        private val sentAtMs = ArrayDeque<Long>()
+
+        fun recordPingSample(pingMs: Long) {
+            synchronized(pingSamples) {
+                pingSamples.addLast(pingMs)
+                while (pingSamples.size > 20) pingSamples.removeFirst()
+                pingJitterMs = NetworkStats.jitterMs(pingSamples.toList())
+            }
+        }
+
+        fun recordSent() {
+            val now = System.currentTimeMillis()
+            packetsSent++
+            synchronized(sentAtMs) {
+                sentAtMs.addLast(now)
+                while (sentAtMs.isNotEmpty() && now - sentAtMs.first() > 1000) sentAtMs.removeFirst()
+                packetsPerSec = sentAtMs.size
+            }
+        }
+
+        fun resetStats() {
+            packetsSent = 0; packetsPerSec = 0; pingJitterMs = null
+            synchronized(pingSamples) { pingSamples.clear() }
+            synchronized(sentAtMs) { sentAtMs.clear() }
+        }
 
         fun isTvResponding(): Boolean =
             if (activeMethod == TransportMethod.WIFI_TCP) {
@@ -89,6 +126,7 @@ class GamepadSenderService : Service() {
         /** Limpia los marcadores de salud (al entrar en HID o al desconectar): un eco viejo de Wi-Fi no debe fingir que la TV responde. */
         fun resetHealth() {
             lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L
+            resetStats()
         }
     }
 
@@ -159,6 +197,7 @@ class GamepadSenderService : Service() {
                             TransportMethod.WIFI_UDP -> {
                                 if (udp == null) udp = UdpTransport()
                                 udp.send(state, address, port, GamepadSender.activeProfileId)
+                                recordSent()
                                 val now = System.currentTimeMillis()
                                 if (now - lastPingSentAt >= 500) {
                                     lastPingSentAt = now; pingSequence = sequence
@@ -167,6 +206,7 @@ class GamepadSenderService : Service() {
                                 udp.receive(1) { echoed, isPing, _ ->
                                     if (isPing && echoed.sequence == pingSequence) {
                                         lastPingMs = System.currentTimeMillis() - echoed.timestampMs
+                                        recordPingSample(lastPingMs!!)
                                         lastEchoAtMs = System.currentTimeMillis()
                                     }
                                 }
@@ -194,6 +234,7 @@ class GamepadSenderService : Service() {
                                             if (!GamepadProtocol.isPing(raw)) continue
                                             val echoed = GamepadProtocol.decode(raw) ?: continue
                                             lastPingMs = System.currentTimeMillis() - echoed.timestampMs
+                                            recordPingSample(lastPingMs!!)
                                             lastEchoAtMs = System.currentTimeMillis()
                                         }
                                     }
@@ -206,6 +247,7 @@ class GamepadSenderService : Service() {
                                 val currentTcp = tcp ?: throw java.io.IOException("TCP no conectado")
                                 val sent = withTimeoutOrNull(500) { currentTcp.send(state, GamepadSender.activeProfileId); true } ?: false
                                 if (!sent) throw java.io.IOException("TCP sin respuesta (escritura bloqueada)")
+                                recordSent()
                                 // Ping TCP con eco (Fase 1): cada 500 ms
                                 // igual que por UDP. El lector de arriba
                                 // mide el RTT real; el envío sin

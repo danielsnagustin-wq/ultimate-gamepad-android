@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultimate.gamepad.core.DiscoveredTv
+import com.ultimate.gamepad.core.GameProfile
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
@@ -19,6 +20,7 @@ import com.ultimate.gamepad.core.TransportStatus
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.DiscoveryClient
+import com.ultimate.gamepad.phone.network.GamepadProfilePrefs
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
 import kotlinx.coroutines.Job
@@ -55,6 +57,21 @@ data class GamepadUiState(
     val showSettings: Boolean = false,
     val showLayoutEditor: Boolean = false,
     val showQrScanner: Boolean = false,
+    // Pantallas Fase 3 (TIPO DE MANDO, Perfiles, Prueba, Rendimiento).
+    val showControllerType: Boolean = false,
+    val showGameProfiles: Boolean = false,
+    val showControllerTest: Boolean = false,
+    val showPerformance: Boolean = false,
+    /** Perfil de emulación activo (visual + emulación a la vez). */
+    val activeProfileId: Int = GamepadProfiles.XBOX_360_ID,
+    /** Perfil anterior, para "Volver al perfil anterior". */
+    val previousProfileId: Int? = null,
+    /** Nombre del perfil de juego aplicado (si hay uno). */
+    val activeGameProfileName: String? = null,
+    // Rendimiento (Fase 3): se actualizan con refreshPerformance().
+    val pingJitterMs: Long? = null,
+    val packetsPerSec: Int = 0,
+    val packetsSent: Long = 0,
     // Descubrimiento de TVs en la red (Ajustes > Buscar TV).
     val discovering: Boolean = false,
     val discoveredTvs: List<DiscoveredTv> = emptyList(),
@@ -86,6 +103,26 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // enteraba: ahora el ViewModel reacciona (fallback a Wi-Fi
         // + reintento en segundo plano). Ver onHidConnectionChanged().
         hidService.onConnectionChanged = { status -> onHidConnectionChanged(status) }
+        // Perfil guardado (Fase 3): el emisor en proceso debe llevar
+        // el mismo que el guardado, no el 0 por defecto, o el primer
+        // paquete tras arrancar saldría como Xbox 360 con otro perfil
+        // activo en la UI.
+        GamepadSender.loadSavedProfile(application)
+        val savedProfile = GamepadProfilePrefs.load(application)
+        _ui.update {
+            it.copy(
+                activeProfileId = savedProfile,
+                previousProfileId = GamepadProfilePrefs.loadPrevious(application),
+            )
+        }
+        // Último perfil de juego aplicado: se reaplican sus ajustes
+        // (mando, zona muerta, curva, gatillos, remap, diseño) en
+        // silencio al arrancar, sin anunciar nada.
+        GameProfilePrefs.loadActiveName(application)?.let { name ->
+            GameProfilePrefs.loadAll(application)
+                .firstOrNull { it.name == name }
+                ?.let { applyGameProfile(it, announce = false) }
+        }
     }
 
     /** Diseño del mando a gusto del usuario (tamaño/posición/quitar). */
@@ -113,15 +150,95 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
      * paquete (la TV recrea el mando al ver el profileId nuevo).
      * El touchpad de DS4/DualSense NO se emula en esta versión
      * (opción (a) del plan) y la UI de la Fase 3 deberá decirlo.
+     * El perfil anterior se guarda para poder volver atrás desde
+     * TIPO DE MANDO sin tener que recordar cuál era.
      */
     fun setActiveProfile(profileId: Int) {
         val profile = GamepadProfiles.fromId(profileId)
+        val previous = GamepadSender.activeProfileId
         GamepadSender.setActiveProfile(getApplication(), profile.id)
+        if (previous != profile.id) GamepadProfilePrefs.savePrevious(getApplication(), previous)
         if (hidService.appRegistered) {
             hidService.unregister()
             hidService.register(profile.id)
         }
-        _ui.update { it.copy(info = "Perfil activo: ${profile.name} (${profile.deviceName}). La TV recreará el mando virtual con ese perfil; si OpenNOW no lo re-enumera, reinicia OpenNOW.") }
+        _ui.update {
+            it.copy(
+                activeProfileId = profile.id,
+                previousProfileId = if (previous != profile.id) previous else it.previousProfileId,
+                info = "Perfil activo: ${profile.name} (${profile.deviceName}). La TV recreará el mando virtual con ese perfil; si OpenNOW no lo re-enumera, reinicia OpenNOW.",
+            )
+        }
+    }
+
+    /** Vuelve al perfil anterior al último cambio (TIPO DE MANDO). */
+    fun revertProfile() {
+        val prev = _ui.value.previousProfileId ?: return
+        setActiveProfile(prev)
+    }
+
+    /** Curva de respuesta de los sticks (0.5..1.5; 0.85 por defecto). */
+    private val _curve = MutableStateFlow(0.85f)
+    val responseCurve: StateFlow<Float> = _curve.asStateFlow()
+
+    fun setCurve(value: Float) {
+        _curve.value = value.coerceIn(0.5f, 1.5f)
+    }
+
+    /** Sensibilidad de los gatillos (0.5..1.5; 1.0 = tal cual). */
+    private val _triggerScale = MutableStateFlow(1f)
+    val triggerScale: StateFlow<Float> = _triggerScale.asStateFlow()
+
+    fun setTriggerScale(value: Float) {
+        _triggerScale.value = value.coerceIn(0.5f, 1.5f)
+    }
+
+    /** Remapeo de botones activo (bit origen -> bit destino). */
+    private val _remap = MutableStateFlow<Map<Int, Int>>(emptyMap())
+    val buttonRemap: StateFlow<Map<Int, Int>> = _remap.asStateFlow()
+
+    fun setButtonRemap(remap: Map<Int, Int>) {
+        _remap.value = remap
+            .filter { (from, to) -> from in GameProfile.ALL_BUTTON_BITS && to in GameProfile.ALL_BUTTON_BITS && from != to }
+    }
+
+    /** Traduce un bitmask por el remapeo activo (bit a bit, así un intercambio A<->B vale en los dos sentidos). */
+    private fun remapButtons(buttons: Int): Int {
+        val remap = _remap.value
+        if (remap.isEmpty()) return buttons
+        var out = 0
+        for (bit in GameProfile.ALL_BUTTON_BITS) {
+            if ((buttons and bit) != 0) out = out or (remap[bit] ?: bit)
+        }
+        return out
+    }
+
+    /**
+     * Aplica un perfil de juego completo (Fase 3): tipo de mando,
+     * zona muerta, curva, sensibilidad de gatillos, remapeo y, si
+     * el perfil trae uno guardado, el diseño de botones. Guarda el
+     * nombre como perfil activo para reaplicarlo al arrancar.
+     */
+    fun applyGameProfile(profile: GameProfile, announce: Boolean = true) {
+        val p = profile.sanitized()
+        setActiveProfile(p.profileId)
+        setDeadZone(p.deadZone)
+        setCurve(p.curve)
+        setTriggerScale(p.triggerScale)
+        setButtonRemap(p.remap)
+        p.layoutJson?.let { json ->
+            runCatching { LayoutPrefs.fromJson(json) }.getOrNull()?.let { layout ->
+                _layout.value = layout
+                LayoutPrefs.save(getApplication(), layout)
+            }
+        }
+        GameProfilePrefs.saveActiveName(getApplication(), p.name)
+        _ui.update {
+            it.copy(
+                activeGameProfileName = p.name,
+                info = if (announce) "Perfil de juego aplicado: ${p.name} (${GamepadProfiles.fromId(p.profileId).name})." else it.info,
+            )
+        }
     }
 
     fun updateElement(id: String, layout: ButtonLayout) {
@@ -145,6 +262,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private var rightTrigger = 0f
 
     fun setButton(button: Int, pressed: Boolean) {
+        // Los botones se guardan SIN mapear: el remapeo se aplica
+        // una sola vez, en publish(). Si se mapeara aquí y en
+        // publish(), un intercambio A<->B se desharía solo.
         buttons = if (pressed) buttons or button else buttons and button.inv()
         publish()
     }
@@ -167,13 +287,17 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private fun publish() {
         // Sensibilidad: la zona muerta (ajustable en Ajustes,
         // 0.05 por defecto) es el % del recorrido que no hace
-        // nada; la curva 0.85 deja el stick más vivo en el centro,
-        // sin volverse brusco, para que responda desde el primer toque.
+        // nada; la curva (0.85 por defecto, ajustable por perfil
+        // de juego) deja el stick más vivo en el centro, sin
+        // volverse brusco, para que responda desde el primer toque.
+        // Los gatillos se escalan por el perfil de juego (x1.0 por
+        // defecto) y los botones pasan por el remapeo activo.
         val state = GamepadState(
-            buttons = buttons, leftX = leftX, leftY = leftY,
+            buttons = remapButtons(buttons), leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
-            leftTrigger = leftTrigger, rightTrigger = rightTrigger,
-        ).withDeadZone(_deadZone.value).withResponseCurve(0.85f)
+            leftTrigger = (leftTrigger * _triggerScale.value).coerceIn(0f, 1f),
+            rightTrigger = (rightTrigger * _triggerScale.value).coerceIn(0f, 1f),
+        ).withDeadZone(_deadZone.value).withResponseCurve(_curve.value)
         GamepadSender.currentState = state
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.
@@ -182,8 +306,18 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** La pantalla del mando es solo el mando: todo lo de conexión vive en Ajustes (⚙). */
     fun openSettings() = _ui.update { it.copy(showSettings = true, error = null) }
-    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false) }
+    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false, showControllerType = false, showGameProfiles = false, showControllerTest = false, showPerformance = false) }
     fun openQrScanner() = _ui.update { it.copy(showQrScanner = true) }
+
+    /** Pantallas Fase 3: se abren desde Ajustes y se vuelve a Ajustes al cerrar. */
+    fun openControllerType() = _ui.update { it.copy(showControllerType = true, showSettings = false) }
+    fun closeControllerType() = _ui.update { it.copy(showControllerType = false, showSettings = true) }
+    fun openGameProfiles() = _ui.update { it.copy(showGameProfiles = true, showSettings = false) }
+    fun closeGameProfiles() = _ui.update { it.copy(showGameProfiles = false, showSettings = true) }
+    fun openControllerTest() = _ui.update { it.copy(showControllerTest = true, showSettings = false) }
+    fun closeControllerTest() = _ui.update { it.copy(showControllerTest = false, showSettings = true) }
+    fun openPerformance() = _ui.update { it.copy(showPerformance = true, showSettings = false) }
+    fun closePerformance() = _ui.update { it.copy(showPerformance = false, showSettings = true) }
 
     /** Panel visual de botones: se abre desde Ajustes y se cierra volviendo al mando. */
     fun openLayoutEditor() = _ui.update { it.copy(showLayoutEditor = true, showSettings = false) }
@@ -469,6 +603,21 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, info = null) }
     }
 
+    /** Rendimiento (Fase 3): ping, jitter y paquetes del servicio de envío. */
+    fun refreshPerformance() {
+        val responding = GamepadSenderService.isTvResponding()
+        _ui.update {
+            it.copy(
+                pingMs = GamepadSenderService.lastPingMs,
+                pingJitterMs = GamepadSenderService.pingJitterMs,
+                packetsPerSec = GamepadSenderService.packetsPerSec,
+                packetsSent = GamepadSenderService.packetsSent,
+                tvResponding = responding,
+                error = GamepadSenderService.lastError,
+            )
+        }
+    }
+
     fun refreshPing() {
         val responding = GamepadSenderService.isTvResponding()
         _ui.update {
@@ -520,6 +669,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setDpad(up: Boolean, down: Boolean, left: Boolean, right: Boolean) {
+        // Igual que setButton: se guardan los bits sin mapear; el
+        // remapeo se aplica una sola vez, en publish().
         if (up) buttons = buttons or GamepadButtons.DPAD_UP else buttons = buttons and GamepadButtons.DPAD_UP.inv()
         if (down) buttons = buttons or GamepadButtons.DPAD_DOWN else buttons = buttons and GamepadButtons.DPAD_DOWN.inv()
         if (left) buttons = buttons or GamepadButtons.DPAD_LEFT else buttons = buttons and GamepadButtons.DPAD_LEFT.inv()
