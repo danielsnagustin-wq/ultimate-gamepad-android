@@ -82,8 +82,13 @@ class Fase3CoreTest {
         assertEquals(2, NetworkStats.sequenceGap(5, 8))
         assertEquals(0, NetworkStats.sequenceGap(5, 5))
         assertEquals(0, NetworkStats.sequenceGap(5, 4))
-        assertEquals(0, NetworkStats.sequenceGap(65534, 1))
-        assertEquals(1, NetworkStats.sequenceGap(65534, 2))
+        // Wrap: de 65534 a 1 faltan 65535 y 0 (hueco 2); a 2
+        // faltan 65535, 0 y 1 (hueco 3); de 65535 a 0 es
+        // consecutivo (hueco 0) y a 1 falta solo el 0 (hueco 1).
+        assertEquals(2, NetworkStats.sequenceGap(65534, 1))
+        assertEquals(3, NetworkStats.sequenceGap(65534, 2))
+        assertEquals(0, NetworkStats.sequenceGap(65535, 0))
+        assertEquals(1, NetworkStats.sequenceGap(65535, 1))
     }
 
     // --- GameProfile ---
