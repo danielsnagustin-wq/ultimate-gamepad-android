@@ -1,16 +1,20 @@
 /*
- * Mando virtual Xbox 360 vía /dev/uinput — implementación nativa.
+ * Mando virtual vía /dev/uinput — implementación nativa (Fase 2).
  *
  * Corre en el proceso shell (uid 2000) del UserService de Shizuku:
  * solo ese proceso puede abrir /dev/uinput. La app normal NUNCA
  * llama a esto directamente.
  *
- * Dispositivo expuesto (ver UinputSpec en :core, una sola fuente
- * de verdad): nombre EXACTO "Xbox 360 Controller", vendor 0x045E,
- * product 0x028E, bustype BUS_USB, version 0x0114. Solo botones y
- * ejes de mando; PROHIBIDO cualquier tecla de remoto/TV
- * (KEY_POWER, KEY_HOME, KEY_VOLUME*, KEY_MENU, KEY_BACK).
- * Por eso Android y OpenNOW lo ven como un mando físico Xbox 360
+ * Dispositivo expuesto (ver GamepadProfiles en :core, una sola
+ * fuente de verdad): depende del perfil activo (profileId del
+ * byte 28 del protocolo): Xbox 360 ("Xbox 360 Controller",
+ * 0x045E/0x028E), Xbox One (0x045E/0x02DD), DualShock 4
+ * ("Wireless Controller", 0x054C/0x05C4), DualSense
+ * ("DualSense Wireless Controller", 0x054C/0x0CE6) o genérico
+ * ("Generic Gamepad", 0x1234/0x5678); bustype BUS_USB, version
+ * 0x0114. Solo botones y ejes de mando; PROHIBIDO cualquier tecla
+ * de remoto/TV (KEY_POWER, KEY_HOME, KEY_VOLUME*, KEY_MENU,
+ * KEY_BACK). Por eso Android y OpenNOW lo ven como un mando físico
  * y NO como un control de TV.
  *
  * Si /dev/uinput no existe o el kernel lo rechaza, create()
@@ -37,7 +41,40 @@ static int uinput_fd = -1;
 static int prev_buttons = 0;
 static int prev_tl2 = 0;
 static int prev_tr2 = 0;
+static int current_profile_id = 0;
 static pthread_mutex_t report_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* Perfiles de emulación (Fase 2, GamepadProfiles en :core):
+ * mismo mapa de botones/ejes en todos (los códigos evdev de
+ * BTN_SOUTH/EAST/WEST/NORTH son los mismos que BTN_A/B/X/Y, y
+ * Options/Share/PS usan START/SELECT/BTN_MODE); lo que cambia es
+ * el nombre expuesto y el vendor/product. Un id desconocido es
+ * Xbox 360. El touchpad de DS4/DualSense NO se emula (opción (a)
+ * del plan): no hay segundo dispositivo táctil en esta versión.
+ * La háptica avanzada y los gatillos adaptativos del DualSense
+ * tampoco: necesitan reportes HID feature que uinput no expone. */
+struct gamepad_profile {
+    int id;
+    const char *name;
+    int vendor;
+    int product;
+    int version;
+};
+
+static const struct gamepad_profile kProfiles[] = {
+    {0, "Xbox 360 Controller", 0x045E, 0x028E, 0x0114},
+    {1, "Xbox One Controller", 0x045E, 0x02DD, 0x0114},
+    {2, "Wireless Controller", 0x054C, 0x05C4, 0x0114}, /* DualShock 4 */
+    {3, "DualSense Wireless Controller", 0x054C, 0x0CE6, 0x0114},
+    {4, "Generic Gamepad", 0x1234, 0x5678, 0x0114},
+};
+
+static const struct gamepad_profile *profile_for_id(int id) {
+    for (size_t i = 0; i < sizeof(kProfiles) / sizeof(kProfiles[0]); i++) {
+        if (kProfiles[i].id == id) return &kProfiles[i];
+    }
+    return &kProfiles[0]; /* Id desconocido o corrupto: Xbox 360. */
+}
 
 /* Bits del protocolo de 32 bytes (GamepadButtons) -> códigos evdev. */
 static const struct {
@@ -92,10 +129,12 @@ static int ug_destroy_locked(void) {
     prev_buttons = 0;
     prev_tl2 = 0;
     prev_tr2 = 0;
+    current_profile_id = 0;
     return 0;
 }
 
-static int ug_create(void) {
+static int ug_create(int profile_id) {
+    const struct gamepad_profile *profile = profile_for_id(profile_id);
     pthread_mutex_lock(&report_mutex);
     ug_destroy_locked();
 
@@ -148,10 +187,10 @@ static int ug_create(void) {
     struct uinput_setup setup;
     memset(&setup, 0, sizeof(setup));
     setup.id.bustype = BUS_USB;
-    setup.id.vendor = 0x045E;
-    setup.id.product = 0x028E;
-    setup.id.version = 0x0114;
-    strncpy(setup.name, "Xbox 360 Controller", sizeof(setup.name) - 1);
+    setup.id.vendor = profile->vendor;
+    setup.id.product = profile->product;
+    setup.id.version = profile->version;
+    strncpy(setup.name, profile->name, sizeof(setup.name) - 1);
     if (ioctl(uinput_fd, UI_DEV_SETUP, &setup) < 0) {
         LOGE("UI_DEV_SETUP falló: %s", strerror(errno));
         goto fail;
@@ -161,7 +200,9 @@ static int ug_create(void) {
         goto fail;
     }
 
-    LOGI("mando virtual Xbox 360 creado en /dev/uinput");
+    current_profile_id = profile->id;
+    LOGI("mando virtual '%s' (perfil %d, vendor=0x%04x product=0x%04x) creado en /dev/uinput",
+         profile->name, profile->id, profile->vendor, profile->product);
     pthread_mutex_unlock(&report_mutex);
     return 1;
 
@@ -230,10 +271,10 @@ out:
 /* ---- JNI: com.ultimate.gamepad.tv.shizuku.UinputGamepad ---- */
 
 JNIEXPORT jboolean JNICALL
-Java_com_ultimate_gamepad_tv_shizuku_UinputGamepad_nativeCreate(JNIEnv *env, jobject thiz) {
+Java_com_ultimate_gamepad_tv_shizuku_UinputGamepad_nativeCreate(JNIEnv *env, jobject thiz, jint profileId) {
     (void) env;
     (void) thiz;
-    return (jboolean) ug_create();
+    return (jboolean) ug_create((int) profileId);
 }
 
 JNIEXPORT jboolean JNICALL

@@ -3,6 +3,7 @@ package com.ultimate.gamepad.tv.receiver
 import android.view.InputDevice
 import android.view.MotionEvent
 import com.ultimate.gamepad.core.GamepadClassification
+import com.ultimate.gamepad.core.GamepadProfiles
 
 /**
  * Diagnóstico "¿Cómo me ve Android?" — Etapa 1.
@@ -19,11 +20,13 @@ import com.ultimate.gamepad.core.GamepadClassification
  *   (Xbox / Ultimate Gamepad / gamepad), y NO es solo DPAD/KEYBOARD.
  *   NUEVO — "Parece mando real": SÍ solo si TODAS estas se cumplen
  *   a la vez (comprobación, no opinión de la app):
- *   nombre == "Xbox 360 Controller" (sin "Virtual" ni "Ultimate"),
- *   vendor 0x045E, product 0x028E, sources incluyen GAMEPAD y
- *   JOYSTICK, y ejes incluyen X, Y, Z, RZ, LTRIGGER, RTRIGGER,
- *   HAT_X, HAT_Y. Si falla una, es NO y el método se marca FALLO
- *   aunque el Wi-Fi funcione: "llegó el paquete" no es éxito.
+ *   nombre, vendor y product coinciden con el perfil de emulación
+ *   activo (Fase 2: Xbox 360, Xbox One, DS4, DualSense o genérico;
+ *   por defecto Xbox 360), sin "Virtual" ni "Ultimate" en el
+ *   nombre, sources incluyen GAMEPAD y JOYSTICK, y ejes incluyen
+ *   X, Y, Z, RZ, LTRIGGER, RTRIGGER, HAT_X, HAT_Y. Si falla una,
+ *   es NO y el método se marca FALLO aunque el Wi-Fi funcione:
+ *   "llegó el paquete" no es éxito.
  * - "Reconocido como: CONTROL DE TV - FALLO" si solo tiene
  *   SOURCE_DPAD / SOURCE_KEYBOARD, o no tiene ejes de joystick.
  *   Ese es exactamente el bug de la app de Play Store que el
@@ -43,24 +46,25 @@ object Diagnostics {
         val hasJoystick: Boolean,
         val axes: List<String>,
         val verdict: String,
-        /** SÍ solo si parece un mando físico Xbox 360 (ver looksLikeRealGamepad). */
+        /** SÍ solo si parece un mando físico del perfil activo (ver looksLikeRealGamepad). */
         val looksLikeRealGamepad: Boolean,
         val looksLikeRealReason: String,
     )
 
-    /** Criterio de éxito de la Etapa 0, comprobado contra el sistema, no contra lo que cree la app. */
-    fun looksLikeRealGamepad(name: String, vendorId: Int, productId: Int, sources: Int, axes: List<String>): Pair<Boolean, String> {
+    /** Criterio de éxito de la Etapa 0, comprobado contra el sistema, no contra lo que cree la app. [profileId] es el perfil de emulación activo (Fase 2); por defecto Xbox 360. */
+    fun looksLikeRealGamepad(name: String, vendorId: Int, productId: Int, sources: Int, axes: List<String>, profileId: Int = GamepadProfiles.XBOX_360_ID): Pair<Boolean, String> {
+        val profile = GamepadProfiles.fromId(profileId)
         if (name.contains("virtual", ignoreCase = true)) return false to "el nombre contiene 'Virtual'"
         if (name.contains("ultimate", ignoreCase = true)) return false to "el nombre contiene 'Ultimate'"
-        if (!name.equals("Xbox 360 Controller", ignoreCase = true)) return false to "nombre distinto de 'Xbox 360 Controller': $name"
-        if (vendorId != 0x045E || productId != 0x028E) return false to "vendor/product distintos de 0x045E/0x028E"
+        if (!name.equals(profile.deviceName, ignoreCase = true)) return false to "nombre distinto de '${profile.deviceName}' (perfil ${profile.name}): $name"
+        if (vendorId != profile.vendorId || productId != profile.productId) return false to "vendor/product distintos de 0x${profile.vendorId.toString(16)}/0x${profile.productId.toString(16)} (perfil ${profile.name})"
         val hasGamepad = (sources and android.view.InputDevice.SOURCE_GAMEPAD) != 0
         val hasJoystick = (sources and android.view.InputDevice.SOURCE_JOYSTICK) != 0
         if (!hasGamepad || !hasJoystick) return false to "getSources() no incluye GAMEPAD+JOYSTICK"
         val required = listOf("AXIS_X", "AXIS_Y", "AXIS_Z", "AXIS_RZ", "AXIS_LTRIGGER", "AXIS_RTRIGGER", "AXIS_HAT_X", "AXIS_HAT_Y")
         val missing = required - axes.toSet()
         if (missing.isNotEmpty()) return false to "faltan ejes: ${missing.joinToString(", ")}"
-        return true to "nombre, vendor/product, GAMEPAD+JOYSTICK y ejes coinciden con un Xbox 360 físico"
+        return true to "nombre, vendor/product, GAMEPAD+JOYSTICK y ejes coinciden con un ${profile.name} físico"
     }
 
     fun anyRealGamepad(): Boolean = scan().any { it.looksLikeRealGamepad }
@@ -101,7 +105,7 @@ object Diagnostics {
                 (axes.contains("AXIS_X") || axes.contains("AXIS_Y"))
             val verdict = if (isGamepad) "Reconocido como: MANDO DE JUEGO"
             else "Reconocido como: CONTROL DE TV - FALLO"
-            val (real, realReason) = looksLikeRealGamepad(device.name, device.vendorId, device.productId, sources, axes)
+            val (real, realReason) = looksLikeRealGamepad(device.name, device.vendorId, device.productId, sources, axes, UdpReceiverService.activeProfileId)
             DeviceReport(
                 id = id, name = device.name,
                 vendorId = device.vendorId, productId = device.productId,
@@ -115,8 +119,10 @@ object Diagnostics {
 
     fun render(): String {
         val reports = scan()
-        if (reports.isEmpty()) return "¿Cómo me ve Android?\nSin dispositivos de entrada detectados."
-        val sb = StringBuilder("¿Cómo me ve Android?\n")
+        val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
+        val header = "¿Cómo me ve Android?\nPerfil activo: ${profile.name} (${profile.deviceName}, vendor=0x${profile.vendorId.toString(16)} product=0x${profile.productId.toString(16)})"
+        if (reports.isEmpty()) return "$header\nSin dispositivos de entrada detectados."
+        val sb = StringBuilder("$header\n")
         for (r in reports) {
             sb.append("\n[${r.id}] ${r.name}\n")
             sb.append("  vendor=0x${r.vendorId.toString(16)} product=0x${r.productId.toString(16)}\n")

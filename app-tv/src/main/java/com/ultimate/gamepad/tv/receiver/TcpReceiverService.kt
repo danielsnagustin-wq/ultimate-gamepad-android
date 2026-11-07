@@ -57,14 +57,15 @@ class TcpReceiverService : Service() {
                 receiver = localReceiver
                 val recv = localReceiver ?: return@launch
                 while (isActive) {
-                    val state = runCatching { recv.receive(1000) }.getOrNull()
-                    if (state == null) {
+                    val packet = runCatching { recv.receivePacket(1000) }.getOrNull()
+                    if (packet == null) {
                         // Sin paquete o cliente muerto (receive ya
                         // soltó el socket): pequeña pausa para no
                         // girar en vacío.
                         delay(100)
                         continue
                     }
+                    val (state, profileId) = packet
                     UdpReceiverService.recordPacket(state, TransportMethod.WIFI_TCP)
                     // H1 (Fase 1): antes solo se registraba el paquete;
                     // ahora también se entrega al mando virtual por el
@@ -72,8 +73,10 @@ class TcpReceiverService : Service() {
                     // verdad y OpenNOW recibe la entrada por TCP igual
                     // que por UDP. El paquete se re-codifica desde el
                     // estado decodificado (byte a byte idéntico: misma
-                    // secuencia, mismo timestamp, mismo CRC).
-                    UdpReceiverService.deliver(this@TcpReceiverService, state, GamepadProtocol.encode(state))
+                    // secuencia, mismo timestamp, mismo CRC) y con el
+                    // mismo profileId del byte 28 (Fase 2): sin él,
+                    // por TCP todo se re-codificaba como Xbox 360.
+                    UdpReceiverService.deliver(this@TcpReceiverService, state, GamepadProtocol.encode(state, profileId))
                 }
             } finally {
                 val r = localReceiver; localReceiver = null

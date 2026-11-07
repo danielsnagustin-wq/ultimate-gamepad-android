@@ -3,6 +3,7 @@ package com.ultimate.gamepad.tv.shizuku
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.tv.IGamepadInputService
 import rikka.shizuku.Shizuku
@@ -55,11 +56,14 @@ object ShizukuHelper {
 
     /**
      * Envía un paquete al UserService (proceso shell). Devuelve true
-     * solo si el servicio confirmó la entrega. En Etapa 1 el
-     * UserService usa injectInputEvent como fallback; la creación
-     * uinput nativa se valida en Etapa 0 (ver UinputGamepad.kt).
+     * solo si el servicio confirmó la entrega. [profileId] es el
+     * perfil de emulación del paquete (byte 28, Fase 2): si el
+     * mando virtual no está creado, se crea con ese perfil.
+     * En Etapa 1 el UserService usa injectInputEvent como fallback;
+     * la creación uinput nativa se valida en Etapa 0 (ver
+     * UinputGamepad.kt).
      */
-    fun sendToGamepad(context: Context, rawPacket: ByteArray, state: GamepadState): Boolean {
+    fun sendToGamepad(context: Context, rawPacket: ByteArray, state: GamepadState, profileId: Int = GamepadProfiles.XBOX_360_ID): Boolean {
         if (!Shizuku.pingBinder()) return false
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
             Shizuku.requestPermission(0)
@@ -73,8 +77,31 @@ object ShizukuHelper {
             return false
         }
         return runCatching {
-            if (!service.isVirtualGamepadReady()) service.createVirtualGamepad()
+            if (!service.isVirtualGamepadReady()) service.createVirtualGamepad(profileId)
             service.sendReport(rawPacket)
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Cambio de perfil en caliente (Fase 2): destruye el mando
+     * virtual actual y crea uno nuevo con [profileId]. Devuelve
+     * false si Shizuku no está listo o no hay servicio enlazado:
+     * el llamador (UdpReceiverService) lo reintenta con el
+     * siguiente paquete. Si OpenNOW no re-enumera el mando nuevo
+     * sin reiniciarse, la UI debe decir "reinicia OpenNOW"
+     * (a verificar en la Fase 0/2).
+     */
+    fun recreateVirtualGamepad(context: Context, profileId: Int): Boolean {
+        if (!Shizuku.pingBinder()) return false
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+        val service: IGamepadInputService? = GamepadUserService.boundService
+        if (service == null) {
+            GamepadUserService.bind(context)
+            return false
+        }
+        return runCatching {
+            service.destroyVirtualGamepad()
+            service.createVirtualGamepad(profileId)
         }.getOrDefault(false)
     }
 

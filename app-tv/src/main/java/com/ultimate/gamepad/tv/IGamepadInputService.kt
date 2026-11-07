@@ -19,8 +19,8 @@ import android.os.Parcel
  * DESCRIPTOR, mismos códigos de transacción en el mismo orden.
  */
 interface IGamepadInputService : IInterface {
-    /** Intenta crear el mando virtual Xbox 360 en /dev/uinput. Devuelve true solo si el kernel lo aceptó. */
-    fun createVirtualGamepad(): Boolean
+    /** Intenta crear el mando virtual en /dev/uinput con el perfil dado (GamepadProfiles: 0 = Xbox 360). Devuelve true solo si el kernel lo aceptó. */
+    fun createVirtualGamepad(profileId: Int): Boolean
     /** Envía un paquete de 32 bytes ya validado. Devuelve false si no hay mando virtual. */
     fun sendReport(packet32: ByteArray): Boolean
     /** Inyecta un KeyEvent/MotionEvent con source gamepad (fallback, ver docs). */
@@ -59,7 +59,8 @@ interface IGamepadInputService : IInterface {
                 }
                 TRANSACTION_createVirtualGamepad -> {
                     data.enforceInterface(DESCRIPTOR)
-                    val result = createVirtualGamepad()
+                    val profileId = data.readInt()
+                    val result = createVirtualGamepad(profileId)
                     reply?.writeNoException()
                     reply?.writeInt(if (result) 1 else 0)
                     return true
@@ -100,11 +101,12 @@ interface IGamepadInputService : IInterface {
         private class Proxy(private val remote: IBinder) : IGamepadInputService {
             override fun asBinder(): IBinder = remote
 
-            override fun createVirtualGamepad(): Boolean {
+            override fun createVirtualGamepad(profileId: Int): Boolean {
                 val data = Parcel.obtain()
                 val reply = Parcel.obtain()
                 try {
                     data.writeInterfaceToken(DESCRIPTOR)
+                    data.writeInt(profileId)
                     remote.transact(TRANSACTION_createVirtualGamepad, data, reply, 0)
                     reply.readException()
                     return reply.readInt() != 0

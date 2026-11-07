@@ -21,12 +21,16 @@ import rikka.shizuku.Shizuku
  * rikka.shizuku.ShizukuUserService en la API pública; Shizuku
  * instancia esta clase y la usa como IBinder.
  *
- * Estado honesto (Fase 1):
- * - createVirtualGamepad(): intenta la vía uinput nativa con la
- *   librería JNI (libuinput_gamepad.so, compilada en CI) que abre
- *   /dev/uinput y registra un Xbox 360. Si el .so no carga o el
- *   kernel lo deniega, devuelve false sin fingir nada; lo que
- *   falta es la verificación en la TV real (Fase 0).
+ * Estado honesto (Fase 2):
+ * - createVirtualGamepad(profileId): intenta la vía uinput nativa
+ *   con la librería JNI (libuinput_gamepad.so, compilada en CI) que
+ *   abre /dev/uinput y registra el dispositivo del perfil dado
+ *   (Xbox 360 / Xbox One / DS4 / DualSense / genérico). Si el .so
+ *   no carga o el kernel lo deniega, devuelve false sin fingir
+ *   nada; lo que falta es la verificación en la TV real (Fase 0).
+ *   Al cambiar de perfil, el receptor llama a
+ *   destroyVirtualGamepad() + createVirtualGamepad(nuevo) para
+ *   recrear el dispositivo en caliente.
  * - sendReport(): primero la vía A (uinput) si el mando virtual
  *   está listo; si no, la vía B (injectInputEvent) con el mapeo
  *   de InputMapper. Devuelve true solo si la inyección no lanzó
@@ -62,19 +66,19 @@ class GamepadUserService : IGamepadInputService.Stub() {
 
     private var previousState: GamepadState = GamepadState()
 
-    override fun createVirtualGamepad(): Boolean {
+    override fun createVirtualGamepad(profileId: Int): Boolean {
         // La librería nativa (libuinput_gamepad.so) se compila en
-        // CI; create() intenta abrir /dev/uinput de verdad y
-        // devuelve false si no puede (sin fingir). Falta la
-        // verificación en la TV real (Fase 0).
-        return UinputGamepad.create()
+        // CI; create(profileId) intenta abrir /dev/uinput de verdad
+        // con el perfil dado y devuelve false si no puede (sin
+        // fingir). Falta la verificación en la TV real (Fase 0).
+        return UinputGamepad.create(profileId)
     }
 
     override fun sendReport(packet32: ByteArray): Boolean {
         val state = GamepadProtocol.decode(packet32) ?: return false
-        // Vía A (mando REAL uinput): si el mando virtual Xbox 360
-        // está listo, el reporte va por /dev/uinput y Android y
-        // OpenNOW lo ven como un Xbox 360 físico. Si el .so falla
+        // Vía A (mando REAL uinput): si el mando virtual está listo,
+        // el reporte va por /dev/uinput y Android y OpenNOW lo ven
+        // como el mando físico del perfil activo. Si el .so falla
         // o el mando no está listo, se cae a la vía B
         // (injectInputEvent) sin fingir nada.
         if (UinputGamepad.isReady() && UinputGamepad.sendReport(state)) return true

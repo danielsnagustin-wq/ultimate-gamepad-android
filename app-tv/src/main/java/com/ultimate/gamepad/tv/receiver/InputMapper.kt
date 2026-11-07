@@ -17,9 +17,18 @@ import com.ultimate.gamepad.core.GamepadState
  * hace que Android clasifique la app como control de TV.
  *
  * Esto es el FALLBACK (inyección B), no la vía principal. La vía
- * principal es el mando virtual uinput Xbox 360 (inyección A), que
- * aparece en InputDevice.getDeviceIds() como un mando real y es lo
- * que OpenNOW necesita. Ver UinputGamepad.kt y Diagnostics.kt.
+ * principal es el mando virtual uinput (inyección A), que aparece
+ * en InputDevice.getDeviceIds() como un mando real y es lo que
+ * OpenNOW necesita. Ver UinputGamepad.kt y Diagnostics.kt.
+ *
+ * LÍMITE DEL TOUCHPAD (Fase 2, opción (a) del plan): el touchpad
+ * de DS4/DualSense NO se puede inyectar por injectInputEvent como
+ * tal — no hay eje de toque de mando en el MotionEvent de joystick
+ * (AXIS_X/Y son los sticks, no un panel táctil) ni KeyEvent para
+ * el clic del touchpad. Por eso el touchpad no se implementa en
+ * esta versión ni por la vía A (haría falta un segundo dispositivo
+ * uinput táctil aparte) ni por la vía B. No es necesario para jugar
+ * a GeForce NOW y la UI/docs lo dicen claro en vez de prometerlo.
  */
 object InputMapper {
     /** Fuente única para todo evento de juego. Ver GamepadClassification. */

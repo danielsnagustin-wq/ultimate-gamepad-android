@@ -1,22 +1,27 @@
 package com.ultimate.gamepad.tv.shizuku
 
 import com.ultimate.gamepad.core.GamepadClassification
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.UinputSpec
 
 /**
- * Mando virtual Xbox 360 vía /dev/uinput — implementación nativa
+ * Mando virtual vía /dev/uinput — implementación nativa
  * (app-tv/src/main/cpp/uinput_gamepad.c, compilada con CMake/NDK).
  *
  * Especificación EXACTA que cumple la implementación nativa
- * (ver UinputSpec en :core — una sola fuente de verdad):
- * - Nombre expuesto: ÚNICAMENTE "Xbox 360 Controller".
+ * (ver GamepadProfiles en :core — una sola fuente de verdad,
+ * y UinputSpec para el Xbox 360):
+ * - Nombre expuesto según el perfil activo: "Xbox 360 Controller"
+ *   (0x045E/0x028E), "Xbox One Controller" (0x045E/0x02DD),
+ *   "Wireless Controller" DS4 (0x054C/0x05C4), "DualSense Wireless
+ *   Controller" (0x054C/0x0CE6) o "Generic Gamepad" (0x1234/0x5678).
  *   PROHIBIDO exponer "Virtual" o "Ultimate Gamepad" como nombre
  *   de dispositivo: eso delata que es virtual y es FALLO en la
  *   Etapa 0, aunque lleguen paquetes por Wi-Fi.
- * - vendor 0x045E (Microsoft), product 0x028E, bustype BUS_USB (0x03), version 0x0114
+ * - bustype BUS_USB (0x03), version 0x0114
  * - Solo EV_KEY de mando: BTN_A/B/X/Y, BTN_TL/TR, BTN_TL2/TR2,
- *   BTN_START/SELECT, BTN_MODE (guía Xbox), BTN_THUMBL/R,
+ *   BTN_START/SELECT, BTN_MODE (guía), BTN_THUMBL/R,
  *   BTN_DPAD_UP/DOWN/LEFT/RIGHT, BTN_TRIGGER_HAPPY1 (Compartir)
  * - Solo EV_ABS: ABS_X/Y (-32768..32767, stick izq),
  *   ABS_RX/RY (-32768..32767, stick der), ABS_Z/RZ (0..255,
@@ -25,6 +30,11 @@ import com.ultimate.gamepad.core.UinputSpec
  *   KEY_BACK, y Usage Page Consumer (0x0C) / Remote Control.
  *   Incluir una sola de esas teclas es lo que hace que Android
  *   clasifique el dispositivo como control de TV en vez de mando.
+ *
+ * Cambio de perfil (Fase 2): create(profileId) crea el dispositivo
+ * con ese perfil; recreate(profileId) destruye el actual y crea el
+ * nuevo (cambio en caliente). El touchpad de DS4/DualSense NO se
+ * emula (opción (a) del plan).
  *
  * Honestidad: si la librería nativa no está (el .so no se
  * compiló) o /dev/uinput no se puede abrir, create() devuelve
@@ -37,6 +47,9 @@ object UinputGamepad {
 
     @Volatile private var nativeLoaded: Boolean = false
     @Volatile private var ready: Boolean = false
+    /** Perfil del dispositivo virtual creado (GamepadProfiles); 0 = Xbox 360. */
+    @Volatile var activeProfileId: Int = GamepadProfiles.XBOX_360_ID
+        private set
 
     init {
         nativeLoaded = runCatching {
@@ -45,10 +58,13 @@ object UinputGamepad {
         }.getOrDefault(false)
     }
 
-    fun specSummary(): String =
-        "${UinputSpec.DEVICE_NAME} vendor=0x045E product=0x028E bustype=BUS_USB " +
+    fun specSummary(): String {
+        val profile = GamepadProfiles.fromId(activeProfileId)
+        return "${profile.deviceName} vendor=0x${profile.vendorId.toString(16)} " +
+            "product=0x${profile.productId.toString(16)} bustype=BUS_USB " +
             "EV_KEY=${UinputSpec.ALLOWED_EV_KEY.size} botones de mando, " +
             "EV_ABS=${UinputSpec.ALLOWED_EV_ABS.size} ejes, prohibidas=${UinputSpec.FORBIDDEN_EV_KEY.size} teclas de remoto"
+    }
 
     fun isSpecValid(): Boolean =
         UinputSpec.ALLOWED_EV_KEY.none { it in UinputSpec.FORBIDDEN_EV_KEY } &&
@@ -57,10 +73,19 @@ object UinputGamepad {
     /** ¿Se cargó el .so nativo? Sin él no hay mando virtual. */
     fun isNativeLoaded(): Boolean = nativeLoaded
 
-    fun create(): Boolean {
+    /** Crea el mando virtual con el perfil dado (0 = Xbox 360 por defecto). */
+    fun create(profileId: Int = GamepadProfiles.XBOX_360_ID): Boolean {
         if (!nativeLoaded) return false
-        ready = runCatching { nativeCreate() }.getOrDefault(false)
+        val id = GamepadProfiles.fromId(profileId).id
+        ready = runCatching { nativeCreate(id) }.getOrDefault(false)
+        if (ready) activeProfileId = id
         return ready
+    }
+
+    /** Cambio de perfil en caliente: destruye el dispositivo actual y crea el nuevo. */
+    fun recreate(profileId: Int): Boolean {
+        destroy()
+        return create(profileId)
     }
 
     fun isReady(): Boolean = ready && nativeLoaded
@@ -81,9 +106,10 @@ object UinputGamepad {
     fun destroy() {
         if (nativeLoaded) runCatching { nativeDestroy() }
         ready = false
+        activeProfileId = GamepadProfiles.XBOX_360_ID
     }
 
-    private external fun nativeCreate(): Boolean
+    private external fun nativeCreate(profileId: Int): Boolean
     private external fun nativeSendReport(
         buttons: Int,
         lx: Float, ly: Float,

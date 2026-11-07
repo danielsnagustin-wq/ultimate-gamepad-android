@@ -18,7 +18,7 @@ package com.ultimate.gamepad.tv.receiver
  * (Fase 2)". Nunca se finge que OpenNOW ya reconoce el mando.
  *
  * Para la Etapa 0, poner en true y probar en la Hyundai; si
- * UinputGamepad.create() sigue en false (sin .so nativo), la
+ * UinputGamepad.create(profileId) sigue en false (sin .so nativo), la
  * inyección cae a B y la UI lo muestra.
  */
 object ReceiverConfig {

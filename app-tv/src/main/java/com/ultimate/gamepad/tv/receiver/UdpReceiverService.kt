@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ultimate.gamepad.core.ConnectionHealth
 import com.ultimate.gamepad.core.Discovery
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.TransportMethod
@@ -45,7 +46,7 @@ import java.net.InetSocketAddress
  * atascado; el último estado en pantalla también vuelve a cero.
  *
  * Inyección (Fase 2, opcional): si ReceiverConfig lo permite y
- * Shizuku está activo, intenta A (uinput Xbox 360) y luego B
+ * Shizuku está activo, intenta A (uinput con el perfil activo) y luego B
  * (injectInputEvent SOURCE_GAMEPAD). Si Shizuku no está, la
  * inyección queda en "ninguno" y [injectionMethod] lo dice.
  * Nunca se finge entrada a OpenNOW.
@@ -67,6 +68,9 @@ class UdpReceiverService : Service() {
             private set
         /** "uinput" | "inject" | "ninguno" | "bluetooth-hid" (este último no pasa por aquí). */
         @Volatile var injectionMethod: String = "ninguno"
+            private set
+        /** Perfil de emulación del mando virtual creado (GamepadProfiles); 0 = Xbox 360. Lo fija el teléfono en el byte 28 de cada paquete. */
+        @Volatile var activeProfileId: Int = GamepadProfiles.XBOX_360_ID
             private set
         @Volatile var lastError: String? = null
             private set
@@ -104,16 +108,36 @@ class UdpReceiverService : Service() {
          * que TcpReceiverService pueda entregar sin duplicar la
          * lógica (H1: antes solo el bucle UDP inyectaba y por TCP
          * la TV mostraba la entrada pero OpenNOW no recibía nada).
+         *
+         * Perfil (Fase 2): el profileId viaja en el byte 28 del
+         * paquete. Si es distinto del dispositivo virtual actual,
+         * se destruye y se crea uno nuevo con ese perfil (cambio
+         * en caliente) ANTES de entregar el reporte; si la
+         * recreación falla, se entrega igualmente al dispositivo
+         * actual y se reintenta con el siguiente paquete.
+         * Si OpenNOW no re-enumera el mando nuevo sin reiniciarse,
+         * la UI debe decir "reinicia OpenNOW" (a verificar en la
+         * Fase 0/2).
          */
         fun deliver(context: Context, state: GamepadState, rawPacket: ByteArray) {
             if (!ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
                 injectionMethod = "ninguno"
                 return
             }
-            // Inyección A: uinput Xbox 360. B: injectInputEvent SOURCE_GAMEPAD.
+            val profileId = GamepadProfiles.fromId(GamepadProtocol.profileIdOf(rawPacket)).id
+            if (profileId != activeProfileId) {
+                val profile = GamepadProfiles.fromId(profileId)
+                val recreated = ShizukuHelper.recreateVirtualGamepad(context, profileId)
+                if (recreated) {
+                    activeProfileId = profileId
+                } else {
+                    lastError = "No se pudo recrear el mando virtual como ${profile.name} (${profile.deviceName}); se sigue con el perfil anterior y se reintenta con el siguiente paquete."
+                }
+            }
+            // Inyección A: uinput con el perfil activo. B: injectInputEvent SOURCE_GAMEPAD.
             // ShizukuHelper devuelve false si Shizuku no está activo;
             // en ese caso la inyección queda en "ninguno", no en "conectado".
-            val ok = ShizukuHelper.sendToGamepad(context, rawPacket, state)
+            val ok = ShizukuHelper.sendToGamepad(context, rawPacket, state, activeProfileId)
             virtualGamepadReady = ok
             injectionMethod = when {
                 com.ultimate.gamepad.tv.shizuku.UinputGamepad.isReady() -> "uinput"
@@ -137,7 +161,10 @@ class UdpReceiverService : Service() {
             if (lastState == GamepadState()) return false
             if (now - lastPacketAtMs <= ConnectionHealth.TIMEOUT_MS) return false
             val zero = GamepadState()
-            deliver(context, zero, GamepadProtocol.encode(zero))
+            // El estado cero también lleva el profileId activo: sin
+            // él, deliver() lo leería como Xbox 360 y recrearía el
+            // mando equivocado al soltar los controles.
+            deliver(context, zero, GamepadProtocol.encode(zero, activeProfileId))
             lastState = zero
             return true
         }
