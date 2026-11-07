@@ -105,14 +105,20 @@ class BluetoothHidService(private val context: Context) {
     /** Registra la app HID. Requiere BLUETOOTH_CONNECT (Android 12+). Devuelve false si el proxy no está listo.
      *  Nombre expuesto: "Xbox 360 Controller" (HidDescriptor). Descriptor: Game Pad
      *  (Usage Page 0x01, Usage 0x05) de HidGamepadDescriptor.BYTES. Sin servicios
-     *  extra de teclado/ratón/remoto: solo el perfil HID de gamepad. */
+     *  extra de teclado/ratón/remoto: solo el perfil HID de gamepad.
+     *  Nota: la API real de BluetoothHidDeviceAppSdpSettings es
+     *  (name, description, provider, subclass, descriptors); NO acepta
+     *  vendorId/productId, así que por Bluetooth HID no se puede fijar el
+     *  VID/PID 0x045E/0x028E — la identidad completa de Xbox 360 (con VID/PID)
+     *  solo la da la ruta uinput de la fase 2 en la TV. Por Bluetooth la
+     *  identidad es el nombre expuesto + el descriptor de Game Pad. */
     fun register(): Boolean {
         val hid = hidDevice ?: return false
         val sdp = BluetoothHidDeviceAppSdpSettings(
             HidDescriptor.DEVICE_NAME,
             HidDescriptor.DEVICE_DESCRIPTION,
-            HidDescriptor.VENDOR_ID,
-            HidDescriptor.PRODUCT_ID,
+            "Ultimate Gamepad",
+            0,
             com.ultimate.gamepad.core.HidGamepadDescriptor.BYTES,
         )
         val qos = BluetoothHidDeviceAppQosSettings(
