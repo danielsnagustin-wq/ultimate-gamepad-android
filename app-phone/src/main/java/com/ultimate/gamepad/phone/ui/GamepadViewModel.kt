@@ -3,6 +3,7 @@ package com.ultimate.gamepad.phone.ui
 import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
@@ -14,10 +15,12 @@ import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
@@ -34,7 +37,7 @@ data class GamepadUiState(
     /** Momento en que empezó el intento actual (para el timeout sin eco). */
     val connectingSinceMs: Long = 0L,
     val error: String? = null,
-    val showConnectSheet: Boolean = false,
+    val showSettings: Boolean = false,
     val showQrScanner: Boolean = false,
     // Selector multi-transporte (Etapa 1).
     val transportMode: TransportMode = TransportMode.AUTO,
@@ -69,6 +72,18 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun setLeftStick(x: Float, y: Float) { leftX = x; leftY = y; publish() }
     fun setRightStick(x: Float, y: Float) { rightX = x; rightY = y; publish() }
     fun setTriggers(l: Float, r: Float) { leftTrigger = l; rightTrigger = r; publish() }
+    /** Gatillos analógicos por separado (LT/RT se mantienen pulsados). */
+    fun setLeftTrigger(v: Float) { leftTrigger = v; publish() }
+    fun setRightTrigger(v: Float) { rightTrigger = v; publish() }
+
+    /** Pulso corto (120 ms): botón Xbox (HOME) y Compartir (CAPTURE). */
+    fun pulseButton(button: Int) {
+        viewModelScope.launch {
+            setButton(button, true)
+            delay(120)
+            setButton(button, false)
+        }
+    }
 
     private fun publish() {
         val state = GamepadState(
@@ -82,8 +97,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (hidService.status == TransportStatus.CONNECTED) hidService.sendReport(state)
     }
 
-    fun openConnect() = _ui.update { it.copy(showConnectSheet = true, error = null) }
-    fun closeConnect() = _ui.update { it.copy(showConnectSheet = false, showQrScanner = false) }
+    /** La pantalla del mando es solo el mando: todo lo de conexión vive en Ajustes (⚙). */
+    fun openSettings() = _ui.update { it.copy(showSettings = true, error = null) }
+    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false) }
     fun openQrScanner() = _ui.update { it.copy(showQrScanner = true) }
 
     fun setTransportMode(mode: TransportMode) = _ui.update { it.copy(transportMode = mode) }
@@ -143,7 +159,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // respondiera, y la app se quedaba "tieso" en Conectado con
         // ping "—" sin poder avanzar. Nunca CONECTADO sin eco real.
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), showConnectSheet = false, showQrScanner = false, error = null)
+            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), showSettings = false, showQrScanner = false, error = null)
         }
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply {
             action = GamepadSenderService.ACTION_START

@@ -40,6 +40,8 @@ object InputMapper {
         GamepadButtons.SELECT -> KeyEvent.KEYCODE_BUTTON_SELECT
         GamepadButtons.L3 -> KeyEvent.KEYCODE_BUTTON_THUMBL
         GamepadButtons.R3 -> KeyEvent.KEYCODE_BUTTON_THUMBR
+        GamepadButtons.HOME -> KeyEvent.KEYCODE_BUTTON_MODE
+        GamepadButtons.CAPTURE -> KeyEvent.KEYCODE_BUTTON_1
         GamepadButtons.DPAD_UP -> KeyEvent.KEYCODE_DPAD_UP
         GamepadButtons.DPAD_DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
         GamepadButtons.DPAD_LEFT -> KeyEvent.KEYCODE_DPAD_LEFT
@@ -50,7 +52,7 @@ object InputMapper {
     fun allButtons(): List<Int> = listOf(
         GamepadButtons.A, GamepadButtons.B, GamepadButtons.X, GamepadButtons.Y,
         GamepadButtons.LB, GamepadButtons.RB, GamepadButtons.START, GamepadButtons.SELECT,
-        GamepadButtons.L3, GamepadButtons.R3,
+        GamepadButtons.L3, GamepadButtons.R3, GamepadButtons.HOME, GamepadButtons.CAPTURE,
         GamepadButtons.DPAD_UP, GamepadButtons.DPAD_DOWN, GamepadButtons.DPAD_LEFT, GamepadButtons.DPAD_RIGHT,
     )
 
