@@ -44,8 +44,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.LayoutGeometry
 import kotlinx.coroutines.delay
-import kotlin.math.abs
 
 /**
  * Mando estilo Xbox Series, AMOLED (negro puro) con acentos neón.
@@ -100,80 +100,24 @@ fun GamepadScreen(vm: GamepadViewModel) {
         // fuera de la vista. Ahora se mide el contenido de verdad
         // (cada columna con su escala y su desplazamiento) y el
         // ajuste se calcula para que quepa entero.
-        val lsEl = layout.element(LayoutConfig.LEFT_STICK)
-        val dpEl = layout.element(LayoutConfig.DPAD)
-        val abEl = layout.element(LayoutConfig.ABXY)
-        val rsEl = layout.element(LayoutConfig.RIGHT_STICK)
-        val vxEl = layout.element(LayoutConfig.VIEW)
-        val xbEl = layout.element(LayoutConfig.XBOX)
-        val mnEl = layout.element(LayoutConfig.MENU)
-        val shEl = layout.element(LayoutConfig.SHARE)
-        // Columna izquierda: stick (180 + etiqueta 28) + hueco 6 + cruceta 196.
-        val (leftLayoutH, leftTop, leftBottom) = vSpan(
-            listOf(
-                SpanItem(lsEl.visible, 208f * lsEl.scale, lsEl.offsetYdp.toFloat(), lsEl.offsetYdp + 208f * lsEl.scale),
-                SpanItem(dpEl.visible, 196f * dpEl.scale, dpEl.offsetYdp.toFloat(), dpEl.offsetYdp + 196f * dpEl.scale),
-            ),
-            6f,
+        // Toda la matemática del layout vive en LayoutGeometry
+        // (:core, sin Compose) y se comprueba con tests en CI para
+        // varios tamaños de pantalla; aquí solo se usa el resultado.
+        val geom = LayoutGeometry.GeomLayout(
+            leftStick = layout.element(LayoutConfig.LEFT_STICK).toGeom(),
+            dpad = layout.element(LayoutConfig.DPAD).toGeom(),
+            abxy = layout.element(LayoutConfig.ABXY).toGeom(),
+            rightStick = layout.element(LayoutConfig.RIGHT_STICK).toGeom(),
+            view = layout.element(LayoutConfig.VIEW).toGeom(),
+            xbox = layout.element(LayoutConfig.XBOX).toGeom(),
+            menu = layout.element(LayoutConfig.MENU).toGeom(),
+            share = layout.element(LayoutConfig.SHARE).toGeom(),
+            shouldersLeft = layout.element(LayoutConfig.SHOULDERS_LEFT).toGeom(),
+            shouldersRight = layout.element(LayoutConfig.SHOULDERS_RIGHT).toGeom(),
         )
-        // Columna derecha: ABXY 200 + hueco 6 + stick 208.
-        val (rightLayoutH, rightTop, rightBottom) = vSpan(
-            listOf(
-                SpanItem(abEl.visible, 200f * abEl.scale, abEl.offsetYdp.toFloat(), abEl.offsetYdp + 200f * abEl.scale),
-                SpanItem(rsEl.visible, 208f * rsEl.scale, rsEl.offsetYdp.toFloat(), rsEl.offsetYdp + 208f * rsEl.scale),
-            ),
-            6f,
-        )
-        // Centro: fila VIEW/Xbox/MENU + hueco 12 + SHARE.
-        val centerRowH = maxOf(
-            if (vxEl.visible) 48f * vxEl.scale else 0f,
-            if (xbEl.visible) 80f * xbEl.scale else 0f,
-            if (mnEl.visible) 48f * mnEl.scale else 0f,
-        )
-        val centerRowTop = minOf(
-            if (vxEl.visible) vxEl.offsetYdp.toFloat() else Float.MAX_VALUE,
-            if (xbEl.visible) xbEl.offsetYdp.toFloat() else Float.MAX_VALUE,
-            if (mnEl.visible) mnEl.offsetYdp.toFloat() else Float.MAX_VALUE,
-        )
-        val centerRowBottom = maxOf(
-            if (vxEl.visible) vxEl.offsetYdp + 48f * vxEl.scale else -Float.MAX_VALUE,
-            if (xbEl.visible) xbEl.offsetYdp + 80f * xbEl.scale else -Float.MAX_VALUE,
-            if (mnEl.visible) mnEl.offsetYdp + 48f * mnEl.scale else -Float.MAX_VALUE,
-        )
-        val centerRowVisible = vxEl.visible || xbEl.visible || mnEl.visible
-        val (centerLayoutH, centerTop, centerBottom) = vSpan(
-            listOf(
-                SpanItem(centerRowVisible, centerRowH, centerRowTop, centerRowBottom),
-                SpanItem(shEl.visible, 48f * shEl.scale, shEl.offsetYdp.toFloat(), shEl.offsetYdp + 48f * shEl.scale),
-            ),
-            12f,
-        )
-        // Cada columna se recentra para que su contenido visible
-        // quede centrado en la fila (si no, un desplazamiento
-        // hacia abajo dejaría la parte de abajo fuera).
-        val leftShift = (leftLayoutH - leftTop - leftBottom) / 2f
-        val rightShift = (rightLayoutH - rightTop - rightBottom) / 2f
-        val centerShift = (centerLayoutH - centerTop - centerBottom) / 2f
-        val leftSpanH = leftBottom - leftTop
-        val rightSpanH = rightBottom - rightTop
-        val centerSpanH = centerBottom - centerTop
-        val maxSpanH = maxOf(leftSpanH, rightSpanH, centerSpanH)
-        val rowH = maxOf(leftLayoutH, rightLayoutH, centerLayoutH, maxSpanH)
-        // Anchura del contenido (para el ajuste horizontal).
-        val leftW = maxOf(if (lsEl.visible) 180f * lsEl.scale else 0f, if (dpEl.visible) 196f * dpEl.scale else 0f)
-        val rightW = maxOf(if (abEl.visible) 200f * abEl.scale else 0f, if (rsEl.visible) 180f * rsEl.scale else 0f)
-        val centerVisibleCount = listOf(vxEl, xbEl, mnEl).count { it.visible }
-        val centerW = (if (vxEl.visible) 76f * vxEl.scale else 0f) +
-            (if (xbEl.visible) 80f * xbEl.scale else 0f) +
-            (if (mnEl.visible) 76f * mnEl.scale else 0f) +
-            8f * (centerVisibleCount - 1).coerceAtLeast(0)
-        val maxOffX = maxOf(
-            abs(lsEl.offsetXdp), abs(dpEl.offsetXdp), abs(abEl.offsetXdp), abs(rsEl.offsetXdp),
-            abs(vxEl.offsetXdp), abs(xbEl.offsetXdp), abs(mnEl.offsetXdp), abs(shEl.offsetXdp),
-        ).toFloat()
-        val contentW = leftW + centerW + rightW + 32f + 2f * maxOffX
+        val columns = LayoutGeometry.landscapeColumns(geom)
         // En vertical la escala se calcula por el ancho (la pantalla es alta y sobra sitio).
-        val fitScale = (maxWidth / 440.dp).coerceIn(0.55f, 1f)
+        val fitScale = LayoutGeometry.portraitFitScale(maxWidth.value)
         // Ancho de la fila de hombros: se captura aquí porque dentro del
         // Column el receptor es ColumnScope y maxWidth ya no se puede
         // usar con receptor implícito.
@@ -204,16 +148,16 @@ fun GamepadScreen(vm: GamepadViewModel) {
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val fit = minOf(maxHeight / maxSpanH.dp, maxWidth / contentW.dp, 1f).coerceIn(0.45f, 1f)
+                    val fit = LayoutGeometry.fitFor(maxWidth.value, maxHeight.value, columns.maxSpanH, columns.contentW)
                     Row(
-                        modifier = Modifier.height(rowH.dp).fillMaxWidth()
+                        modifier = Modifier.height(columns.rowH.dp).fillMaxWidth()
                             .graphicsLayer { scaleX = fit; scaleY = fit },
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        LeftControls(vm, layout, leftShift)
-                        CenterControls(vm, layout, horizontal = false, yShift = centerShift)
-                        RightControls(vm, layout, rightShift)
+                        LeftControls(vm, layout, columns.left.shift)
+                        CenterControls(vm, layout, horizontal = false, yShift = columns.center.shift)
+                        RightControls(vm, layout, columns.right.shift)
                     }
                 }
             } else {
@@ -296,35 +240,8 @@ private fun NeonBackground(modifier: Modifier = Modifier) {
     }
 }
 
-/** Una pieza de una columna vertical: su altura de layout y su
- * extensión visible (arriba/abajo) respecto a la parte superior
- * de su hueco, con su desplazamiento ya sumado. */
-private data class SpanItem(val visible: Boolean, val h: Float, val top: Float, val bottom: Float)
-
-/** Extensión de una columna: altura de layout, arriba visible y
- * abajo visible, con los huecos entre piezas. Una pieza oculta
- * no ocupa nada ni deja hueco. */
-private fun vSpan(items: List<SpanItem>, gap: Float): Triple<Float, Float, Float> {
-    var y = 0f
-    var layoutH = 0f
-    var top = Float.MAX_VALUE
-    var bottom = -Float.MAX_VALUE
-    var first = true
-    for (it in items) {
-        if (!it.visible) continue
-        if (!first) {
-            y += gap
-            layoutH += gap
-        }
-        first = false
-        top = minOf(top, y + it.top)
-        bottom = maxOf(bottom, y + it.bottom)
-        y += it.h
-        layoutH += it.h
-    }
-    if (first) return Triple(0f, 0f, 0f)
-    return Triple(layoutH, top, bottom)
-}
+/** Un elemento guardado, como geometría pura de :core. */
+private fun ButtonLayout.toGeom() = LayoutGeometry.GeomElement(visible, scale, offsetXdp, offsetYdp)
 
 /** Un elemento personalizable: oculto no se dibuja; si no, se
  * mueve, se escala y se hace transparente según el diseño
@@ -370,20 +287,13 @@ private fun LayoutElement(
  * quiera, pero nunca hacia la tuerca ni fuera de la pantalla. */
 @Composable
 private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState, layout: LayoutConfig, contentW: Dp) {
-    val groupW = 124f // Dos píldoras de 58 dp + hueco de 8 dp.
     val contentWf = contentW.value
     val leftEl = layout.element(LayoutConfig.SHOULDERS_LEFT)
     val rightEl = layout.element(LayoutConfig.SHOULDERS_RIGHT)
-    // Izquierda: que LT no se salga por el borde (mínimo -8 dp) y que no tape la píldora
-    // de estado (ancho estimado 260 dp, centrada).
-    val leftLo = -8f
-    val leftHi = (contentWf - 260f) / 2f - groupW * leftEl.scale
-    val leftOffX = if (leftLo > leftHi) leftLo else leftEl.offsetXdp.toFloat().coerceIn(leftLo, leftHi)
-    // Derecha: que RT no llegue a la tuerca (máximo 0 dp, así queda el hueco de 8 dp) y
-    // que no tape la píldora de estado.
-    val rightLo = groupW * rightEl.scale + 178f - contentWf / 2f
-    val rightHi = 0f
-    val rightOffX = if (rightLo > rightHi) rightHi else rightEl.offsetXdp.toFloat().coerceIn(rightLo, rightHi)
+    // El recorte vive en LayoutGeometry (:core) y se comprueba con
+    // tests en CI: cada grupo puede moverse hacia el centro todo lo
+    // que quiera, pero nunca hacia la tuerca ni fuera de la pantalla.
+    val (leftOffX, rightOffX) = LayoutGeometry.clampShoulders(contentWf, leftEl.toGeom(), rightEl.toGeom())
     val layoutClamped = layout
         .withElement(LayoutConfig.SHOULDERS_LEFT, leftEl.copy(offsetXdp = leftOffX.toInt()))
         .withElement(LayoutConfig.SHOULDERS_RIGHT, rightEl.copy(offsetXdp = rightOffX.toInt()))
