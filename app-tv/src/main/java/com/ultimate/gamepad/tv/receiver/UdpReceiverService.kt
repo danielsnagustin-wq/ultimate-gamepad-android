@@ -14,15 +14,19 @@ import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.TransportMethod
+import com.ultimate.gamepad.core.WifiLatencyLock
 import com.ultimate.gamepad.tv.TvPairing
 import com.ultimate.gamepad.tv.shizuku.ShizukuHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.net.DatagramPacket
 import java.net.DatagramSocket
+import java.net.InetSocketAddress
 
 /**
  * Receptor UDP en primer plano (TV) — Fase 1, visible en pantalla.
@@ -91,54 +95,106 @@ class UdpReceiverService : Service() {
         }
     }
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
     private var socket: DatagramSocket? = null
+    /** WifiLock de baja latencia: se toma al escuchar y se suelta al parar. */
+    private val wifiLock: WifiLatencyLock by lazy { WifiLatencyLock(this) }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /** Socket UDP ligado con SO_REUSEADDR (re-ligar rápido tras reiniciar) y búferes amplios. */
+    private fun bindReceiverSocket(): DatagramSocket {
+        val s = DatagramSocket(null)
+        s.reuseAddress = true
+        runCatching { s.receiveBufferSize = 64 * 1024 }
+        runCatching { s.sendBufferSize = 64 * 1024 }
+        runCatching { s.trafficClass = 0x10 }
+        s.bind(InetSocketAddress(GamepadProtocol.DEFAULT_PORT))
+        return s
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(1, notification("Receptor Ultimate Gamepad en puerto ${GamepadProtocol.DEFAULT_PORT}"))
         startService(Intent(this, TcpReceiverService::class.java))
+        // Cerrar el socket viejo ANTES de crear el nuevo: el bucle
+        // viejo está bloqueado en receive() sin timeout y la
+        // cancelación sola no lo despierta; sin este close, el nuevo
+        // bind falla con "Address already in use" y el receptor
+        // queda muerto con el servicio "vivo".
         job?.cancel()
-        job = CoroutineScope(Dispatchers.IO).launch {
+        runCatching { socket?.close() }; socket = null
+        wifiLock.acquire()
+        job = scope.launch {
+            // El socket vive como local de la corrutina y el campo
+            // solo es un espejo para poder cerrarlo desde fuera
+            // (onStartCommand/onDestroy) y despertar el receive()
+            // bloqueado. El finally cierra solo SU socket: con el
+            // campo compartido, el finally del bucle viejo podía
+            // cerrar el socket nuevo.
+            var localSocket: DatagramSocket? = null
             try {
-                socket = DatagramSocket(GamepadProtocol.DEFAULT_PORT)
+                // Reintentar el bind: si el puerto sigue ocupado por
+                // el socket viejo o por otro proceso, esperar y
+                // reintentar en vez de morir en silencio.
+                var attempt = 0
+                while (isActive && localSocket == null) {
+                    localSocket = runCatching { bindReceiverSocket() }.onFailure {
+                        lastError = "No se pudo abrir UDP ${GamepadProtocol.DEFAULT_PORT} (${it.message}); reintentando…"
+                        delay(1000L * (attempt + 1).coerceAtMost(5))
+                    }.getOrNull()
+                    attempt++
+                }
+                socket = localSocket
+                val sock = localSocket ?: return@launch
                 val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
                 while (isActive) {
-                    val packet = DatagramPacket(buf, buf.size)
-                    socket?.receive(packet)
-                    val data = packet.data.copyOf(packet.length)
-                    // Descubrimiento (Discovery.kt): el teléfono emite
-                    // "UGDISC1" por broadcast y la TV responde con su
-                    // nombre, IP, puerto y PIN persistente, para que
-                    // conectar sea tocar la TV en la lista. Se
-                    // comprueba ANTES del ping: no es un paquete de
-                    // juego de 32 bytes ni un ping.
-                    if (String(data, Charsets.UTF_8) == Discovery.MAGIC_REQUEST) {
-                        val wifi = getSystemService(Context.WIFI_SERVICE) as WifiManager
-                        val ip = ShizukuHelper.localIpFromWifi(wifi)
-                        if (ip != null) {
-                            val response = Discovery.buildResponse(
-                                // Nombre genérico, sin modelo del
-                                // dispositivo: la TV se identifica en
-                                // la lista por este nombre + su IP.
-                                "TV Ultimate Gamepad", ip, GamepadProtocol.DEFAULT_PORT,
-                                TvPairing.getOrCreatePin(this@UdpReceiverService),
-                            )
-                            socket?.send(DatagramPacket(response, response.size, packet.address, packet.port))
+                    try {
+                        val packet = DatagramPacket(buf, buf.size)
+                        sock.receive(packet)
+                        val data = packet.data.copyOf(packet.length)
+                        // Descubrimiento (Discovery.kt): el teléfono emite
+                        // "UGDISC1" por broadcast y la TV responde con su
+                        // nombre, IP, puerto y PIN persistente, para que
+                        // conectar sea tocar la TV en la lista. Se
+                        // comprueba ANTES del ping: no es un paquete de
+                        // juego de 32 bytes ni un ping.
+                        if (String(data, Charsets.UTF_8) == Discovery.MAGIC_REQUEST) {
+                            val wifi = getSystemService(Context.WIFI_SERVICE) as WifiManager
+                            val ip = ShizukuHelper.localIpFromWifi(wifi)
+                            if (ip != null) {
+                                val response = Discovery.buildResponse(
+                                    // Nombre genérico, sin modelo del
+                                    // dispositivo: la TV se identifica en
+                                    // la lista por este nombre + su IP.
+                                    "TV Ultimate Gamepad", ip, GamepadProtocol.DEFAULT_PORT,
+                                    TvPairing.getOrCreatePin(this@UdpReceiverService),
+                                )
+                                sock.send(DatagramPacket(response, response.size, packet.address, packet.port))
+                            }
+                            continue
                         }
-                        continue
+                        if (GamepadProtocol.isPing(data)) {
+                            sock.send(DatagramPacket(data, data.size, packet.address, packet.port))
+                            continue
+                        }
+                        val state = GamepadProtocol.decode(data) ?: continue
+                        recordPacket(state, TransportMethod.WIFI_UDP)
+                        deliver(state, data)
+                    } catch (e: Exception) {
+                        // Un error en un paquete no mata el receptor:
+                        // se anota y se sigue. Si es nuestro propio
+                        // close (cancelación), el bucle termina por
+                        // isActive.
+                        if (!isActive) break
+                        lastError = e.message ?: e.javaClass.simpleName
+                        delay(50)
                     }
-                    if (GamepadProtocol.isPing(data)) {
-                        socket?.send(DatagramPacket(data, data.size, packet.address, packet.port))
-                        continue
-                    }
-                    val state = GamepadProtocol.decode(data) ?: continue
-                    recordPacket(state, TransportMethod.WIFI_UDP)
-                    deliver(state, data)
                 }
-            } catch (e: Exception) {
-                lastError = e.message ?: e.javaClass.simpleName
+            } finally {
+                val s = localSocket; localSocket = null
+                runCatching { s?.close() }
+                if (socket === s) socket = null
             }
         }
         return START_STICKY
@@ -163,8 +219,10 @@ class UdpReceiverService : Service() {
     }
 
     override fun onDestroy() {
-        job?.cancel(); socket?.close()
+        job?.cancel(); runCatching { socket?.close() }; socket = null
+        wifiLock.release()
         stopService(Intent(this, TcpReceiverService::class.java))
+        scope.cancel()
         super.onDestroy()
     }
 

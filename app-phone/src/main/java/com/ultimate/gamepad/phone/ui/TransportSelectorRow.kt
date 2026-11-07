@@ -1,11 +1,15 @@
 package com.ultimate.gamepad.phone.ui
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,6 +41,11 @@ import com.ultimate.gamepad.core.TransportStatus
  */
 @Composable
 fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
+    // El launcher se declara siempre (regla de Compose: no puede ir
+    // dentro de un if); solo se usa cuando falta el permiso.
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.refreshHidStatus(force = true)
+    }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -70,6 +79,14 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         if (ui.hidAvailability.name == "UNAVAILABLE") {
             Text("Bluetooth HID: no disponible en este teléfono o sin comprobar. Ver Etapa 0.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        }
+        if (ui.hidAvailability.name == "PERMISSION_DENIED") {
+            Spacer(Modifier.height(4.dp))
+            Text("Bluetooth HID: falta el permiso de Bluetooth (Android 12+). Sin él, el teléfono no puede exponerse como mando.", color = Color(0xFFFFC107), fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = { permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
+                Text("Dar permiso de Bluetooth")
+            }
         }
     }
 }

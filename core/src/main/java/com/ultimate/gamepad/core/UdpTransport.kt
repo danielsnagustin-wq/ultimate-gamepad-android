@@ -18,6 +18,26 @@ class UdpTransport(private val socket: DatagramSocket = DatagramSocket()) {
         // detrás de otro tráfico. Si el sistema no lo permite, se
         // ignora sin romper nada.
         runCatching { socket.trafficClass = 0x10 }
+        // Re-ligar rápido tras reiniciar: sin SO_REUSEADDR, un
+        // reinicio del receptor puede fallar con "Address already
+        // in use" si el socket viejo aún no se liberó.
+        runCatching { socket.reuseAddress = true }
+        // Búferes de 64 KiB: a 120 Hz los paquetes son de 32 bytes,
+        // pero una ráfaga (reconexión, eco de ping) no debe tirar
+        // paquetes por búfer lleno. El sistema puede recortarlos;
+        // si no deja, se ignora.
+        runCatching { socket.sendBufferSize = 64 * 1024 }
+        runCatching { socket.receiveBufferSize = 64 * 1024 }
+    }
+
+    companion object {
+        /** Socket ligado a un puerto (receptor TV) con SO_REUSEADDR. */
+        fun bound(port: Int): UdpTransport {
+            val s = DatagramSocket(null)
+            s.reuseAddress = true
+            s.bind(java.net.InetSocketAddress(port))
+            return UdpTransport(s)
+        }
     }
 
     fun send(state: GamepadState, host: InetAddress, port: Int) {

@@ -20,12 +20,16 @@ import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.DiscoveryClient
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
@@ -71,6 +75,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private val _ui = MutableStateFlow(GamepadUiState())
     val ui: StateFlow<GamepadUiState> = _ui.asStateFlow()
     private val hidService = BluetoothHidService(application)
+
+    /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
+    private var hidRetryJob: Job? = null
+
+    init {
+        // La caída de Bluetooth llegaba solo al servicio y nadie se
+        // enteraba: ahora el ViewModel reacciona (fallback a Wi-Fi
+        // + reintento en segundo plano). Ver onHidConnectionChanged().
+        hidService.onConnectionChanged = { status -> onHidConnectionChanged(status) }
+    }
 
     /** Diseño del mando a gusto del usuario (tamaño/posición/quitar). */
     private val _layout = MutableStateFlow(LayoutPrefs.load(application))
@@ -172,15 +186,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Comprueba HID en el teléfono y actualiza su estado real. Llamar al abrir la pantalla de conexión. */
     private var lastHidCheckAtMs: Long = 0L
 
-    fun refreshHidStatus() {
+    fun refreshHidStatus(force: Boolean = false) {
         // Cada llamada registra otro listener de perfil Bluetooth:
         // sin freno, cada cambio de estado de conexión pedía el
         // proxy de nuevo y los listeners se acumulaban. Como mucho
         // una comprobación cada 10 s (suficiente: el usuario puede
         // encender el Bluetooth y se re-detecta en el siguiente
-        // cambio de estado).
+        // cambio de estado). Con force=true (tras dar el permiso),
+        // se salta el freno.
         val now = System.currentTimeMillis()
-        if (now - lastHidCheckAtMs < 10_000) return
+        if (!force && now - lastHidCheckAtMs < 10_000) return
         lastHidCheckAtMs = now
         hidService.checkAvailability { availability ->
             val status = when (availability) {
@@ -194,6 +209,113 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                     transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to status),
                 )
             }
+        }
+        // Si el firmware no expone el perfil, el callback de arriba
+        // no llega nunca y el estado se quedaba en UNKNOWN para
+        // siempre: a los 3 s sin respuesta, es NO DISPONIBLE.
+        viewModelScope.launch {
+            delay(3000)
+            if (hidService.availability == HidAvailability.UNKNOWN) {
+                _ui.update {
+                    it.copy(
+                        hidAvailability = HidAvailability.UNAVAILABLE,
+                        transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * La TV cortó el Bluetooth (o volvió). Esto es lo que antes no
+     * existía: el callback del HID ponía FAILED en el servicio y
+     * nadie se enteraba — la UI seguía en "Conectado" y el modo
+     * AUTO nunca saltaba a Wi-Fi. Ahora la caída dispara el
+     * fallback inmediato a Wi-Fi y la reconexión en segundo plano.
+     */
+    private fun onHidConnectionChanged(status: TransportStatus) {
+        _ui.update { it.copy(transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to status)) }
+        when (status) {
+            TransportStatus.CONNECTED -> {
+                if (_ui.value.status != ConnectionStatus.CONNECTED) {
+                    // Estábamos en ERROR tras la caída y sin Wi-Fi: el mando vuelve a ser HID.
+                    hidRetryJob?.cancel(); hidRetryJob = null
+                    _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "Bluetooth reconectado con la TV.") }
+                } else {
+                    _ui.update { it.copy(info = "Bluetooth disponible de nuevo (sigues por Wi-Fi).") }
+                }
+            }
+            TransportStatus.FAILED -> {
+                if (_ui.value.status == ConnectionStatus.CONNECTED && _ui.value.attemptMethod == TransportMethod.BLUETOOTH_HID) {
+                    onHidDropped()
+                }
+            }
+            else -> {}
+        }
+    }
+
+    /** Bluetooth caído mientras jugábamos por HID: a Wi-Fi ahora mismo, sin tocar nada. */
+    private fun onHidDropped() {
+        _ui.update {
+            it.copy(
+                error = "Bluetooth desconectado por la TV; cambiando a Wi-Fi…",
+                transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED),
+            )
+        }
+        startHidRetryLoop()
+        if (_ui.value.transportMode != TransportMode.AUTO) {
+            _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Bluetooth desconectado por la TV. Se sigue reintentando Bluetooth en segundo plano.") }
+            return
+        }
+        val host = _ui.value.host
+        if (host.isNotBlank()) {
+            connect(PairingInfo(host, _ui.value.port, _ui.value.pin), TransportMethod.WIFI_UDP)
+        } else {
+            // Sin IP guardada: buscar la TV por broadcast y conectar a la primera.
+            viewModelScope.launch {
+                val found = DiscoveryClient.discover()
+                val tv = found.firstOrNull()
+                if (tv != null) {
+                    connectToDiscovered(tv)
+                } else {
+                    _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Bluetooth desconectado y no se encontró la TV por Wi-Fi. Se sigue reintentando Bluetooth en segundo plano.") }
+                }
+            }
+        }
+    }
+
+    /**
+     * Re-registro HID en segundo plano con backoff exponencial
+     * (1 s, 2 s, 4 s, 8 s… tope 15 s). La radio de la TV se cae y
+     * vuelve: la app no puede arreglar la radio, pero sí dejar la
+     * app HID registrada para que la TV reconecte sola cuando
+     * vuelva, sin que el usuario tenga que tocar nada. Se para
+     * cuando el HID reconecta o el usuario desconecta.
+     */
+    private fun startHidRetryLoop() {
+        hidRetryJob?.cancel()
+        hidRetryJob = viewModelScope.launch {
+            var delayMs = 1000L
+            while (isActive && hidService.status != TransportStatus.CONNECTED) {
+                // El callback del proxy puede no llegar nunca si el
+                // firmware no expone el perfil: con timeout no se
+                // queda colgado el bucle.
+                val ok = withTimeoutOrNull(5000) {
+                    suspendCancellableCoroutine<Boolean> { cont ->
+                        hidService.reRegister { cont.resume(it) }
+                    }
+                } ?: false
+                if (ok) {
+                    // Registrado: la TV puede conectar en cualquier momento.
+                    // Esperar antes de volver a intentarlo (el registro
+                    // repetido no ayuda y puede molestar a la TV).
+                    delay(15_000)
+                } else {
+                    delay(delayMs)
+                    delayMs = minOf(delayMs * 2, 15_000)
+                }
+            }
+            hidRetryJob = null
         }
     }
 
@@ -264,6 +386,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun connectHid() {
+        if (hidService.availability == HidAvailability.PERMISSION_DENIED) {
+            _ui.update {
+                it.copy(error = "Falta el permiso de Bluetooth. Toca \"Dar permiso de Bluetooth\" en el selector de método.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+            }
+            return
+        }
         if (hidService.availability != HidAvailability.AVAILABLE) {
             _ui.update {
                 it.copy(error = "Bluetooth HID no disponible en este teléfono (no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
@@ -274,8 +402,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             _ui.update { it.copy(error = "No se pudo registrar el mando HID.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED)) }
             return
         }
+        // Entrar en HID: limpiar los ecos viejos de Wi-Fi, que si no
+        // harían saltar el fallback como si la TV no respondiera.
+        GamepadSenderService.resetHealth()
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTED, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como 'Xbox 360 Controller'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
+            it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como 'Xbox 360 Controller'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
         }
     }
 
@@ -304,6 +435,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun disconnect(silent: Boolean = false) {
+        hidRetryJob?.cancel(); hidRetryJob = null
+        GamepadSenderService.resetHealth()
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
         getApplication<Application>().startService(intent)
         if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, info = null) }

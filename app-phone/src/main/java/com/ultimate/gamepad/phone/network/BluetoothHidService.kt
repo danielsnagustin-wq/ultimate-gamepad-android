@@ -49,11 +49,40 @@ class BluetoothHidService(private val context: Context) {
     @Volatile var connectedDevice: BluetoothDevice? = null
         private set
 
+    /**
+     * Aviso al ViewModel cuando el enlace HID cambia (conectado /
+     * caído). Sin esto, una caída de Bluetooth quedaba invisible: el
+     * callback ponía FAILED en el servicio y nadie se enteraba — la
+     * UI seguía en "Conectado" y el modo AUTO nunca saltaba a Wi-Fi.
+     */
+    @Volatile var onConnectionChanged: ((TransportStatus) -> Unit)? = null
+
+    /** ¿La app HID está registrada (registerApp devolvió true)? */
+    @Volatile var appRegistered: Boolean = false
+        private set
+
     private var hidDevice: BluetoothHidDevice? = null
     private var proxyReady = false
 
-    /** Comprueba si el teléfono expone HID_DEVICE. No empareja nada. */
-    fun checkAvailability(onResult: (HidAvailability) -> Unit) {
+    /** Cierra el proxy de perfil anterior: cada getProfileProxy sin su closeProfileProxy acumulaba un listener y un proxy. */
+    private fun closeProfileProxy() {
+        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        val proxy = hidDevice
+        if (adapter != null && proxy != null) {
+            runCatching { adapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, proxy) }
+        }
+        hidDevice = null; proxyReady = false
+    }
+
+    /**
+     * Pide el proxy HID_DEVICE, cerrando el anterior. Sin
+     * BLUETOOTH_CONNECT (Android 12+) getProfileProxy lanza
+     * SecurityException: se devuelve PERMISSION_DENIED en vez de
+     * crashear (la app nunca pedía ese permiso en tiempo de
+     * ejecución: abrir la pantalla de conexión sin él crasheaba).
+     */
+    private fun requestProxy(onResult: (HidAvailability) -> Unit) {
+        closeProfileProxy()
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
             availability = HidAvailability.UNAVAILABLE
@@ -65,28 +94,62 @@ class BluetoothHidService(private val context: Context) {
             status = TransportStatus.UNAVAILABLE
             onResult(availability); return
         }
-        adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
-            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                if (profile == BluetoothProfile.HID_DEVICE) {
-                    hidDevice = proxy as BluetoothHidDevice
-                    proxyReady = true
-                    availability = HidAvailability.AVAILABLE
-                    status = TransportStatus.AVAILABLE
-                    onResult(availability)
+        val result = runCatching {
+            adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                    if (profile == BluetoothProfile.HID_DEVICE) {
+                        hidDevice = proxy as BluetoothHidDevice
+                        proxyReady = true
+                        availability = HidAvailability.AVAILABLE
+                        status = TransportStatus.AVAILABLE
+                        onResult(availability)
+                    }
                 }
-            }
-            override fun onServiceDisconnected(profile: Int) {
-                if (profile == BluetoothProfile.HID_DEVICE) {
-                    proxyReady = false
-                    availability = HidAvailability.UNAVAILABLE
-                    status = TransportStatus.UNAVAILABLE
-                    onResult(availability)
+                override fun onServiceDisconnected(profile: Int) {
+                    if (profile == BluetoothProfile.HID_DEVICE) {
+                        proxyReady = false
+                        availability = HidAvailability.UNAVAILABLE
+                        status = TransportStatus.UNAVAILABLE
+                        onResult(availability)
+                    }
                 }
-            }
-        }, BluetoothProfile.HID_DEVICE)
+            }, BluetoothProfile.HID_DEVICE)
+        }
+        val error = result.exceptionOrNull()
+        if (error is SecurityException) {
+            availability = HidAvailability.PERMISSION_DENIED
+            status = TransportStatus.UNAVAILABLE
+            onResult(availability)
+            return
+        }
+        if (error != null || result.getOrDefault(false) == false) {
+            availability = HidAvailability.UNAVAILABLE
+            status = TransportStatus.UNAVAILABLE
+            onResult(availability)
+            return
+        }
         // Si el firmware no expone el perfil, onServiceConnected no
         // llega nunca: el llamador debe tratar UNKNOWN tras 3 s como
         // UNAVAILABLE. Ver GamepadViewModel.refreshHidStatus().
+    }
+
+    /** Comprueba si el teléfono expone HID_DEVICE. No empareja nada. */
+    fun checkAvailability(onResult: (HidAvailability) -> Unit) = requestProxy(onResult)
+
+    /**
+     * Vuelve a registrar la app HID (para la reconexión automática
+     * con backoff del ViewModel). Si ya está registrada, no hace
+     * nada: registrar dos veces seguidas puede fallar y no aporta
+     * nada. Devuelve true si la app quedó registrada. Ojo: si el
+     * firmware no expone el perfil, onResult puede no llegar nunca;
+     * el llamador debe usar timeout.
+     */
+    fun reRegister(onResult: (Boolean) -> Unit) {
+        if (appRegistered) { onResult(true); return }
+        requestProxy { availability ->
+            if (availability != HidAvailability.AVAILABLE) { onResult(false); return@requestProxy }
+            onResult(register())
+        }
     }
 
     private val callback = object : BluetoothHidDevice.Callback() {
@@ -97,10 +160,17 @@ class BluetoothHidService(private val context: Context) {
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                 connectedDevice = null
                 status = TransportStatus.FAILED
+            } else {
+                return
             }
+            onConnectionChanged?.invoke(status)
         }
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-            if (!registered) status = TransportStatus.FAILED
+            appRegistered = registered
+            if (!registered) {
+                status = TransportStatus.FAILED
+                onConnectionChanged?.invoke(status)
+            }
         }
     }
 
@@ -126,7 +196,9 @@ class BluetoothHidService(private val context: Context) {
         val qos = BluetoothHidDeviceAppQosSettings(
             BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT, 800, 9, 0, 11250, 0,
         )
-        return runCatching { hid.registerApp(sdp, qos, null, null, callback) }.getOrDefault(false)
+        return runCatching { hid.registerApp(sdp, qos, null, null, callback) }
+            .getOrDefault(false)
+            .also { appRegistered = it }
     }
 
     /** Envía un reporte HID. Solo tiene efecto si hay un dispositivo conectado; si no, devuelve false. */
@@ -185,6 +257,7 @@ class BluetoothHidService(private val context: Context) {
 
     fun unregister() {
         runCatching { hidDevice?.unregisterApp() }
-        hidDevice = null; proxyReady = false
+        appRegistered = false
+        closeProfileProxy()
     }
 }

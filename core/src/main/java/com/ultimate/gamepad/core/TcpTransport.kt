@@ -74,6 +74,10 @@ class TcpGamepadReceiver(
                 input = DataInputStream(client?.getInputStream())
             } catch (_: SocketTimeoutException) {
                 return null
+            } catch (_: java.io.IOException) {
+                // El ServerSocket murió (p. ej. close() en onDestroy):
+                // no hay nada que aceptar; el servicio lo recrea.
+                return null
             }
         }
         val stream = input ?: return null
@@ -86,14 +90,27 @@ class TcpGamepadReceiver(
             null
         } catch (_: java.io.EOFException) {
             // La TV / el teléfono cerró: la próxima receive() acepta de nuevo.
-            runCatching { client?.close() }
-            client = null; input = null
+            closeClient()
+            null
+        } catch (_: java.io.IOException) {
+            // Reset de conexión, red rota, etc.: el cliente murió.
+            // Sin este catch, la excepción subía al servicio, que la
+            // tragaba y volvía a llamar a receive() en bucle cerrado
+            // sobre el mismo socket muerto (CPU al 100% y sin volver
+            // a aceptar nunca).
+            closeClient()
             null
         }
+    }
+
+    private fun closeClient() {
+        runCatching { client?.close() }
+        client = null; input = null
     }
 
     override fun close() {
         runCatching { client?.close() }
         runCatching { server.close() }
+        client = null; input = null
     }
 }
