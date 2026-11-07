@@ -115,6 +115,8 @@ fun GamepadScreen(vm: GamepadViewModel) {
             share = layout.element(LayoutConfig.SHARE).toGeom(),
             shouldersLeft = layout.element(LayoutConfig.SHOULDERS_LEFT).toGeom(),
             shouldersRight = layout.element(LayoutConfig.SHOULDERS_RIGHT).toGeom(),
+            l4 = layout.element(LayoutConfig.L4).toGeom(),
+            r4 = layout.element(LayoutConfig.R4).toGeom(),
         )
         val columns = LayoutGeometry.landscapeColumns(geom)
         // En vertical la escala se calcula por el ancho (la pantalla es alta y sobra sitio).
@@ -458,7 +460,7 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
-                LayoutElement(layout, LayoutConfig.XBOX, 80f, 80f) { XboxButton(vm, sizeDp = 80) }
+                LayoutElement(layout, LayoutConfig.XBOX, 72f, 72f) { XboxButton(vm, sizeDp = 72) }
                 LayoutElement(layout, LayoutConfig.MENU, 76f, 48f) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
             }
             LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }

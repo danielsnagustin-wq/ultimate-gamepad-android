@@ -12,7 +12,13 @@ import org.junit.Test
  *
  * Pantallas (dp): vertical 360x640, 390x844, 412x915 y tablet
  * 800x1280; horizontal 640x360, 791x365 (la del usuario: captura
- * de 2048x945 px, densidad ~2.59), 800x360 y 1280x800.
+ * de 2048x945 px, densidad ~2.96 — la captura es un 0.875 de la
+ * pantalla 2340x1080), 800x360, 891x411 y 1280x800.
+ * Ojo: en horizontal la VENTANA de la app es más estrecha que la
+ * pantalla: la barra de navegación se come 34 dp a la derecha, así
+ * que la ventana del usuario es 757x365 dp (área útil 733x341 dp).
+ * Los casos genéricos usan el ancho de pantalla; el test de la
+ * flecha abajo usa el ancho de ventana real (757 dp).
  *
  * Tolerancias: 1 dp en alto (en las pantallas más bajas con
  * escala 1.6 el ajuste toca el suelo de 0.45 y el contenido puede
@@ -36,7 +42,7 @@ class LayoutGeometryTest {
 
     private fun scaled(s: Float): LayoutGeometry.GeomLayout {
         val e = el(scale = s)
-        return LayoutGeometry.GeomLayout(e, e, e, e, e, e, e, e, e, e)
+        return LayoutGeometry.GeomLayout(e, e, e, e, e, e, e, e, e, e, e, e)
     }
 
     /** Desplazamientos guardados por el usuario (stick +39 dp en Y,
@@ -53,6 +59,8 @@ class LayoutGeometryTest {
             xbox = el(scale = s),
             menu = el(scale = s),
             share = el(scale = s),
+            l4 = el(scale = s),
+            r4 = el(scale = s),
         )
 
     /** Desplazamientos extremos (±100 dp) en la peor dirección:
@@ -69,9 +77,11 @@ class LayoutGeometryTest {
             share = el(offsetXdp = 100, offsetYdp = 100),
             shouldersLeft = el(offsetXdp = -100),
             shouldersRight = el(offsetXdp = 100),
+            l4 = el(offsetXdp = -100, offsetYdp = 100),
+            r4 = el(offsetXdp = 100, offsetYdp = -100),
         )
 
-    private val landscapeScreens = listOf(640f to 360f, 791f to 365f, 800f to 360f, 1280f to 800f)
+    private val landscapeScreens = listOf(640f to 360f, 791f to 365f, 800f to 360f, 891f to 411f, 1280f to 800f)
 
     private fun landscapeCases(): List<Case> {
         val cases = mutableListOf<Case>()
@@ -175,7 +185,7 @@ class LayoutGeometryTest {
 
     @Test fun `todo oculto no rompe la geometría`() {
         val hidden = el(visible = false)
-        val layout = LayoutGeometry.GeomLayout(hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden)
+        val layout = LayoutGeometry.GeomLayout(hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden, hidden)
         val cols = L.landscapeColumns(layout)
         assertEquals(0f, cols.maxSpanH, 0f)
         assertEquals(1f, L.fitFor(767f, 301f, cols.maxSpanH, cols.contentW), 0f)
@@ -215,6 +225,54 @@ class LayoutGeometryTest {
         assertTrue("la nueva corta la cruceta ($newDishBottom > $avH)", newDishBottom <= avH)
     }
 
+    /**
+     * La flecha ▼ en la ventana real del usuario: pantalla 791x365 dp
+     * pero la ventana de la app es 757x365 dp (la barra de navegación
+     * se come 34 dp a la derecha en horizontal). El área útil es
+     * 733x341 dp y la fila de controles dispone de 301 dp de alto.
+     * Con los desplazamientos guardados (stick +39, cruceta +23),
+     * la cruceta entera (plato) y la tecla ▼ tienen que quedar
+     * dentro del hueco, con margen, y la columna del centro tiene
+     * que contar la fila L4/R4 (Fase 4). También se cubre la
+     * pantalla 891x411 dp: ahí sobra más sitio, pero el mismo
+     * cálculo tiene que pasar.
+     */
+    @Test fun `la flecha abajo queda visible en la ventana del usuario`() {
+        val layout = userOffsets()
+        // Ventana real del usuario (757x365) y pantalla 891x411.
+        val windows = listOf(
+            "ventana del usuario 757x365" to (757f to 365f),
+            "pantalla 891x411" to (891f to 411f),
+        )
+        for ((name, wh) in windows) {
+            val (screenW, screenH) = wh
+            val aw = screenW - 2 * L.OUTER_PADDING_DP
+            val avH = screenH - 2 * L.OUTER_PADDING_DP - L.SHOULDER_ROW_H
+            val cols = L.landscapeColumns(layout)
+            val fit = L.fitFor(aw, avH, cols.maxSpanH, cols.contentW)
+            assertTrue("$name: fit $fit fuera de [0.45, 1]", fit in L.MIN_FIT..L.MAX_FIT)
+            // La cruceta entera (plato) dentro del hueco, con margen.
+            val dishBottom = newDpadBottomVisual(avH, fit, cols, layout)
+            assertTrue("$name: el plato de la cruceta se sale ($dishBottom > $avH)", dishBottom <= avH)
+            // La tecla ▼ termina 14 dp antes que el plato (la columna
+            // de 3 filas de 56 dp va centrada en el plato de 196 dp):
+            // tiene que quedar dentro con aún más margen y sin que la
+            // tape la etiqueta L3 (hueco >= -10, el resto conocido).
+            val downBottom = newDownKeyBottomVisual(avH, fit, cols, layout)
+            assertTrue("$name: la flecha abajo se sale ($downBottom > $avH)", downBottom <= avH)
+            assertTrue("$name: la flecha abajo roza la etiqueta (${cols.dpadLabelGap})", cols.dpadLabelGap >= -10f)
+            // La matemática vieja sí cortaba la ▼ en esta ventana.
+            val oldFit = ((screenH - 2 * L.OUTER_PADDING_DP) / 500f).coerceIn(0.55f, 1f)
+            val oldDishBottom = legacyDpadBottomVisual(avH, oldFit, layout)
+            assertTrue("$name: la vieja NO cortaba la cruceta: el test no cazaría el error", oldDishBottom > avH)
+        }
+        // El centro cuenta la fila L4/R4: 72 (Xbox) + 12 + 48 (SHARE)
+        // + 12 + 38 (L4/R4) = 182 dp, no 140 dp como antes de este arreglo.
+        val cols = L.landscapeColumns(layout)
+        assertEquals(182f, cols.center.layoutH, 0.001f)
+        assertEquals(182f, cols.center.spanH, 0.001f)
+    }
+
     @Test fun `la matemática vieja habría tapado la etiqueta y la tuerca`() {
         // Vieja, escala 1.4: la caja no crecía con la escala (solo
         // el dibujo), así que la etiqueta (208 x 1.4 = 291 dp)
@@ -231,6 +289,22 @@ class LayoutGeometryTest {
         val (leftOffX, rightOffX) = L.clampShoulders(rowW - 24f, el(), el(offsetXdp = 49))
         val edges = L.shoulderEdges(rowW, leftOffX, rightOffX)
         assertEquals(8f, edges.rtGearGap, 0.01f)
+    }
+
+    /** Borde inferior visual de la tecla ▼: como newDpadBottomVisual
+     * pero 14 dp más arriba (la tecla termina 14 dp antes que el
+     * plato: la columna de 3x56 dp va centrada en el plato de
+     * 196 dp). */
+    private fun newDownKeyBottomVisual(
+        availH: Float,
+        fit: Float,
+        cols: LayoutGeometry.LandscapeColumns,
+        layout: LayoutGeometry.GeomLayout,
+    ): Float {
+        val dpadBottomInColumn = 208f * layout.leftStick.scale + 6f + layout.dpad.offsetYdp + 196f * layout.dpad.scale
+        val downBottomInColumn = dpadBottomInColumn - 14f * layout.dpad.scale
+        val spanCenter = (cols.left.top + cols.left.bottom) / 2f
+        return availH / 2f + (downBottomInColumn - spanCenter) * fit
     }
 
     /** Borde inferior visual de la cruceta con la matemática vieja:

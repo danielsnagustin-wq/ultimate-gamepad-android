@@ -14,6 +14,11 @@ import kotlin.math.abs
  *   columna (410 dp) no cabía en su fila (301 dp) y el ajuste se
  *   calculaba con un fijo de 500 dp en vez de medir el contenido.
  *   Ahora el ajuste se calcula con la altura real del contenido.
+ * - La fila L4/R4 (Fase 4) no estaba en la geometría del centro:
+ *   la columna se calculaba con dos filas (140 dp) cuando la
+ *   pantalla dibuja tres (182 dp con el Xbox a 72 dp). Ahora la
+ *   tercera fila está en landscapeColumns, con su escala y su
+ *   desplazamiento, como las demás.
  * - La escala era solo visual: un stick a 1.4x dibujaba 291 dp en
  *   un hueco de 208 dp y tapaba la etiqueta L3 y la cruceta. Ahora
  *   la caja crece con la escala y nada se tapa.
@@ -47,14 +52,23 @@ object LayoutGeometry {
     const val ABXY_H = 200f
     const val VIEW_W = 76f
     const val VIEW_H = 48f
-    const val XBOX_W_LANDSCAPE = 80f
-    const val XBOX_H_LANDSCAPE = 80f
+    /** Xbox en horizontal: 72 dp (antes 80). En la captura del
+     * usuario el botón se veía desproporcionado frente a las
+     * píldoras VIEW/MENU/SHARE (48 dp de alto): 72 dp es 1,5x la
+     * píldora, como en el mando Xbox real. En vertical sigue en
+     * 64 dp. */
+    const val XBOX_W_LANDSCAPE = 72f
+    const val XBOX_H_LANDSCAPE = 72f
     const val XBOX_W_PORTRAIT = 64f
     const val XBOX_H_PORTRAIT = 64f
     const val MENU_W = 76f
     const val MENU_H = 48f
     const val SHARE_W = 76f
     const val SHARE_H = 48f
+    const val L4_W = 58f
+    const val L4_H = 38f
+    const val R4_W = 58f
+    const val R4_H = 38f
 
     /** Hueco entre piezas de una columna y entre centro y SHARE. */
     const val COLUMN_GAP = 6f
@@ -91,7 +105,7 @@ object LayoutGeometry {
         val offsetYdp: Int = 0,
     )
 
-    /** Los diez elementos personalizables del mando. */
+    /** Los doce elementos personalizables del mando. */
     data class GeomLayout(
         val leftStick: GeomElement = GeomElement(),
         val dpad: GeomElement = GeomElement(),
@@ -103,6 +117,8 @@ object LayoutGeometry {
         val share: GeomElement = GeomElement(),
         val shouldersLeft: GeomElement = GeomElement(),
         val shouldersRight: GeomElement = GeomElement(),
+        val l4: GeomElement = GeomElement(),
+        val r4: GeomElement = GeomElement(),
     )
 
     /** Una pieza de una columna vertical: su altura de layout y su
@@ -201,6 +217,8 @@ object LayoutGeometry {
         val xb = layout.xbox
         val mn = layout.menu
         val sh = layout.share
+        val l4 = layout.l4
+        val r4 = layout.r4
         // Columna izquierda: stick (180 + etiqueta 28) + hueco 6 + cruceta 196.
         val left = columnGeometry(
             listOf(
@@ -217,7 +235,7 @@ object LayoutGeometry {
             ),
             COLUMN_GAP,
         )
-        // Centro: fila VIEW/Xbox/MENU + hueco 12 + SHARE.
+        // Centro: fila VIEW/Xbox/MENU + hueco 12 + SHARE + hueco 12 + fila L4/R4.
         val centerRowH = maxOf(
             if (vx.visible) VIEW_H * vx.scale else 0f,
             if (xb.visible) XBOX_H_LANDSCAPE * xb.scale else 0f,
@@ -234,10 +252,29 @@ object LayoutGeometry {
             if (mn.visible) mn.offsetYdp + MENU_H * mn.scale else -Float.MAX_VALUE,
         )
         val centerRowVisible = vx.visible || xb.visible || mn.visible
+        // Paletas traseras L4/R4 (Fase 4): tercera fila del centro,
+        // debajo de SHARE. Antes no estaban en la geometría y la
+        // columna del centro se calculaba con solo dos filas (140 dp
+        // en vez de 182 dp con el Xbox a 72 dp): el ajuste y el
+        // centrado del centro usaban una altura que no era la real.
+        val rearRowH = maxOf(
+            if (l4.visible) L4_H * l4.scale else 0f,
+            if (r4.visible) R4_H * r4.scale else 0f,
+        )
+        val rearRowTop = minOf(
+            if (l4.visible) l4.offsetYdp.toFloat() else Float.MAX_VALUE,
+            if (r4.visible) r4.offsetYdp.toFloat() else Float.MAX_VALUE,
+        )
+        val rearRowBottom = maxOf(
+            if (l4.visible) l4.offsetYdp + L4_H * l4.scale else -Float.MAX_VALUE,
+            if (r4.visible) r4.offsetYdp + R4_H * r4.scale else -Float.MAX_VALUE,
+        )
+        val rearRowVisible = l4.visible || r4.visible
         val center = columnGeometry(
             listOf(
                 SpanItem(centerRowVisible, centerRowH, centerRowTop, centerRowBottom),
                 SpanItem(sh.visible, SHARE_H * sh.scale, sh.offsetYdp.toFloat(), sh.offsetYdp + SHARE_H * sh.scale),
+                SpanItem(rearRowVisible, rearRowH, rearRowTop, rearRowBottom),
             ),
             CENTER_GAP,
         )
@@ -254,6 +291,7 @@ object LayoutGeometry {
         val maxOffX = maxOf(
             abs(ls.offsetXdp), abs(dp.offsetXdp), abs(ab.offsetXdp), abs(rs.offsetXdp),
             abs(vx.offsetXdp), abs(xb.offsetXdp), abs(mn.offsetXdp), abs(sh.offsetXdp),
+            abs(l4.offsetXdp), abs(r4.offsetXdp),
         ).toFloat()
         val contentW = leftW + centerW + rightW + 32f + 2f * maxOffX
         // La cruceta empieza tras el stick + hueco; la etiqueta está
