@@ -173,6 +173,15 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("📶  Rendimiento (latencia y red)")
         }
         Spacer(Modifier.height(16.dp))
+        // --- Extras (Fase 4) ---
+        Text("Extras (Fase 4)", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openExtras() }, modifier = Modifier.fillMaxWidth()) {
+            Text("✨  Extras (turbo, macros, teclado, ratón…)")
+        }
+        Spacer(Modifier.height(16.dp))
         Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }
     }
 }

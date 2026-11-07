@@ -38,6 +38,9 @@ data class LayoutConfig(val elements: Map<String, ButtonLayout> = defaultElement
         const val MENU = "menu"
         const val SHOULDERS_LEFT = "shouldersLeft"
         const val SHOULDERS_RIGHT = "shouldersRight"
+        /** Paletas traseras L4/R4 (Fase 4, GamepadExtraButtons). */
+        const val L4 = "l4"
+        const val R4 = "r4"
 
         /** Nombre en español de cada elemento para la lista de Ajustes. */
         val NAMES: Map<String, String> = mapOf(
@@ -51,6 +54,8 @@ data class LayoutConfig(val elements: Map<String, ButtonLayout> = defaultElement
             MENU to "MENU",
             SHOULDERS_LEFT to "LT / LB",
             SHOULDERS_RIGHT to "RB / RT",
+            L4 to "L4 (paleta)",
+            R4 to "R4 (paleta)",
         )
 
         fun defaultElements(): Map<String, ButtonLayout> =

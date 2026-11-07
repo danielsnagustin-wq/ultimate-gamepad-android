@@ -291,6 +291,11 @@ private val EDITOR_BASE: Map<String, EditorBase> = mapOf(
     LayoutConfig.XBOX to EditorBase(0.50f, 0.42f, 56, 56),
     LayoutConfig.MENU to EditorBase(0.64f, 0.42f, 60, 36),
     LayoutConfig.SHARE to EditorBase(0.50f, 0.60f, 60, 36),
+    // Paletas L4/R4 (Fase 4): a los lados de SHARE, como en el
+    // mando (debajo de VIEW/MENU). Solo se añaden dos entradas:
+    // ningún elemento existente se mueve ni se toca.
+    LayoutConfig.L4 to EditorBase(0.36f, 0.60f, 60, 36),
+    LayoutConfig.R4 to EditorBase(0.64f, 0.60f, 60, 36),
 )
 
 /**
@@ -353,7 +358,8 @@ private fun EditorItemShape(id: String, isSelected: Boolean) {
                 contentAlignment = Alignment.Center,
             ) { Text("✕", color = Color.White, fontSize = 22.sp) }
         }
-        LayoutConfig.VIEW, LayoutConfig.MENU, LayoutConfig.SHARE -> {
+        LayoutConfig.VIEW, LayoutConfig.MENU, LayoutConfig.SHARE,
+        LayoutConfig.L4, LayoutConfig.R4 -> {
             Box(
                 Modifier.size(60.dp, 36.dp).clip(RoundedCornerShape(10.dp))
                     .background(Color.Black)

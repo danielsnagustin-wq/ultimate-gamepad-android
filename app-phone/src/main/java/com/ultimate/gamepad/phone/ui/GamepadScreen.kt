@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadExtraButtons
 import com.ultimate.gamepad.core.LayoutGeometry
 import kotlinx.coroutines.delay
 
@@ -203,6 +204,8 @@ fun GamepadScreen(vm: GamepadViewModel) {
         if (ui.showGameProfiles) GameProfilesScreen(vm) { vm.closeGameProfiles() }
         if (ui.showControllerTest) ControllerTestScreen(vm, ui) { vm.closeControllerTest() }
         if (ui.showPerformance) PerformanceScreen(vm, ui) { vm.closePerformance() }
+        // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
+        if (ui.showExtras) ExtrasScreen(vm, ui) { vm.closeExtras() }
     }
 }
 
@@ -439,10 +442,12 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
             modifier = Modifier.fillMaxWidth(),
         ) {
             Spacer(Modifier.weight(1f))
+            LayoutElement(layout, LayoutConfig.L4, 58f, 38f) { ShoulderButton("L4") { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
             LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
             LayoutElement(layout, LayoutConfig.XBOX, 64f, 64f) { XboxButton(vm, sizeDp = 64) }
             LayoutElement(layout, LayoutConfig.MENU, 76f, 48f) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
             LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+            LayoutElement(layout, LayoutConfig.R4, 58f, 38f) { ShoulderButton("R4") { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
             Spacer(Modifier.weight(1f))
         }
     } else {
@@ -457,6 +462,14 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
                 LayoutElement(layout, LayoutConfig.MENU, 76f, 48f) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
             }
             LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+            // Paletas traseras L4/R4 (Fase 4): píldoras como los
+            // hombros, con su propio elemento de diseño (se pueden
+            // mover, hacer transparentes o quitar desde el panel
+            // de botones, como los demás).
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                LayoutElement(layout, LayoutConfig.L4, 58f, 38f) { ShoulderButton("L4") { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
+                LayoutElement(layout, LayoutConfig.R4, 58f, 38f) { ShoulderButton("R4") { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
+            }
         }
     }
 }

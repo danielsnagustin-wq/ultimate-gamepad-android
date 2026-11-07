@@ -19,7 +19,9 @@ package com.ultimate.gamepad.core
  * - [remap]: remapeo de botones (bit origen -> bit destino). Se
  *   aplica al enviar: pulsar A con remap A->B envía B. Las
  *   etiquetas del mando no cambian; el remapeo afecta a lo que se
- *   envía, no a lo que se dibuja.
+ *   envía, no a lo que se dibuja. L4/R4 (Fase 4) NO entran en el
+ *   remapeo: no son bits del bitmask de 16 y viajan en el byte 29
+ *   del protocolo (GamepadState.extraButtons).
  * - [layoutJson]: diseño de botones guardado (JSON de LayoutConfig,
  *   opaco aquí; null = usar el diseño actual).
  *

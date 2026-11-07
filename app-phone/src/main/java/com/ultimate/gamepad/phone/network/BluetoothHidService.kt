@@ -41,6 +41,15 @@ import com.ultimate.gamepad.core.TransportStatus
  * Este descriptor es el que usan los proyectos open-source de
  * BluetoothHidDevice; el descriptor exacto se valida en Etapa 0
  * contra la Hyundai (algunas TVs son estrictas con el descriptor).
+ *
+ * L4/R4 (Fase 4) NO se envían por HID: el descriptor declara 12
+ * botones (14 en DS4/DualSense) y no hay hueco para las paletas;
+ * ampliar el descriptor cambiaría el reporte de 7 bytes y es
+ * trabajo aparte. Por Bluetooth, L4/R4 solo llegan por Wi-Fi
+ * (uinput en la TV, BTN_TRIGGER_HAPPY2/3). El turbo y las macros
+ * sí llegan por HID (son pulsaciones normales en el teléfono
+ * antes de enviar) y el giroscopio también (mueve el stick
+ * derecho como el táctil).
  */
 class BluetoothHidService(private val context: Context) {
     @Volatile var availability: HidAvailability = HidAvailability.UNKNOWN
