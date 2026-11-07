@@ -105,6 +105,52 @@ object ShizukuHelper {
         }.getOrDefault(false)
     }
 
+    /**
+     * Teclado virtual (Fase 4): tecla evdev al UserService
+     * (proceso shell), que la escribe en el dispositivo de
+     * teclado aparte. Devuelve false si Shizuku no está listo o
+     * no hay servicio enlazado. [action]: 0 = pulsar, 1 =
+     * soltar, 2 = crear el dispositivo, 3 = destruirlo.
+     */
+    fun sendKeyboardEvent(context: Context, keyCode: Int, action: Int): Boolean {
+        if (!Shizuku.pingBinder()) return false
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+        val service: IGamepadInputService? = GamepadUserService.boundService
+        if (service == null) {
+            GamepadUserService.bind(context)
+            return false
+        }
+        return runCatching { service.sendKeyboardEvent(keyCode, action) }.getOrDefault(false)
+    }
+
+    /**
+     * Modo ratón (Fase 4): movimiento relativo + botones al
+     * UserService, que los escribe en el dispositivo de ratón
+     * aparte. [action]: 0 = mover/clic, 1 = crear, 2 = destruir.
+     */
+    fun sendMouseEvent(context: Context, dx: Int, dy: Int, buttons: Int, action: Int): Boolean {
+        if (!Shizuku.pingBinder()) return false
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+        val service: IGamepadInputService? = GamepadUserService.boundService
+        if (service == null) {
+            GamepadUserService.bind(context)
+            return false
+        }
+        return runCatching { service.sendMouseEvent(dx, dy, buttons, action) }.getOrDefault(false)
+    }
+
+    /** Destruye los dispositivos de teclado y ratón (Fase 4). El mando no se toca. */
+    fun destroyExtraDevices(context: Context): Boolean {
+        if (!Shizuku.pingBinder()) return false
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+        val service: IGamepadInputService? = GamepadUserService.boundService
+        if (service == null) {
+            GamepadUserService.bind(context)
+            return false
+        }
+        return runCatching { service.destroyExtraDevices(); true }.getOrDefault(false)
+    }
+
     /** Solo se usa desde MainActivity, que pasa el WifiManager real. */
     fun localIpFromWifi(wifi: WifiManager): String? {
         val ip = wifi.connectionInfo?.ipAddress ?: return null

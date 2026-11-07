@@ -11,6 +11,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ultimate.gamepad.core.ConnectionHealth
 import com.ultimate.gamepad.core.Discovery
+import com.ultimate.gamepad.core.ExtrasProtocol
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
@@ -273,6 +274,29 @@ class UdpReceiverService : Service() {
                                     TvPairing.getOrCreatePin(this@UdpReceiverService),
                                 )
                                 sock.send(DatagramPacket(response, response.size, packet.address, packet.port))
+                            }
+                            continue
+                        }
+                        // Extras (Fase 4): teclado virtual y modo
+                        // ratón. Paquetes de 8 bytes con magic
+                        // 'UK'/'UM' (ExtrasProtocol). Se comprueban
+                        // ANTES del ping: un paquete de teclado con
+                        // action=release tiene el byte 3 a 1 y se
+                        // confundiría con un ping (FLAG_PING =
+                        // 0x01) si se comprobara después — la tecla
+                        // quedaría pulsada en la TV — y un paquete
+                        // de ratón con dy=256 también. No son
+                        // paquetes de mando: no tocan lastState,
+                        // la secuencia ni el watchdog.
+                        if (ExtrasProtocol.isKeyboard(data)) {
+                            ExtrasProtocol.decodeKeyboard(data)?.let { ev ->
+                                ShizukuHelper.sendKeyboardEvent(this@UdpReceiverService, ev.keyCode, ev.action)
+                            }
+                            continue
+                        }
+                        if (ExtrasProtocol.isMouse(data)) {
+                            ExtrasProtocol.decodeMouse(data)?.let { ev ->
+                                ShizukuHelper.sendMouseEvent(this@UdpReceiverService, ev.dx, ev.dy, ev.buttons, ev.action)
                             }
                             continue
                         }

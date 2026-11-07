@@ -94,6 +94,27 @@ class GamepadUserService : IGamepadInputService.Stub() {
 
     override fun destroyVirtualGamepad() { UinputGamepad.destroy() }
 
+    /**
+     * Teclado virtual (Fase 4): tecla evdev en el dispositivo de
+     * teclado aparte (uinput, "Ultimate Gamepad Keyboard"). No
+     * necesita que el mando esté creado: es otro dispositivo.
+     */
+    override fun sendKeyboardEvent(keyCode: Int, action: Int): Boolean {
+        return UinputGamepad.keyboardEvent(keyCode, action)
+    }
+
+    /**
+     * Modo ratón (Fase 4): movimiento relativo + botones en el
+     * dispositivo de ratón aparte (uinput, "Ultimate Gamepad
+     * Mouse"). Tampoco necesita el mando.
+     */
+    override fun sendMouseEvent(dx: Int, dy: Int, buttons: Int, action: Int): Boolean {
+        return UinputGamepad.mouseEvent(dx, dy, buttons, action)
+    }
+
+    /** Destruye los dispositivos de teclado y ratón (Fase 4). El mando no se toca. */
+    override fun destroyExtraDevices() { UinputGamepad.destroyExtras() }
+
     private fun injectState(state: GamepadState): Boolean {
         return runCatching {
             val now = android.os.SystemClock.uptimeMillis()
