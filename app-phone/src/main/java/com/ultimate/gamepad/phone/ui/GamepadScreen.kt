@@ -234,12 +234,14 @@ private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
 /** Botón redondo ⚙ que abre Ajustes y conexión. Siempre visible. */
 @Composable
 private fun GearButton(onClick: () -> Unit) {
+    var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(40.dp)
+            .pressEffect(pressed)
             .clip(CircleShape)
             .background(Brush.verticalGradient(listOf(Color(0xFF2A3040), Color(0xFF171B26))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), CircleShape)
-            .clickable { onClick() },
+            .pointerPress { p -> pressed = p; if (p) onClick() },
         contentAlignment = Alignment.Center,
     ) { Text("⚙", color = Color.White, fontSize = 20.sp) }
 }
@@ -330,13 +332,15 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
 /** Botón Xbox (HOME): oscuro brillante con anillo neón cian-magenta. Un toque = pulso HOME. */
 @Composable
 private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
+    var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(sizeDp.dp)
+            .pressEffect(pressed)
             .shadow(12.dp, CircleShape)
             .clip(CircleShape)
             .background(Brush.verticalGradient(listOf(Color(0xFF2A3040), Color(0xFF141824))))
             .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFF00E5FF), Color(0xFFE040FB), Color(0xFF00E5FF))), CircleShape)
-            .clickable { vm.pulseButton(GamepadButtons.HOME) },
+            .pointerPress { p -> pressed = p; if (p) vm.pulseButton(GamepadButtons.HOME) },
         contentAlignment = Alignment.Center,
     ) { Text("✕", color = Color.White, fontSize = (sizeDp / 2).sp, fontWeight = FontWeight.Bold) }
 }
@@ -363,14 +367,11 @@ fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, on
         )
         Box(
             modifier = Modifier.size(62.dp)
-                .graphicsLayer {
-                    scaleX = if (pressed) 0.9f else 1f
-                    scaleY = if (pressed) 0.9f else 1f
-                }
+                .pressEffect(pressed)
                 .shadow(10.dp, CircleShape)
                 .clip(CircleShape)
                 .background(
-                    if (pressed) color
+                    if (pressed) Brush.linearGradient(listOf(color, color))
                     else Brush.verticalGradient(listOf(Color(0xFF2E3444), Color(0xFF141824))),
                 )
                 .border(2.dp, color, CircleShape)
@@ -386,6 +387,7 @@ private fun ShoulderButton(label: String, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 58.dp, height = 38.dp)
+            .pressEffect(pressed)
             .clip(RoundedCornerShape(19.dp))
             .background(
                 Brush.verticalGradient(
@@ -405,6 +407,7 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) 
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 76.dp, height = 48.dp)
+            .pressEffect(pressed)
             .clip(RoundedCornerShape(14.dp))
             .background(
                 Brush.verticalGradient(
@@ -426,12 +429,14 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) 
 /** Píldora de un toque con icono (SHARE): pulso corto, no mantener. */
 @Composable
 private fun PulsePill(label: String, icon: @Composable () -> Unit, onTap: () -> Unit) {
+    var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 76.dp, height = 48.dp)
+            .pressEffect(pressed)
             .clip(RoundedCornerShape(14.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF232839), Color(0xFF171B26))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .clickable { onTap() },
+            .pointerPress { p -> pressed = p; if (p) onTap() },
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {

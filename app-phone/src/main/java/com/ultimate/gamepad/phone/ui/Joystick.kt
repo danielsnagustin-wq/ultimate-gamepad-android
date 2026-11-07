@@ -1,5 +1,8 @@
 package com.ultimate.gamepad.phone.ui
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,7 +26,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +44,25 @@ fun Modifier.pointerPress(onPress: (Boolean) -> Unit): Modifier = this.pointerIn
             }
         }
     }
+}
+
+/** Efecto de pulsación: el botón se hunde un poco y se encoge,
+ * con rebote al soltar, para que se vea que sí se mueve al
+ * presionarlo. Se aplica a todos los botones del mando. */
+@Composable
+fun Modifier.pressEffect(pressed: Boolean): Modifier {
+    val density = LocalDensity.current
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "pressScale",
+    )
+    val offsetY by animateFloatAsState(
+        targetValue = if (pressed) with(density) { 4.dp.toPx() } else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "pressOffset",
+    )
+    return this.graphicsLayer { scaleX = scale; scaleY = scale; translationY = offsetY }
 }
 
 /**
@@ -155,6 +179,7 @@ fun DpadKey(label: String, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(56.dp)
+            .pressEffect(pressed)
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.verticalGradient(
