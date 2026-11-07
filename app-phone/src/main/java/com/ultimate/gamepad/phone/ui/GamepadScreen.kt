@@ -138,7 +138,7 @@ private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState) {
 private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
     val (dot, text) = when (ui.status) {
         ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) to "● Conectado${ui.pingMs?.let { " · $it ms" } ?: ""}"
-        ConnectionStatus.CONNECTING -> Color(0xFFFFC107) to "● Conectando…"
+        ConnectionStatus.CONNECTING -> Color(0xFFFFC107) to "● Conectando por ${ui.attemptMethod.label}…"
         ConnectionStatus.ERROR -> Color(0xFFFF5252) to "● Error"
         else -> Color(0xFF9AA0B0) to "● Desconectado"
     }

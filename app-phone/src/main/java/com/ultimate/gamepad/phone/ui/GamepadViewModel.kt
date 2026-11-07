@@ -36,6 +36,8 @@ data class GamepadUiState(
     val tvResponding: Boolean = false,
     /** Momento en que empezó el intento actual (para el timeout sin eco). */
     val connectingSinceMs: Long = 0L,
+    /** Método que se está probando en este intento (se muestra en "Conectando por…"). */
+    val attemptMethod: TransportMethod = TransportMethod.WIFI_UDP,
     val error: String? = null,
     val showSettings: Boolean = false,
     val showQrScanner: Boolean = false,
@@ -159,7 +161,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // respondiera, y la app se quedaba "tieso" en Conectado con
         // ping "—" sin poder avanzar. Nunca CONECTADO sin eco real.
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), showSettings = false, showQrScanner = false, error = null)
+            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = method, showSettings = false, showQrScanner = false, error = null)
         }
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply {
             action = GamepadSenderService.ACTION_START

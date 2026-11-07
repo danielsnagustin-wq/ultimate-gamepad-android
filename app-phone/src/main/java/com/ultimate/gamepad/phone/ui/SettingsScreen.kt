@@ -68,7 +68,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Text(
             text = when (ui.status) {
                 ConnectionStatus.DISCONNECTED -> "● Desconectado"
-                ConnectionStatus.CONNECTING -> "● Conectando a ${ui.host}…"
+                ConnectionStatus.CONNECTING -> "● Conectando por ${ui.attemptMethod.label} a ${ui.host}…"
                 ConnectionStatus.CONNECTED -> "● Conectado a ${ui.host}"
                 ConnectionStatus.ERROR -> "● Error: ${ui.error ?: ""}"
             },

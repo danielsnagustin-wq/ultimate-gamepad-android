@@ -60,6 +60,12 @@ class GamepadUserService : IGamepadInputService.Stub() {
 
     override fun sendReport(packet32: ByteArray): Boolean {
         val state = GamepadProtocol.decode(packet32) ?: return false
+        // Vía A (mando REAL uinput): si el mando virtual Xbox 360
+        // está listo, el reporte va por /dev/uinput y Android y
+        // OpenNOW lo ven como un Xbox 360 físico. Si el .so falla
+        // o el mando no está listo, se cae a la vía B
+        // (injectInputEvent) sin fingir nada.
+        if (UinputGamepad.isReady() && UinputGamepad.sendReport(state)) return true
         return injectState(state)
     }
 
