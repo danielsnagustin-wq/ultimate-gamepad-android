@@ -106,6 +106,10 @@ fun GamepadScreen(vm: GamepadViewModel) {
                 Spacer(Modifier.height(6.dp))
                 Text(ui.error!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
+            if (ui.info != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
             if (ui.status == ConnectionStatus.CONNECTED && !ui.tvResponding) {
                 Spacer(Modifier.height(6.dp))
                 Text("TV sin respuesta (sin eco de ping en 3 s). En modo Automático se probará el siguiente método.", color = Color(0xFFFFC107), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))

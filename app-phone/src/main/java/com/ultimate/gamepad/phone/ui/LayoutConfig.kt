@@ -82,8 +82,8 @@ object LayoutPrefs {
                 ButtonLayout(
                     visible = obj.optBoolean("visible", true),
                     scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(0.6f, 1.6f),
-                    offsetXdp = obj.optInt("x", 0).coerceIn(-120, 120),
-                    offsetYdp = obj.optInt("y", 0).coerceIn(-120, 120),
+                    offsetXdp = obj.optInt("x", 0).coerceIn(-700, 700),
+                    offsetYdp = obj.optInt("y", 0).coerceIn(-300, 300),
                     opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(0.3f, 1f),
                 )
             }

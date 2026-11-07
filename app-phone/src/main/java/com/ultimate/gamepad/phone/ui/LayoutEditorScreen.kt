@@ -23,11 +23,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,12 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import kotlin.math.roundToInt
 
 /**
@@ -62,18 +63,19 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     var draft by remember { mutableStateOf(layout) }
     val draftState = rememberUpdatedState(draft)
     var selected by remember { mutableStateOf<String?>(LayoutConfig.LEFT_STICK) }
+    var showDialog by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
-    // La vista previa NO va dentro del scroll: antes toda la
-    // pantalla tenía scroll y al arrastrar un botón en vertical
+    // La vista previa NO va dentro de ningún scroll: antes toda
+    // la pantalla tenía scroll y al arrastrar un botón en vertical
     // el scroll se lo robaba y el botón no se movía (o se movía
-    // a trompicones). Ahora la previa es fija y solo la barra de
-    // herramientas de abajo tiene scroll.
+    // a trompicones). Ahora la previa es fija y el ajuste de cada
+    // botón se abre tocándolo, no en una barra de abajo.
     // En horizontal la pantalla mide ~360dp de alto: con la vista
-    // previa fija en 300dp la barra de herramientas (tamaño y
-    // transparencia) quedaba sin espacio. La altura de la vista
-    // previa ahora se adapta a la pantalla (45% de la altura,
-    // entre 180 y 300dp).
+    // previa fija en 300dp no quedaba espacio para nada más. La
+    // altura de la vista previa ahora se adapta a la pantalla
+    // (45% de la altura, entre 180 y 300dp) y dentro va una
+    // miniatura a escala, así que nada se amontona.
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp),
     ) {
@@ -88,17 +90,28 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     ) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Text("🎮  Panel de botones", fontSize = 20.sp)
-            Button(onClick = onClose) { Text("Listo") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    draft = LayoutConfig()
+                    vm.resetLayout()
+                }) { Text("Restablecer", color = Color(0xFF9AA0B0)) }
+                Button(onClick = onClose) { Text("Listo") }
+            }
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Toca un botón para elegirlo y arrástralo con el dedo para moverlo. Abajo lo haces más grande, más transparente o lo quitas. Los cambios se guardan solos.",
+            "Toca un botón para ajustarlo; arrástralo con el dedo para moverlo a cualquier sitio del panel. Los cambios se guardan solos.",
             color = Color(0xFF9AA0B0),
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(12.dp))
 
-        // --- Vista previa del mando (arrastrable, fija) ---
+        // --- Vista previa del mando (miniatura a escala, nada se amontona) ---
+        // Antes los botones se dibujaban a tamaño real dentro de una
+        // previa corta (180dp en horizontal) y se tapaban entre sí.
+        // Ahora la previa es una miniatura a escala de un panel de
+        // diseño de 800x300dp: todo cabe proporcional y el arrastre
+        // sigue al dedo 1:1 (se divide por la escala de la miniatura).
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -106,59 +119,78 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF050505))
                 .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            val wPx = constraints.maxWidth.toFloat()
-            val hPx = constraints.maxHeight.toFloat()
-            for ((id, base) in EDITOR_BASE) {
-                val el = draft.element(id)
-                if (!el.visible) continue
-                val baseW = base.w
-                val baseH = base.h
-                val itemWPx = with(density) { baseW.dp.toPx() }
-                val itemHPx = with(density) { baseH.dp.toPx() }
-                val cx = base.fx * wPx - itemWPx / 2f + with(density) { el.offsetXdp.dp.toPx() }
-                val cy = base.fy * hPx - itemHPx / 2f + with(density) { el.offsetYdp.dp.toPx() }
-                val isSelected = selected == id
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(cx.roundToInt(), cy.roundToInt()) }
-                        .size(baseW.dp, baseH.dp)
-                        .graphicsLayer { scaleX = el.scale; scaleY = el.scale; alpha = el.opacity }
-                        .pointerInput(id) { detectTapGestures(onTap = { selected = id }) }
-                        .pointerInput(id) {
-                            detectDragGestures(
-                                onDragEnd = { vm.updateElement(id, draftState.value.element(id)) },
-                                onDragCancel = { vm.updateElement(id, draftState.value.element(id)) },
-                            ) { change, dragAmount ->
-                                change.consume()
-                                val current = draftState.value.element(id)
-                                val dx = with(density) { dragAmount.x.toDp().value }.roundToInt()
-                                val dy = with(density) { dragAmount.y.toDp().value }.roundToInt()
-                                draft = draftState.value.withElement(
-                                    id,
-                                    current.copy(
-                                        offsetXdp = (current.offsetXdp + dx).coerceIn(-120, 120),
-                                        offsetYdp = (current.offsetYdp + dy).coerceIn(-120, 120),
-                                    ),
-                                )
+            // Escala uniforme para que el diseño 800x300 quepa entero.
+            val miniScale = minOf(maxWidth.value / 800f, maxHeight.value / 300f).coerceIn(0.2f, 1f)
+            Box(
+                modifier = Modifier
+                    .size(800.dp, 300.dp)
+                    .graphicsLayer {
+                        scaleX = miniScale
+                        scaleY = miniScale
+                        transformOrigin = TransformOrigin(0.5f, 0.5f)
+                    },
+            ) {
+                // En el espacio de diseño la previa mide 800x300dp.
+                val wPx = with(density) { 800.dp.toPx() }
+                val hPx = with(density) { 300.dp.toPx() }
+                for ((id, base) in EDITOR_BASE) {
+                    val el = draft.element(id)
+                    if (!el.visible) continue
+                    val baseW = base.w
+                    val baseH = base.h
+                    val itemWPx = with(density) { baseW.dp.toPx() }
+                    val itemHPx = with(density) { baseH.dp.toPx() }
+                    val cx = base.fx * wPx - itemWPx / 2f + with(density) { el.offsetXdp.dp.toPx() }
+                    val cy = base.fy * hPx - itemHPx / 2f + with(density) { el.offsetYdp.dp.toPx() }
+                    val isSelected = selected == id
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(cx.roundToInt(), cy.roundToInt()) }
+                            .size(baseW.dp, baseH.dp)
+                            .graphicsLayer { scaleX = el.scale; scaleY = el.scale; alpha = el.opacity }
+                            .pointerInput(id) {
+                                detectTapGestures(onTap = { selected = id; showDialog = true })
                             }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    EditorItemShape(id, isSelected)
+                            .pointerInput(id) {
+                                detectDragGestures(
+                                    onDragEnd = { vm.updateElement(id, draftState.value.element(id)) },
+                                    onDragCancel = { vm.updateElement(id, draftState.value.element(id)) },
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    val current = draftState.value.element(id)
+                                    // El arrastre ya llega en píxeles locales
+                                    // del espacio de diseño: Compose invierte
+                                    // la escala de la miniatura al entregar
+                                    // el gesto, así que NO se divide por
+                                    // miniScale (hacerlo duplicaba el
+                                    // movimiento y el botón volaba 1,7x).
+                                    val dx = with(density) { dragAmount.x.toDp().value }.roundToInt()
+                                    val dy = with(density) { dragAmount.y.toDp().value }.roundToInt()
+                                    val next = clampEditorOffset(
+                                        base,
+                                        current.offsetXdp + dx,
+                                        current.offsetYdp + dy,
+                                    )
+                                    draft = draftState.value.withElement(
+                                        id,
+                                        current.copy(offsetXdp = next.first, offsetYdp = next.second),
+                                    )
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EditorItemShape(id, isSelected)
+                    }
                 }
             }
         }
 
-        // --- Barra de herramientas (con scroll, la previa es fija) ---
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            // --- Botones ocultos: volver a mostrarlos ---
-            val hidden = LayoutConfig.NAMES.keys.filter { !draft.element(it).visible }
+        // --- Botones ocultos: tócalos para volver a mostrarlos ---
+        // (El ajuste de cada botón ya no va aquí abajo: toca un
+        // botón en el panel y se abre su propio ajuste.)
+        val hidden = LayoutConfig.NAMES.keys.filter { !draft.element(it).visible }
             if (hidden.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text("Ocultos (tócalos para volver a mostrarlos):", color = Color(0xFF9AA0B0), fontSize = 12.sp)
@@ -175,58 +207,71 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                 }
             }
 
-            // --- Ajustes del botón elegido ---
-            val selId = selected
-            if (selId != null) {
-                val el = draft.element(selId)
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Text(LayoutConfig.NAMES[selId] ?: selId, fontSize = 15.sp)
-                    Switch(
-                        checked = el.visible,
-                        onCheckedChange = {
-                            val next = el.copy(visible = it)
-                            draft = draft.withElement(selId, next)
-                            vm.updateElement(selId, next)
-                        },
+        // --- Ajuste del botón tocado (en el propio panel) ---
+        // Tocar un botón del panel abre su ajuste aquí mismo:
+        // tamaño, transparencia, mover y eliminar.
+        val dialogId = selected
+        if (showDialog && dialogId != null) {
+            val el = draft.element(dialogId)
+            Dialog(onDismissRequest = { showDialog = false }) {
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF0B0B0F))
+                        .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                        .padding(20.dp),
+                ) {
+                    Text(LayoutConfig.NAMES[dialogId] ?: dialogId, fontSize = 18.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Arrastra el botón en el panel para moverlo a cualquier sitio, o usa los botones de abajo.",
+                        color = Color(0xFF9AA0B0),
+                        fontSize = 12.sp,
                     )
-                }
-                if (el.visible) {
+                    Spacer(Modifier.height(12.dp))
                     Text("Tamaño: ${"%.2f".format(el.scale)}x", fontSize = 12.sp, color = Color(0xFF9AA0B0))
                     Slider(
                         value = el.scale,
-                        onValueChange = { draft = draft.withElement(selId, el.copy(scale = it)) },
-                        onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
+                        onValueChange = { draft = draft.withElement(dialogId, el.copy(scale = it)) },
+                        onValueChangeFinished = { vm.updateElement(dialogId, draft.element(dialogId)) },
                         valueRange = 0.7f..1.6f,
                     )
                     Text("Opacidad: ${(el.opacity * 100).roundToInt()}%", fontSize = 12.sp, color = Color(0xFF9AA0B0))
                     Slider(
                         value = el.opacity,
-                        onValueChange = { draft = draft.withElement(selId, el.copy(opacity = it)) },
-                        onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
+                        onValueChange = { draft = draft.withElement(dialogId, el.copy(opacity = it)) },
+                        onValueChangeFinished = { vm.updateElement(dialogId, draft.element(dialogId)) },
                         valueRange = 0.3f..1f,
                     )
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         EditorStepper("← →", el.offsetXdp) {
-                            val next = el.copy(offsetXdp = it)
-                            draft = draft.withElement(selId, next)
-                            vm.updateElement(selId, next)
+                            val base = EDITOR_BASE[dialogId] ?: EditorBase(0.5f, 0.5f, 100, 100)
+                            val next = clampEditorOffset(base, it, el.offsetYdp)
+                            val updated = el.copy(offsetXdp = next.first)
+                            draft = draft.withElement(dialogId, updated)
+                            vm.updateElement(dialogId, updated)
                         }
                         EditorStepper("↑ ↓", el.offsetYdp) {
-                            val next = el.copy(offsetYdp = it)
-                            draft = draft.withElement(selId, next)
-                            vm.updateElement(selId, next)
+                            val base = EDITOR_BASE[dialogId] ?: EditorBase(0.5f, 0.5f, 100, 100)
+                            val next = clampEditorOffset(base, el.offsetXdp, it)
+                            val updated = el.copy(offsetYdp = next.second)
+                            draft = draft.withElement(dialogId, updated)
+                            vm.updateElement(dialogId, updated)
                         }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                        Button(onClick = {
+                            val next = el.copy(visible = false)
+                            draft = draft.withElement(dialogId, next)
+                            vm.updateElement(dialogId, next)
+                            showDialog = false
+                            selected = null
+                        }) { Text("Eliminar") }
+                        TextButton(onClick = { showDialog = false }) { Text("Listo") }
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = {
-                draft = LayoutConfig()
-                vm.resetLayout()
-            }) { Text("Restablecer diseño") }
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = onClose) { Text("Volver al mando") }
         }
         }
     }
@@ -247,6 +292,19 @@ private val EDITOR_BASE: Map<String, EditorBase> = mapOf(
     LayoutConfig.MENU to EditorBase(0.64f, 0.42f, 60, 36),
     LayoutConfig.SHARE to EditorBase(0.50f, 0.60f, 60, 36),
 )
+
+/**
+ * Limita el desplazamiento de un botón para que su centro no salga
+ * del panel de diseño (800x300dp): se puede mover a cualquier
+ * sitio del panel sin perderlo fuera de la vista.
+ */
+private fun clampEditorOffset(base: EditorBase, offsetXdp: Int, offsetYdp: Int): Pair<Int, Int> {
+    val minX = (-(base.fx * 800f) + 30).roundToInt()
+    val maxX = ((1f - base.fx) * 800f - 30).roundToInt()
+    val minY = (-(base.fy * 300f) + 20).roundToInt()
+    val maxY = ((1f - base.fy) * 300f - 20).roundToInt()
+    return offsetXdp.coerceIn(minX, maxX) to offsetYdp.coerceIn(minY, maxY)
+}
 
 /** Miniatura del botón dentro del panel (forma parecida a la real, sin enviar nada). */
 @Composable
@@ -318,8 +376,8 @@ private fun EditorItemShape(id: String, isSelected: Boolean) {
 private fun EditorStepper(label: String, value: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, fontSize = 12.sp, color = Color(0xFF9AA0B0))
-        Button(onClick = { onChange((value - 8).coerceIn(-120, 120)) }) { Text("−") }
+        Button(onClick = { onChange((value - 8).coerceIn(-700, 700)) }) { Text("−") }
         Text("${value}dp", fontSize = 12.sp)
-        Button(onClick = { onChange((value + 8).coerceIn(-120, 120)) }) { Text("+") }
+        Button(onClick = { onChange((value + 8).coerceIn(-700, 700)) }) { Text("+") }
     }
 }

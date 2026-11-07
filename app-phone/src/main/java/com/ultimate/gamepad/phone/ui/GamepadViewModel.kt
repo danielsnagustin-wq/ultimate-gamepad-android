@@ -44,6 +44,8 @@ data class GamepadUiState(
     /** Método que se está probando en este intento (se muestra en "Conectando por…"). */
     val attemptMethod: TransportMethod = TransportMethod.WIFI_UDP,
     val error: String? = null,
+    /** Mensaje informativo (no es un error): se pinta en verde, no en rojo. */
+    val info: String? = null,
     val showSettings: Boolean = false,
     val showLayoutEditor: Boolean = false,
     val showQrScanner: Boolean = false,
@@ -250,7 +252,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // respondiera, y la app se quedaba "tieso" en Conectado con
         // ping "—" sin poder avanzar. Nunca CONECTADO sin eco real.
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = method, showSettings = false, showQrScanner = false, error = null)
+            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = method, showSettings = false, showQrScanner = false, error = null, info = null)
         }
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply {
             action = GamepadSenderService.ACTION_START
@@ -273,7 +275,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTED, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = "HID registrado como 'Xbox 360 Controller'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
+            it.copy(status = ConnectionStatus.CONNECTED, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como 'Xbox 360 Controller'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
         }
     }
 
@@ -296,7 +298,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         val info = PairingInfo(_ui.value.host, _ui.value.port, _ui.value.pin)
-        _ui.update { it.copy(error = "Sin eco por $current, probando $next…") }
+        _ui.update { it.copy(error = "Sin eco por $current, probando $next…", transportStatus = it.transportStatus + (current to TransportStatus.FAILED)) }
         disconnect(silent = true)
         connect(info, next)
     }
@@ -304,7 +306,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun disconnect(silent: Boolean = false) {
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
         getApplication<Application>().startService(intent)
-        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false) }
+        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, info = null) }
     }
 
     fun refreshPing() {
@@ -324,7 +326,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                         it.copy(
                             status = ConnectionStatus.CONNECTED,
                             error = null,
-                            transportStatus = it.transportStatus + (it.selectedMethod to TransportStatus.CONNECTED),
+                            transportStatus = it.transportStatus + (it.attemptMethod to TransportStatus.CONNECTED),
                         )
                     }
                 } else if (System.currentTimeMillis() - _ui.value.connectingSinceMs > 3000) {

@@ -25,7 +25,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -54,7 +53,6 @@ import com.google.mlkit.vision.common.InputImage
  */
 @Composable
 fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
-    val layout by vm.layoutConfig.collectAsState()
     val deadZone by vm.deadZone.collectAsState()
     var host by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
@@ -143,8 +141,6 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Button(onClick = { vm.openLayoutEditor() }, modifier = Modifier.fillMaxWidth()) {
             Text("🎮  Abrir panel de botones")
         }
-        Spacer(Modifier.height(12.dp))
-        LayoutEditor(vm, layout)
         Spacer(Modifier.height(16.dp))
         // --- Sensibilidad de sticks ---
         Text("Sensibilidad de sticks", fontSize = 15.sp)
@@ -160,52 +156,6 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     }
 }
 
-/** Editor de botones: quitar, agrandar, achicar, mover o hacer transparente cada elemento del mando. */
-@Composable
-private fun LayoutEditor(vm: GamepadViewModel, layout: LayoutConfig) {
-    Text("Ajuste rápido por botón", fontSize = 15.sp)
-    Spacer(Modifier.height(4.dp))
-    Text("Lo mismo que en el panel, en lista: quítalo, hazlo más grande o más pequeño, muévelo o hazlo transparente. El botón ⚙ siempre queda visible para poder volver a Ajustes.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
-    for ((id, name) in LayoutConfig.NAMES) {
-        val el = layout.element(id)
-        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text(name, fontSize = 14.sp)
-                Switch(checked = el.visible, onCheckedChange = { vm.updateElement(id, el.copy(visible = it)) })
-            }
-            if (el.visible) {
-                Text("Tamaño: ${"%.2f".format(el.scale)}x", fontSize = 12.sp, color = Color(0xFF9AA0B0))
-                Slider(
-                    value = el.scale,
-                    onValueChange = { vm.updateElement(id, el.copy(scale = it)) },
-                    valueRange = 0.7f..1.6f,
-                )
-                Text("Opacidad: ${(el.opacity * 100).toInt()}%", fontSize = 12.sp, color = Color(0xFF9AA0B0))
-                Slider(
-                    value = el.opacity,
-                    onValueChange = { vm.updateElement(id, el.copy(opacity = it)) },
-                    valueRange = 0.3f..1f,
-                )
-                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(16.dp)) {
-                    Stepper("← →", el.offsetXdp) { vm.updateElement(id, el.copy(offsetXdp = it)) }
-                    Stepper("↑ ↓", el.offsetYdp) { vm.updateElement(id, el.copy(offsetYdp = it)) }
-                }
-            }
-        }
-    }
-    Spacer(Modifier.height(8.dp))
-    Button(onClick = { vm.resetLayout() }) { Text("Restablecer diseño") }
-}
-
-@Composable
-private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontSize = 12.sp, color = Color(0xFF9AA0B0))
-        Button(onClick = { onChange((value - 8).coerceIn(-120, 120)) }) { Text("−") }
-        Text("${value}dp", fontSize = 12.sp)
-        Button(onClick = { onChange((value + 8).coerceIn(-120, 120)) }) { Text("+") }
-    }
-}
 
 /**
  * Escaneo QR real con CameraX + ML Kit Barcode Scanning.
