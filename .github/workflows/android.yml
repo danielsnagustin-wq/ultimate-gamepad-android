@@ -1,0 +1,60 @@
+name: Android CI — Ultimate Gamepad (sin PC)
+
+# Compila desde GitHub Actions. El usuario solo hace push desde el
+# teléfono (app de GitHub) y descarga los APKs de la pestaña Actions.
+# No requiere PC, ni servicios de pago, ni secretos para el APK debug.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.7"
+
+      - name: Run core unit tests
+        run: gradle :core:testDebugUnitTest --stacktrace
+
+      - name: Build phone debug APK
+        run: gradle :app-phone:assembleDebug --stacktrace
+
+      - name: Build TV debug APK
+        run: gradle :app-tv:assembleDebug --stacktrace
+
+      - name: Build release APKs (sin firmar en Etapa 1)
+        run: gradle :app-phone:assembleRelease :app-tv:assembleRelease --stacktrace
+
+      - name: Upload phone APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-phone-apks
+          path: |
+            app-phone/build/outputs/apk/debug/app-phone-debug.apk
+            app-phone/build/outputs/apk/release/app-phone-release-unsigned.apk
+          if-no-files-found: error
+
+      - name: Upload TV APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-tv-apks
+          path: |
+            app-tv/build/outputs/apk/debug/app-tv-debug.apk
+            app-tv/build/outputs/apk/release/app-tv-release-unsigned.apk
+          if-no-files-found: error
