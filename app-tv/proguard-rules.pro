@@ -1,0 +1,2 @@
+-keep class com.ultimate.gamepad.core.** { *; }
+-keep class com.ultimate.gamepad.tv.shizuku.** { *; }
