@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultimate.gamepad.core.DiscoveredTv
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.PairingInfo
@@ -99,6 +100,28 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         val next = value.coerceIn(0f, 0.15f)
         _deadZone.value = next
         LayoutPrefs.saveDeadZone(getApplication(), next)
+    }
+
+    /**
+     * Perfil de emulación activo (Fase 2, mecanismo listo para la
+     * pantalla TIPO DE MANDO de la Fase 3). Cambia el perfil visual
+     * Y el de emulación a la vez: se guarda, el servicio de envío
+     * lo mete en el byte 28 de cada paquete y la TV recrea el
+     * dispositivo virtual con ese perfil. Si ya hay una sesión HID
+     * registrada con otro perfil, se vuelve a registrar con el
+     * nuevo descriptor; por Wi-Fi el cambio llega con el siguiente
+     * paquete (la TV recrea el mando al ver el profileId nuevo).
+     * El touchpad de DS4/DualSense NO se emula en esta versión
+     * (opción (a) del plan) y la UI de la Fase 3 deberá decirlo.
+     */
+    fun setActiveProfile(profileId: Int) {
+        val profile = GamepadProfiles.fromId(profileId)
+        GamepadSender.setActiveProfile(getApplication(), profile.id)
+        if (hidService.appRegistered) {
+            hidService.unregister()
+            hidService.register(profile.id)
+        }
+        _ui.update { it.copy(info = "Perfil activo: ${profile.name} (${profile.deviceName}). La TV recreará el mando virtual con ese perfil; si OpenNOW no lo re-enumera, reinicia OpenNOW.") }
     }
 
     fun updateElement(id: String, layout: ButtonLayout) {
@@ -303,7 +326,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 // queda colgado el bucle.
                 val ok = withTimeoutOrNull(5000) {
                     suspendCancellableCoroutine<Boolean> { cont ->
-                        hidService.reRegister { cont.resume(it) }
+                        hidService.reRegister(profileId = GamepadSender.activeProfileId) { cont.resume(it) }
                     }
                 } ?: false
                 if (ok) {
@@ -399,7 +422,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             }
             return
         }
-        if (!hidService.register()) {
+        if (!hidService.register(GamepadSender.activeProfileId)) {
             _ui.update { it.copy(error = "No se pudo registrar el mando HID.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED)) }
             return
         }
@@ -407,7 +430,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // harían saltar el fallback como si la TV no respondiera.
         GamepadSenderService.resetHealth()
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como 'Xbox 360 Controller'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
+            it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como '${GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName}'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
         }
     }
 

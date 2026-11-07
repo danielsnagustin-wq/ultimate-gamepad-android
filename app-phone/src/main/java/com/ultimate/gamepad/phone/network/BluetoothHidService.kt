@@ -10,9 +10,9 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
-import com.ultimate.gamepad.core.HidDescriptor
 import com.ultimate.gamepad.core.TransportStatus
 
 /**
@@ -22,14 +22,15 @@ import com.ultimate.gamepad.core.TransportStatus
  * NO se finge: [checkAvailability] pregunta al sistema si el perfil
  * HID_DEVICE está expuesto en este teléfono. Si no lo está, la UI muestra
  * "No disponible en este teléfono" y el método queda en FAILED.
- * Si está expuesto, [register] registra el descriptor Xbox 360 y
- * [sendReport] envía reportes HID. La confirmación real (la TV
+ * Si está expuesto, [register] registra el descriptor del perfil
+ * activo (Fase 2) y [sendReport] envía reportes HID. La confirmación real (la TV
  * empareja y OpenNOW responde) solo se sabe probándolo en la
  * Hyundai — es parte de la Etapa 0 de Bluetooth.
  *
- * Descriptor: gamepad genérico Xbox 360 (vendor 0x045E, product
- * 0x028E). Reporte HID de 7 bytes, EXACTO según
- * HidGamepadDescriptor.BYTES:
+ * Descriptor (Fase 2): el del perfil activo
+ * (HidGamepadDescriptor.descriptorFor): Xbox y genérico 12 botones,
+ * DS4/DualSense 14 botones. Reporte HID de 7 bytes, EXACTO según
+ * el descriptor del perfil:
  *   byte 0: botones 1-8 (A, B, X, Y, LB, RB, SELECT, START)
  *   byte 1: botones 9-12 (L3, R3, LT digital, RT digital) + relleno
  *   byte 2: hat switch (0=arriba, 1=arriba-derecha, 2=derecha,
@@ -144,11 +145,11 @@ class BluetoothHidService(private val context: Context) {
      * firmware no expone el perfil, onResult puede no llegar nunca;
      * el llamador debe usar timeout.
      */
-    fun reRegister(onResult: (Boolean) -> Unit) {
+    fun reRegister(onResult: (Boolean) -> Unit, profileId: Int = GamepadProfiles.XBOX_360_ID) {
         if (appRegistered) { onResult(true); return }
         requestProxy { availability ->
             if (availability != HidAvailability.AVAILABLE) { onResult(false); return@requestProxy }
-            onResult(register())
+            onResult(register(profileId))
         }
     }
 
@@ -174,24 +175,32 @@ class BluetoothHidService(private val context: Context) {
         }
     }
 
-    /** Registra la app HID. Requiere BLUETOOTH_CONNECT (Android 12+). Devuelve false si el proxy no está listo.
-     *  Nombre expuesto: "Xbox 360 Controller" (HidDescriptor). Descriptor: Game Pad
-     *  (Usage Page 0x01, Usage 0x05) de HidGamepadDescriptor.BYTES. Sin servicios
-     *  extra de teclado/ratón/remoto: solo el perfil HID de gamepad.
+    /**
+     * Registra la app HID con el perfil activo. Requiere BLUETOOTH_CONNECT (Android 12+). Devuelve false si el proxy no está listo.
+     *  Nombre expuesto: el deviceName del perfil (GamepadProfiles:
+     *  "Xbox 360 Controller", "Xbox One Controller", "Wireless
+     *  Controller", "DualSense Wireless Controller" o "Generic
+     *  Gamepad"). Descriptor: Game Pad (Usage Page 0x01, Usage 0x05)
+     *  de HidGamepadDescriptor.descriptorFor(profileId): Xbox y
+     *  genérico declaran 12 botones; DS4/DualSense declaran 14.
+     *  Sin servicios extra de teclado/ratón/remoto: solo el perfil
+     *  HID de gamepad. El touchpad de DS4/DualSense NO se emula
+     *  (opción (a) de la Fase 2).
      *  Nota: la API real de BluetoothHidDeviceAppSdpSettings es
      *  (name, description, provider, subclass, descriptors); NO acepta
      *  vendorId/productId, así que por Bluetooth HID no se puede fijar el
-     *  VID/PID 0x045E/0x028E — la identidad completa de Xbox 360 (con VID/PID)
-     *  solo la da la ruta uinput de la fase 2 en la TV. Por Bluetooth la
-     *  identidad es el nombre expuesto + el descriptor de Game Pad. */
-    fun register(): Boolean {
+     *  VID/PID — la identidad completa (con VID/PID) solo la da la
+     *  ruta uinput de la TV. Por Bluetooth la identidad es el nombre
+     *  expuesto + el descriptor de Game Pad. */
+    fun register(profileId: Int = GamepadProfiles.XBOX_360_ID): Boolean {
+        val profile = GamepadProfiles.fromId(profileId)
         val hid = hidDevice ?: return false
         val sdp = BluetoothHidDeviceAppSdpSettings(
-            HidDescriptor.DEVICE_NAME,
-            HidDescriptor.DEVICE_DESCRIPTION,
+            profile.deviceName,
+            profile.deviceName,
             "Ultimate Gamepad",
             0,
-            com.ultimate.gamepad.core.HidGamepadDescriptor.BYTES,
+            com.ultimate.gamepad.core.HidGamepadDescriptor.descriptorFor(profile.id),
         )
         val qos = BluetoothHidDeviceAppQosSettings(
             BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT, 800, 9, 0, 11250, 0,

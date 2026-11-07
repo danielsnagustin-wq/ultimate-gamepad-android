@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ultimate.gamepad.core.ConnectionHealth
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.TcpGamepadTransport
@@ -120,6 +121,10 @@ class GamepadSenderService : Service() {
 
     private fun startSending(host: String, port: Int, method: TransportMethod) {
         startForeground(1, notification("Enviando por $method a $host:$port…"))
+        // Perfil activo guardado (Fase 2): el servicio lo lee al
+        // arrancar para que sobreviva a la muerte del proceso; cada
+        // paquete lleva el profileId en el byte 28.
+        GamepadSender.loadSavedProfile(this)
         // Los sockets viven como locales de la corrutina (no como
         // campos): así el finally del bucle viejo cierra solo SUS
         // sockets aunque se ejecute después de lanzar el nuevo bucle
@@ -153,7 +158,7 @@ class GamepadSenderService : Service() {
                         when (method) {
                             TransportMethod.WIFI_UDP -> {
                                 if (udp == null) udp = UdpTransport()
-                                udp.send(state, address, port)
+                                udp.send(state, address, port, GamepadSender.activeProfileId)
                                 val now = System.currentTimeMillis()
                                 if (now - lastPingSentAt >= 500) {
                                     lastPingSentAt = now; pingSequence = sequence
@@ -199,7 +204,7 @@ class GamepadSenderService : Service() {
                                 // dejar el bucle tieso sin que salte el fallback.
                                 // (val local: dentro de la lambda no vale el smart-cast del var.)
                                 val currentTcp = tcp ?: throw java.io.IOException("TCP no conectado")
-                                val sent = withTimeoutOrNull(500) { currentTcp.send(state); true } ?: false
+                                val sent = withTimeoutOrNull(500) { currentTcp.send(state, GamepadSender.activeProfileId); true } ?: false
                                 if (!sent) throw java.io.IOException("TCP sin respuesta (escritura bloqueada)")
                                 // Ping TCP con eco (Fase 1): cada 500 ms
                                 // igual que por UDP. El lector de arriba
@@ -243,8 +248,12 @@ class GamepadSenderService : Service() {
                 tcpReaderJob?.cancel(); tcpReaderJob = null
                 val zero = GamepadState(sequence = sequence, timestampMs = System.currentTimeMillis())
                 val addr = address
-                if (addr != null) runCatching { udp?.send(zero, addr, port) }
-                runCatching { tcp?.send(zero) }
+                // El estado cero también lleva el profileId activo:
+                // sin él, la TV lo leería como Xbox 360 y recrearía
+                // el mando equivocado al desconectar con otro perfil.
+                val profileId = GamepadSender.activeProfileId
+                if (addr != null) runCatching { udp?.send(zero, addr, port, profileId) }
+                runCatching { tcp?.send(zero, profileId) }
                 // Al cancelar o salir, los sockets no quedan abiertos.
                 runCatching { tcp?.close() }; tcp = null
                 runCatching { udp?.close() }; udp = null
@@ -276,4 +285,27 @@ class GamepadSenderService : Service() {
 /** Estado compartido entre la UI y el servicio. Volátil por diseño, Etapa 1. */
 object GamepadSender {
     @Volatile var currentState: GamepadState = GamepadState()
+
+    /**
+     * Perfil de emulación activo (Fase 2, GamepadProfiles).
+     * Es el perfil VISUAL y el de EMULACIÓN a la vez: la pantalla
+     * TIPO DE MANDO (Fase 3) lo cambia aquí y el servicio de envío
+     * lo mete en el byte 28 de cada paquete; la TV recrea el
+     * dispositivo virtual con ese perfil. Nunca se muestra un mando
+     * de PlayStation mientras la TV expone un Xbox 360.
+     */
+    @Volatile var activeProfileId: Int = GamepadProfiles.XBOX_360_ID
+        private set
+
+    /** Cambia el perfil activo y lo guarda (sobrevive a reinicios). La Fase 3 lo llamará desde la pantalla TIPO DE MANDO. */
+    fun setActiveProfile(context: android.content.Context, profileId: Int) {
+        val id = GamepadProfiles.fromId(profileId).id
+        activeProfileId = id
+        GamepadProfilePrefs.save(context, id)
+    }
+
+    /** Carga el perfil guardado (al arrancar el servicio de envío). */
+    fun loadSavedProfile(context: android.content.Context) {
+        activeProfileId = GamepadProfilePrefs.load(context)
+    }
 }

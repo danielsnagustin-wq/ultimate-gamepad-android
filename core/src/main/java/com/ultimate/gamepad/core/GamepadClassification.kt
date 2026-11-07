@@ -27,16 +27,24 @@ package com.ultimate.gamepad.core
  * 3. MotionEvents: AXIS_X/AXIS_Y (stick izq), AXIS_Z/AXIS_RZ
  *    (stick der), AXIS_LTRIGGER/AXIS_RTRIGGER, AXIS_HAT_X/
  *    AXIS_HAT_Y (cruceta), siempre con SOURCE_JOYSTICK.
- * 4. uinput: nombre expuesto ÚNICAMENTE "Xbox 360 Controller".
- *    PROHIBIDO exponer "Virtual" o "Ultimate Gamepad" como nombre
- *    de dispositivo: eso delata que es virtual y es criterio de
- *    FALLO en la Etapa 0, aunque lleguen paquetes.
- *    KEY_POWER, KEY_HOME, KEY_VOLUME*, KEY_MENU, KEY_BACK, y
- *    Usage Page Consumer (0x0C) / Remote Control.
+ * 4. uinput: el nombre expuesto depende del perfil activo
+ *    (GamepadProfiles: "Xbox 360 Controller", "Xbox One
+ *    Controller", "Wireless Controller", "DualSense Wireless
+ *    Controller" o "Generic Gamepad"). PROHIBIDO exponer "Virtual"
+ *    o "Ultimate Gamepad" como nombre de dispositivo: eso delata
+ *    que es virtual y es criterio de FALLO en la Etapa 0, aunque
+ *    lleguen paquetes. PROHIBIDOS también KEY_POWER, KEY_HOME,
+ *    KEY_VOLUME*, KEY_MENU, KEY_BACK, y Usage Page Consumer (0x0C)
+ *    / Remote Control.
  * 5. Descriptor HID Bluetooth: Usage Page 0x01 Generic Desktop,
  *    Usage 0x05 Game Pad (no Joystick ambiguo, no Remote Control
  *    0x0C, no Keyboard 0x07). Colección Application Game Pad,
- *    ejes, hat switch, botones Usage Page 0x09 Button.
+ *    ejes, hat switch, botones Usage Page 0x09 Button. Hay un
+ *    descriptor por perfil (HidGamepadDescriptor.descriptorFor):
+ *    Xbox y genérico declaran 12 botones; DS4/DualSense declaran
+ *    14 (los 2 extra son los botones del sistema PlayStation y
+ *    quedan a 0 en esta versión: el touchpad NO se emula, opción
+ *    (a) de la Fase 2).
  *
  * En Android, SOURCE_GAMEPAD = 0x400 (1024) y SOURCE_JOYSTICK =
  * 0x1000000 (16777216). Se definen aquí como constantes para que
@@ -115,6 +123,38 @@ object UinputSpec {
  * se ajusta aquí y solo aquí (un solo lugar, no en cada transporte).
  */
 object HidGamepadDescriptor {
+    /**
+     * Descriptor HID Bluetooth por perfil de emulación (Fase 2).
+     *
+     * Xbox 360 / Xbox One / genérico: el descriptor de 12 botones
+     * de siempre ([BYTES]). DS4 / DualSense: la misma disposición
+     * de reporte de 7 bytes, pero declara 14 botones (Usage Maximum
+     * 14, Report Count 14 + 2 bits de relleno en vez de 12 + 4):
+     * el reporte sigue siendo de 7 bytes y los 2 botones extra
+     * (PS / Create) quedan siempre a 0 en esta versión. El touchpad
+     * NO está en ningún descriptor: opción (a) del plan, no se
+     * implementa en esta versión y se dice claro en la UI y en
+     * docs/PLAN-GAMEPAD-PRO.md. La API de BluetoothHidDevice no
+     * permite fijar VID/PID: por HID la identidad es nombre +
+     * descriptor; la identidad completa (vendor/product) solo la da
+     * uinput en la TV.
+     */
+    fun descriptorFor(profileId: Int): ByteArray {
+        val profile = GamepadProfiles.fromId(profileId)
+        if (profile.id != GamepadProfiles.DS4_ID && profile.id != GamepadProfiles.DUALSENSE_ID) {
+            return BYTES.copyOf()
+        }
+        // Variante Sony: mismo reporte de 7 bytes, 14 botones.
+        // Índices en BYTES: [15] = Usage Maximum (12), [23] =
+        // Report Count de botones (12), [29] = Report Count del
+        // relleno (4). 14 + 2 = 16 bits = los mismos 2 bytes.
+        val bytes = BYTES.copyOf()
+        bytes[15] = 0x0E.toByte()
+        bytes[23] = 0x0E.toByte()
+        bytes[29] = 0x02.toByte()
+        return bytes
+    }
+
     val BYTES: ByteArray = byteArrayOf(
         0x05.toByte(), 0x01.toByte(), // Usage Page (Generic Desktop)
         0x09.toByte(), 0x05.toByte(), // Usage (Game Pad)

@@ -40,8 +40,9 @@ class UdpTransport(private val socket: DatagramSocket = DatagramSocket()) {
         }
     }
 
-    fun send(state: GamepadState, host: InetAddress, port: Int) {
-        val bytes = GamepadProtocol.encode(state)
+    /** [profileId] viaja en el byte 28 del paquete (Fase 2, GamepadProfiles). */
+    fun send(state: GamepadState, host: InetAddress, port: Int, profileId: Int = GamepadProfiles.XBOX_360_ID) {
+        val bytes = GamepadProtocol.encode(state, profileId)
         socket.send(DatagramPacket(bytes, bytes.size, host, port))
     }
 

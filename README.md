@@ -49,7 +49,7 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 1. La TV muestra su IP, puertos (UDP 51999 / TCP 52000) y un PIN, o un QR `UGP1|<ip>|51999|<pin>`.
 2. El teléfono escanea el QR (CameraX + ML Kit, real) o escribe IP/PIN, y envía el estado del mando a 120 Hz por UDP (o TCP) en paquetes binarios de 32 bytes (`:core`, ver `docs/ARCHITECTURE.md`).
 3. La TV recibe los paquetes en un servicio en primer plano, los muestra en vivo (botones, sticks, último paquete, paquetes recibidos) y hace eco de ping.
-4. Si Shizuku está activo (Fase 2), el proceso shell intenta crear el **mando virtual "Xbox 360 Controller" vía `/dev/uinput`**, y si falla, usa `injectInputEvent()` con SOURCE_GAMEPAD. Si Shizuku no está, la inyección queda en "ninguno" y la pantalla lo dice claro.
+4. Si Shizuku está activo (Fase 2), el proceso shell intenta crear el **mando virtual vía `/dev/uinput` con el perfil de emulación activo** (Xbox 360, Xbox One, DualShock 4, DualSense o genérico; por defecto "Xbox 360 Controller"), y si falla, usa `injectInputEvent()` con SOURCE_GAMEPAD. Si Shizuku no está, la inyección queda en "ninguno" y la pantalla lo dice claro. El touchpad de DS4/DualSense no se emula en esta versión (ver `docs/PLAN-GAMEPAD-PRO.md`, Fase 2).
 
 ## Qué hay en Etapa 1
 

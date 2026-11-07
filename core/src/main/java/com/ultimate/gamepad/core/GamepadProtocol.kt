@@ -25,7 +25,14 @@ import java.nio.ByteOrder
  *  24  : 1 : leftTrigger  uint8, 0..255 -> float 0..1
  *  25  : 1 : rightTrigger uint8
  *  26  : 2 : checksum CRC-16/CCITT-FALSE sobre los bytes 0..25
- *  28  : 4 : reservado, debe ser 0
+ *  28  : 1 : profileId (Fase 2): 0 = Xbox 360, 1 = Xbox One,
+ *             2 = DS4, 3 = DualSense, 4 = genérico (GamepadProfiles).
+ *             Los paquetes viejos llevan 0 y siguen siendo Xbox 360.
+ *             OJO: este byte NO va cubierto por el CRC (el CRC solo
+ *             cubre 0..25, como en v1, para no romper la
+ *             compatibilidad con los APK ya instalados); un id
+ *             desconocido o corrupto se sanea a Xbox 360 en destino.
+ *  29  : 3 : reservado, debe ser 0
  *
  * La TV descarta cualquier paquete con magic, versión o checksum
  * incorrectos, y nunca aplica un paquete con sequence más viejo que
@@ -42,7 +49,15 @@ object GamepadProtocol {
     /** "UGP1|<ip>|<puerto>|<pin4>" — lo que contiene el QR de emparejamiento. */
     const val PAIRING_PREFIX: String = "UGP1"
 
-    fun encode(state: GamepadState): ByteArray {
+    const val PROFILE_OFFSET: Int = 28
+
+    /**
+     * Codifica un estado. [profileId] es el perfil de emulación
+     * activo (GamepadProfiles): viaja en el byte reservado del
+     * offset 28; por defecto 0 (Xbox 360, paquetes viejos).
+     * GamepadState NO cambia: el perfil no es parte del estado.
+     */
+    fun encode(state: GamepadState, profileId: Int = GamepadProfiles.XBOX_360_ID): ByteArray {
         val buf = ByteBuffer.allocate(PACKET_SIZE).order(ByteOrder.LITTLE_ENDIAN)
         buf.put(MAGIC_0)
         buf.put(MAGIC_1)
@@ -59,9 +74,16 @@ object GamepadProtocol {
         buf.put((state.rightTrigger.coerceIn(0f, 1f) * 255f).toInt().toByte())
         val crc = crc16(buf.array(), 0, 26)
         buf.putShort(crc.toShort())
-        buf.putInt(0) // reservado
+        buf.put((profileId and 0xFF).toByte()) // offset 28: profileId
+        buf.put(0) // offset 29: reservado
+        buf.put(0) // offset 30: reservado
+        buf.put(0) // offset 31: reservado
         return buf.array()
     }
+
+    /** Lee el profileId del byte 28 de un paquete en bruto (0 si no hay). Sin validar: el llamador debe haber decodificado el paquete antes; el id se sanea con GamepadProfiles.fromId(). */
+    fun profileIdOf(bytes: ByteArray, length: Int = bytes.size): Int =
+        if (length > PROFILE_OFFSET) bytes[PROFILE_OFFSET].toInt() and 0xFF else GamepadProfiles.XBOX_360_ID
 
     /** Devuelve null si el paquete no es válido. Nunca lanza por datos corruptos. */
     fun decode(bytes: ByteArray, length: Int = bytes.size): GamepadState? {

@@ -41,10 +41,13 @@ class TcpGamepadTransport(
         input = DataInputStream(s.getInputStream())
     }
 
-    override fun send(state: GamepadState) {
+    override fun send(state: GamepadState) = send(state, GamepadProfiles.XBOX_360_ID)
+
+    /** [profileId] viaja en el byte 28 del paquete (Fase 2, GamepadProfiles). */
+    fun send(state: GamepadState, profileId: Int) {
         val s = socket ?: throw IllegalStateException("TCP no conectado; llama a connect() primero")
         val o = out ?: throw IllegalStateException("TCP no conectado")
-        o.write(GamepadProtocol.encode(state))
+        o.write(GamepadProtocol.encode(state, profileId))
         o.flush()
     }
 
@@ -94,7 +97,16 @@ class TcpGamepadReceiver(
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
 
-    override fun receive(timeoutMs: Int): GamepadState? {
+    override fun receive(timeoutMs: Int): GamepadState? = receivePacket(timeoutMs)?.first
+
+    /**
+     * Como [receive], pero devuelve también el profileId del byte 28
+     * (Fase 2): el servicio TCP lo necesita para re-codificar el
+     * paquete sin perder el perfil. Sin esto, por TCP todo paquete
+     * se re-codificaba como Xbox 360 y la TV recreaba el mando
+     * equivocado al cambiar de perfil.
+     */
+    fun receivePacket(timeoutMs: Int): Pair<GamepadState, Int>? {
         if (client == null || client?.isClosed == true) {
             server.soTimeout = timeoutMs
             try {
@@ -130,7 +142,8 @@ class TcpGamepadReceiver(
                 }
                 return null
             }
-            GamepadProtocol.decode(buf)
+            val state = GamepadProtocol.decode(buf) ?: return null
+            state to GamepadProtocol.profileIdOf(buf)
         } catch (_: SocketTimeoutException) {
             null
         } catch (_: java.io.EOFException) {
