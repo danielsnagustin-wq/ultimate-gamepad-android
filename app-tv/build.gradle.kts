@@ -38,4 +38,5 @@ dependencies {
     implementation(libs.androidx.leanback)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+    implementation(libs.zxing.core)
 }

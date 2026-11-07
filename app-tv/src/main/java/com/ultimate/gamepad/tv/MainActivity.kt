@@ -2,14 +2,22 @@ package com.ultimate.gamepad.tv
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import com.ultimate.gamepad.core.ControllerTestChecklist
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProfiles
@@ -25,19 +33,31 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Pantalla de estado de la TV — Fase 1 visible + diagnóstico de mando real.
+ * Pantalla de estado de la TV — rediseño premium (negro AMOLED,
+ * acentos neón morado/cian, tarjetas, texto grande legible desde
+ * el sofá). Misma información y mismas funciones que antes; el
+ * diagnóstico detallado ("¿Cómo me ve Android?") queda colapsado
+ * en "Ver detalles" en vez de volcado en la pantalla principal.
  *
  * Se actualiza cada 500 ms y muestra:
- * - IP, puerto UDP 51999 / TCP 52000, PIN/QR en texto.
- * - Transporte activo, conectado sí/no (por silencio > 2 s), último
- *   paquete hace X s, paquetes recibidos, ping (eco UDP).
+ * - Estado grande CONECTADO / DESCONECTADO con punto verde/rojo,
+ *   transporte activo, último paquete hace X s, paquetes y perfil.
+ *   (La TV no mide ping en ms: el ping lo mide el teléfono con el
+ *   eco UDP. Aquí se muestra la frescura del último paquete y los
+ *   paquetes/s, que es lo que la TV sí sabe.)
+ * - Tarjeta "Conectar": IP y PIN grandes + QR real escaneable
+ *   (payload UGP1|ip|puerto|pin, el mismo que lee el teléfono).
+ * - Tarjeta Shizuku: estado + el paso siguiente en UNA frase.
+ *   Sin Shizuku no hay mando virtual posible y la tarjeta lo dice
+ *   claro. Shizuku NO puede ir dentro de la APK: su servidor corre
+ *   como usuario shell (uid 2000) y solo arranca por ADB desde
+ *   fuera; el cliente Shizuku 13.1.5 YA está dentro de la APK.
+ * - Tarjeta "Parece mando real: SÍ / NO" con el motivo en claro.
  * - Última entrada EN VIVO: al pulsar A/B/X/Y o mover el stick en
  *   el teléfono, la TV lo muestra aquí. Si esto no cambia, el Wi-Fi
  *   no está llegando, aunque el teléfono diga "Conectado".
- * - Shizuku: no conectado / segunda opción (Fase 2) cuando no está
- *   activo. Inyección activa: uinput / inject / ninguno.
- * - Diagnóstico "¿Cómo me ve Android?" con "Parece mando real:
- *   SÍ / NO" por dispositivo.
+ * - Pasos 1-2-3: instala Shizuku → conecta el teléfono → juega.
+ * - Botones INICIAR / DETENER receptor y PRUEBA DE MANDO (Fase 3).
  *
  * REGLA DE FALLO: si el Wi-Fi funciona pero ningún dispositivo
  * parece mando real, la pantalla dice "Inyección: FALLO — Wi-Fi
@@ -46,11 +66,45 @@ import java.util.Locale
  * incluya GAMEPAD+JOYSTICK y OpenNOW lo liste como controller.
  */
 class MainActivity : Activity() {
-    private lateinit var statusView: TextView
+
+    // Paleta premium (igual lenguaje que el teléfono).
+    private val black = Color.parseColor("#000000")
+    private val cardBg = Color.parseColor("#12121C")
+    private val cardStroke = Color.parseColor("#2E2E42")
+    private val purple = Color.parseColor("#A855F7")
+    private val purpleDark = Color.parseColor("#7C3AED")
+    private val cyan = Color.parseColor("#22D3EE")
+    private val green = Color.parseColor("#4ADE80")
+    private val greenDark = Color.parseColor("#15803D")
+    private val red = Color.parseColor("#F87171")
+    private val amber = Color.parseColor("#FBBF24")
+    private val greyText = Color.parseColor("#B8B8CC")
+    private val dimText = Color.parseColor("#8A8AA0")
+
+    private lateinit var statusCardBg: GradientDrawable
+    private lateinit var statusDotView: TextView
+    private lateinit var statusTitleView: TextView
+    private lateinit var statusSubView: TextView
+    private lateinit var connectIpView: TextView
+    private lateinit var connectPinView: TextView
+    private lateinit var qrImageView: ImageView
+    private lateinit var qrPayloadView: TextView
+    private lateinit var qrHintView: TextView
+    private lateinit var shizukuStatusView: TextView
+    private lateinit var shizukuNextView: TextView
+    private lateinit var shizukuNoteView: TextView
+    private lateinit var realTitleView: TextView
+    private lateinit var realReasonView: TextView
+    private lateinit var realInjectionView: TextView
     private lateinit var liveView: TextView
-    private lateinit var shizukuView: TextView
-    private lateinit var gamepadView: TextView
+    private lateinit var step1StatusView: TextView
+    private lateinit var step2StatusView: TextView
+    private lateinit var step3StatusView: TextView
+    private lateinit var detailsCard: LinearLayout
+    private lateinit var detailsToggleBtn: Button
     private lateinit var diagView: TextView
+    private var detailsVisible = false
+    private var lastQrPayload: String? = null
     private lateinit var pin: String // Persistente (TvPairing): el mismo en cada apertura.
     // PRUEBA DE MANDO (Fase 3): segunda vista conmutable desde
     // esta misma Activity (la TV no usa Compose). La checklist se
@@ -71,39 +125,271 @@ class MainActivity : Activity() {
         override fun run() { refresh(); handler.postDelayed(this, 500) }
     }
 
+    private fun dp(n: Int): Int = (n * resources.displayMetrics.density).toInt()
+
+    /** Tarjeta redondeada oscura con borde fino. */
+    private fun card(): LinearLayout {
+        val bg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(16).toFloat()
+            setColor(cardBg)
+            setStroke(dp(2), cardStroke)
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(28), dp(24), dp(28), dp(24))
+            background = bg
+        }
+    }
+
+    private fun cardParams(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dp(20) }
+
+    private fun sectionLabel(text: String, color: Int): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(color)
+            setPadding(0, 0, 0, dp(10))
+        }
+
+    private fun bigButton(text: String, tint: Int, onClick: () -> Unit): Button =
+        Button(this).apply {
+            this.text = text
+            textSize = 22f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            isAllCaps = false
+            backgroundTintList = ColorStateList.valueOf(tint)
+            minHeight = dp(76)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setOnClickListener { onClick() }
+        }
+
+    private fun stepRow(number: String, title: String, statusView: TextView): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
+            val num = TextView(this@MainActivity).apply {
+                text = number
+                textSize = 26f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(purple)
+                setPadding(0, 0, dp(18), 0)
+            }
+            val col = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 22f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                })
+                addView(statusView.apply { textSize = 20f })
+            }
+            addView(num)
+            addView(col)
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pin = TvPairing.getOrCreatePin(this)
+
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 48, 48, 48)
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setPadding(dp(40), dp(28), dp(40), dp(28))
+            setBackgroundColor(black)
         }
-        val title = TextView(this).apply { text = "Ultimate Gamepad — TV"; textSize = 28f; setTextColor(Color.WHITE) }
-        statusView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
-        liveView = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE) }
-        shizukuView = TextView(this).apply { textSize = 18f; setTextColor(Color.YELLOW) }
-        gamepadView = TextView(this).apply { textSize = 20f; setTextColor(Color.YELLOW) }
-        diagView = TextView(this).apply { textSize = 16f; setTextColor(Color.WHITE) }
-        val startBtn = Button(this).apply {
-            text = "Iniciar receptor (UDP 51999 + TCP 52000)"
-            setOnClickListener { startReceiver() }
+
+        // Cabecera.
+        layout.addView(TextView(this).apply {
+            text = "ULTIMATE GAMEPAD"
+            textSize = 40f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        })
+        layout.addView(TextView(this).apply {
+            text = "TV  ·  Tu teléfono es el mando  ·  GeForce NOW / OpenNOW"
+            textSize = 20f
+            setTextColor(greyText)
+            setPadding(0, dp(4), 0, dp(20))
+        })
+
+        // ——— Estado grande ———
+        val statusCard = card()
+        statusCardBg = statusCard.background as GradientDrawable
+        statusDotView = TextView(this).apply { text = "●"; textSize = 44f }
+        statusTitleView = TextView(this).apply {
+            textSize = 44f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(dp(16), 0, 0, 0)
         }
-        val stopBtn = Button(this).apply {
-            text = "Detener receptor"
-            setOnClickListener {
-                stopService(Intent(this@MainActivity, UdpReceiverService::class.java))
-                stopService(Intent(this@MainActivity, TcpReceiverService::class.java))
-                refresh()
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(statusDotView)
+            addView(statusTitleView)
+        }
+        statusSubView = TextView(this).apply { textSize = 20f; setTextColor(greyText) }
+        statusCard.addView(statusRow)
+        statusCard.addView(statusSubView)
+        layout.addView(statusCard, cardParams())
+
+        // ——— Fila: Conectar + Shizuku ———
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val rowParams = cardParams()
+
+        val connectCard = card().apply {
+            addView(sectionLabel("CONECTAR", cyan))
+            connectIpView = TextView(this@MainActivity).apply {
+                textSize = 34f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
             }
+            addView(connectIpView)
+            connectPinView = TextView(this@MainActivity).apply {
+                textSize = 34f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+            }
+            addView(connectPinView)
+            qrImageView = ImageView(this@MainActivity).apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setBackgroundColor(Color.WHITE)
+            }
+            addView(qrImageView, LinearLayout.LayoutParams(dp(280), dp(280)).apply {
+                topMargin = dp(16)
+                bottomMargin = dp(12)
+            })
+            qrHintView = TextView(this@MainActivity).apply {
+                text = "Escanea el QR con el teléfono, o escribe la IP y el PIN a mano."
+                textSize = 18f
+                setTextColor(greyText)
+            }
+            addView(qrHintView)
+            qrPayloadView = TextView(this@MainActivity).apply {
+                textSize = 16f
+                setTextColor(dimText)
+                setPadding(0, dp(8), 0, 0)
+            }
+            addView(qrPayloadView)
+            addView(TextView(this@MainActivity).apply {
+                text = "UDP ${GamepadProtocol.DEFAULT_PORT}  ·  TCP ${GamepadProtocol.DEFAULT_PORT + 1}"
+                textSize = 18f
+                setTextColor(greyText)
+                setPadding(0, dp(8), 0, 0)
+            })
         }
-        val testBtn = Button(this).apply {
-            text = "🧪  Prueba de mando"
-            setOnClickListener { showTest() }
+        row.addView(connectCard, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            rightMargin = dp(10)
+        })
+
+        val shizukuCard = card().apply {
+            addView(sectionLabel("SHIZUKU", purple))
+            shizukuStatusView = TextView(this@MainActivity).apply {
+                textSize = 32f
+                setTypeface(null, Typeface.BOLD)
+            }
+            addView(shizukuStatusView)
+            shizukuNextView = TextView(this@MainActivity).apply {
+                textSize = 21f
+                setTextColor(Color.WHITE)
+                setPadding(0, dp(12), 0, 0)
+            }
+            addView(shizukuNextView)
+            shizukuNoteView = TextView(this@MainActivity).apply {
+                text = "Sin Shizuku no hay mando virtual posible: OpenNOW no verá ningún mando. No es un fallo de tu teléfono."
+                textSize = 20f
+                setTextColor(amber)
+                setPadding(0, dp(12), 0, 0)
+            }
+            addView(shizukuNoteView)
         }
-        layout.addView(title); layout.addView(statusView); layout.addView(liveView)
-        layout.addView(shizukuView); layout.addView(gamepadView); layout.addView(diagView)
-        layout.addView(startBtn); layout.addView(stopBtn); layout.addView(testBtn)
+        row.addView(shizukuCard, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            leftMargin = dp(10)
+        })
+        layout.addView(row, rowParams)
+
+        // ——— Parece mando real ———
+        val realCard = card().apply {
+            addView(sectionLabel("MANDO VIRTUAL", purple))
+            realTitleView = TextView(this@MainActivity).apply {
+                textSize = 44f
+                setTypeface(null, Typeface.BOLD)
+            }
+            addView(realTitleView)
+            realReasonView = TextView(this@MainActivity).apply {
+                textSize = 21f
+                setTextColor(Color.WHITE)
+                setPadding(0, dp(8), 0, 0)
+            }
+            addView(realReasonView)
+            realInjectionView = TextView(this@MainActivity).apply {
+                textSize = 20f
+                setTextColor(greyText)
+                setPadding(0, dp(8), 0, 0)
+            }
+            addView(realInjectionView)
+        }
+        layout.addView(realCard, cardParams())
+
+        // ——— Última entrada en vivo ———
+        val liveCard = card().apply {
+            addView(sectionLabel("ÚLTIMA ENTRADA — EN VIVO", cyan))
+            liveView = TextView(this@MainActivity).apply {
+                textSize = 22f
+                setTextColor(Color.WHITE)
+            }
+            addView(liveView)
+        }
+        layout.addView(liveCard, cardParams())
+
+        // ——— Pasos 1-2-3 ———
+        step1StatusView = TextView(this)
+        step2StatusView = TextView(this)
+        step3StatusView = TextView(this)
+        val stepsCard = card().apply {
+            addView(sectionLabel("PARA JUGAR — 3 PASOS", purple))
+            addView(stepRow("1", "Instala y arranca Shizuku en la TV", step1StatusView))
+            addView(stepRow("2", "Conecta el teléfono con el QR o con IP + PIN", step2StatusView))
+            addView(stepRow("3", "Abre OpenNOW y juega", step3StatusView))
+        }
+        layout.addView(stepsCard, cardParams())
+
+        // ——— Botones grandes ———
+        val buttonsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val startBtn = bigButton("▶  Iniciar receptor", greenDark) { startReceiver() }
+        val stopBtn = bigButton("■  Detener receptor", Color.parseColor("#3A3A4A")) {
+            stopService(Intent(this@MainActivity, UdpReceiverService::class.java))
+            stopService(Intent(this@MainActivity, TcpReceiverService::class.java))
+            refresh()
+        }
+        val testBtn = bigButton("🧪  Prueba de mando", purpleDark) { showTest() }
+        buttonsRow.addView(startBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(8) })
+        buttonsRow.addView(stopBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            leftMargin = dp(8); rightMargin = dp(8)
+        })
+        buttonsRow.addView(testBtn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(8) })
+        layout.addView(buttonsRow, cardParams())
+
+        // ——— Diagnóstico detallado, colapsable ———
+        detailsToggleBtn = bigButton("▸  Ver detalles: cómo me ve Android", Color.parseColor("#23232F")) {
+            detailsVisible = !detailsVisible
+            detailsCard.visibility = if (detailsVisible) View.VISIBLE else View.GONE
+            detailsToggleBtn.text = if (detailsVisible) "▾  Ocultar detalles" else "▸  Ver detalles: cómo me ve Android"
+            if (detailsVisible) refresh()
+        }
+        layout.addView(detailsToggleBtn, cardParams())
+        detailsCard = card()
+        diagView = TextView(this).apply { textSize = 16f; setTextColor(Color.parseColor("#D8D8E0")) }
+        detailsCard.addView(diagView)
+        detailsCard.visibility = View.GONE
+        layout.addView(detailsCard, cardParams())
+
         mainScroll = ScrollView(this).apply { addView(layout) }
         testScroll = buildTestLayout()
         setContentView(mainScroll)
@@ -149,33 +435,32 @@ class MainActivity : Activity() {
     private fun buildTestLayout(): ScrollView {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 48, 48, 48)
-            setBackgroundColor(Color.parseColor("#0B0E14"))
+            setPadding(dp(40), dp(28), dp(40), dp(28))
+            setBackgroundColor(black)
         }
-        val title = TextView(this).apply { text = "Prueba de mando — TV"; textSize = 28f; setTextColor(Color.WHITE) }
+        val title = TextView(this).apply {
+            text = "Prueba de mando — TV"
+            textSize = 32f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(0, 0, 0, dp(16))
+        }
         testDeviceView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
         testLiveView = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE) }
         testChecklistView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
         testStagesView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
-        testConfirmBtn = Button(this).apply {
-            text = "Confirmo que funciona en un juego"
-            setOnClickListener {
-                if (TvTestPrefs.getOpenNowConfirmedAtMs(this@MainActivity) > 0) {
-                    TvTestPrefs.clearOpenNowConfirmation(this@MainActivity)
-                } else {
-                    TvTestPrefs.setOpenNowConfirmed(this@MainActivity, System.currentTimeMillis())
-                }
-                refreshTest()
+        testConfirmBtn = bigButton("Confirmo que funciona en un juego", purpleDark) {
+            if (TvTestPrefs.getOpenNowConfirmedAtMs(this@MainActivity) > 0) {
+                TvTestPrefs.clearOpenNowConfirmation(this@MainActivity)
+            } else {
+                TvTestPrefs.setOpenNowConfirmed(this@MainActivity, System.currentTimeMillis())
             }
+            refreshTest()
         }
-        val resetBtn = Button(this).apply {
-            text = "Reiniciar prueba"
-            setOnClickListener { testChecklist.reset(); refreshTest() }
+        val resetBtn = bigButton("Reiniciar prueba", Color.parseColor("#3A3A4A")) {
+            testChecklist.reset(); refreshTest()
         }
-        val backBtn = Button(this).apply {
-            text = "Volver"
-            setOnClickListener { showMain() }
-        }
+        val backBtn = bigButton("Volver", Color.parseColor("#3A3A4A")) { showMain() }
         layout.addView(title); layout.addView(testDeviceView); layout.addView(testLiveView)
         layout.addView(testChecklistView); layout.addView(testStagesView)
         layout.addView(testConfirmBtn); layout.addView(resetBtn); layout.addView(backBtn)
@@ -264,36 +549,124 @@ class MainActivity : Activity() {
         return fresh
     }
 
+    /** El paso siguiente con Shizuku, en UNA frase clara. */
+    private fun shizukuNextStep(status: ShizukuHelper.Status): String = when {
+        status.ready -> "Listo: el mando virtual ya se puede crear. No tienes que hacer nada más aquí."
+        status.label.contains("NO INSTALADO") -> "Siguiente paso: instala la app Shizuku (gratis) en la TV y arráncala una vez con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
+        status.label.contains("NO ACTIVO") -> "Siguiente paso: arranca Shizuku con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
+        status.label.contains("SIN PERMISO") -> "Siguiente paso: abre Shizuku en la TV y permite Ultimate Gamepad TV."
+        else -> status.guidance
+    }
+
+    /** QR real (ZXing) del payload UGP1|ip|puerto|pin; null si no se puede generar. */
+    private fun makeQrBitmap(payload: String, sizePx: Int): Bitmap? = runCatching {
+        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        for (x in 0 until sizePx) {
+            for (y in 0 until sizePx) {
+                bmp.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+            }
+        }
+        bmp
+    }.getOrNull()
+
     private fun refresh() {
         val wifi = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
         val ip = ShizukuHelper.localIpFromWifi(wifi) ?: "sin Wi-Fi"
         val connected = UdpReceiverService.isConnected()
         val agoSec = if (UdpReceiverService.lastPacketAtMs > 0) (System.currentTimeMillis() - UdpReceiverService.lastPacketAtMs) / 1000 else -1
-        statusView.text = "IP: $ip  UDP: ${GamepadProtocol.DEFAULT_PORT}  TCP: ${GamepadProtocol.DEFAULT_PORT + 1}\n" +
-            "PIN: $pin  QR: UGP1|$ip|${GamepadProtocol.DEFAULT_PORT}|$pin\n" +
-            "Transporte activo: ${UdpReceiverService.activeTransport.label}\n" +
-            "Conectado: ${if (connected) "SÍ" else "NO"}  Último paquete: ${if (agoSec < 0) "nunca" else "hace $agoSec s"}  Paquetes: ${UdpReceiverService.packetsReceived}"
-        val s = UdpReceiverService.lastState
-        liveView.text = "Última entrada — botones: ${pressedNames(s)}  " +
-            "Stick izq: (${"%.2f".format(s.leftX)}, ${"%.2f".format(s.leftY)})  " +
-            "Stick der: (${"%.2f".format(s.rightX)}, ${"%.2f".format(s.rightY)})  " +
-            "LT: ${"%.2f".format(s.leftTrigger)} RT: ${"%.2f".format(s.rightTrigger)}"
+        val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
+        val reports = Diagnostics.scan()
+        val real = reports.any { it.looksLikeRealGamepad }
         val shizuku = shizukuStatusCached()
-        shizukuView.text = if (ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
-            "Shizuku: ${shizuku.label}\n${shizuku.guidance}"
+
+        // ——— Estado grande ———
+        statusDotView.setTextColor(if (connected) green else red)
+        statusTitleView.text = if (connected) "CONECTADO" else "DESCONECTADO"
+        statusCardBg.setStroke(dp(2), if (connected) green else red)
+        statusSubView.text = "${UdpReceiverService.activeTransport.label}  ·  " +
+            "Último paquete: ${if (agoSec < 0) "nunca" else "hace $agoSec s"}  ·  " +
+            "${UdpReceiverService.packetsReceived} paquetes  ·  ${UdpReceiverService.packetsPerSecond}/s\n" +
+            "Perfil: ${profile.name} (${profile.deviceName})"
+
+        // ——— Conectar: IP, PIN y QR real ———
+        connectIpView.text = "IP  $ip"
+        connectPinView.text = "PIN  $pin"
+        val qrPayload = "${GamepadProtocol.PAIRING_PREFIX}|$ip|${GamepadProtocol.DEFAULT_PORT}|$pin"
+        if (ip == "sin Wi-Fi") {
+            qrImageView.visibility = View.GONE
+            qrHintView.text = "Conecta la TV al Wi-Fi para ver el QR."
+            qrPayloadView.text = ""
+            lastQrPayload = null
         } else {
-            "Shizuku: no conectado / segunda opción (Fase 2)"
+            qrHintView.text = "Escanea el QR con el teléfono, o escribe la IP y el PIN a mano."
+            qrPayloadView.text = qrPayload
+            if (qrPayload != lastQrPayload) {
+                lastQrPayload = qrPayload
+                val bmp = makeQrBitmap(qrPayload, 360)
+                if (bmp != null) {
+                    qrImageView.setImageBitmap(bmp)
+                    qrImageView.visibility = View.VISIBLE
+                } else {
+                    qrImageView.visibility = View.GONE
+                }
+            }
         }
-        shizukuView.setTextColor(if (shizuku.ready) Color.GREEN else Color.YELLOW)
-        val real = Diagnostics.anyRealGamepad()
+
+        // ——— Shizuku ———
+        if (ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
+            shizukuStatusView.text = "Shizuku: ${shizuku.label}"
+            shizukuStatusView.setTextColor(if (shizuku.ready) green else amber)
+            shizukuNextView.text = shizukuNextStep(shizuku)
+            shizukuNoteView.visibility = if (shizuku.ready) View.GONE else View.VISIBLE
+        } else {
+            shizukuStatusView.text = "Shizuku: no conectado / segunda opción (Fase 2)"
+            shizukuStatusView.setTextColor(amber)
+            shizukuNextView.text = ""
+            shizukuNoteView.visibility = View.GONE
+        }
+
+        // ——— Parece mando real ———
+        val device = reports.firstOrNull { it.looksLikeRealGamepad }
+            ?: reports.firstOrNull { it.name.equals(profile.deviceName, ignoreCase = true) }
+            ?: reports.firstOrNull()
+        realTitleView.text = "Parece mando real: ${if (real) "SÍ" else "NO"}"
+        realTitleView.setTextColor(if (real) green else red)
+        realReasonView.text = when {
+            device == null -> "Motivo: Android no detecta ningún dispositivo de entrada."
+            else -> "Motivo: ${device.looksLikeRealReason}"
+        }
         val injection = UdpReceiverService.injectionMethod
-        gamepadView.text = when {
-            real -> "Parece mando real: SÍ — Inyección activa: $injection"
-            connected -> "Parece mando real: NO — Inyección: FALLO. Wi-Fi funciona pero Android no ve un mando real (ver diagnóstico). OpenNOW no lo usará para jugar."
-            else -> "Parece mando real: NO — Inyección: $injection (sin conexión Wi-Fi todavía)"
+        realInjectionView.text = when {
+            real -> "Inyección activa: $injection"
+            connected -> "Inyección: FALLO. Wi-Fi funciona pero Android no ve un mando real (ver detalles). OpenNOW no lo usará para jugar."
+            else -> "Inyección: $injection (sin conexión Wi-Fi todavía)"
         }
-        gamepadView.setTextColor(if (real) Color.GREEN else Color.RED)
-        diagView.text = Diagnostics.render()
+
+        // ——— Última entrada en vivo ———
+        val s = UdpReceiverService.lastState
+        liveView.text = "Botones: ${pressedNames(s)}\n" +
+            "Stick izq: (${"%.2f".format(s.leftX)}, ${"%.2f".format(s.leftY)})   " +
+            "Stick der: (${"%.2f".format(s.rightX)}, ${"%.2f".format(s.rightY)})   " +
+            "LT: ${"%.2f".format(s.leftTrigger)}  RT: ${"%.2f".format(s.rightTrigger)}\n" +
+            "Paquetes: ${UdpReceiverService.packetsReceived} · ${UdpReceiverService.packetsPerSecond}/s · perdidos (huecos de secuencia): ${UdpReceiverService.packetsLost}"
+
+        // ——— Pasos 1-2-3 ———
+        step1StatusView.text = if (shizuku.ready) "✓ Listo" else "○ Pendiente"
+        step1StatusView.setTextColor(if (shizuku.ready) green else amber)
+        step2StatusView.text = if (connected) "✓ Conectado" else "○ Pendiente"
+        step2StatusView.setTextColor(if (connected) green else amber)
+        step3StatusView.text = if (real) "✓ Android ve el mando" else "○ Pendiente: Android aún no ve el mando"
+        step3StatusView.setTextColor(if (real) green else amber)
+
+        // ——— Detalles (solo se renderizan abiertos) ———
+        if (detailsVisible) {
+            val details = StringBuilder(Diagnostics.render())
+            details.append("\n\nShizuku: ${shizuku.label}\n${shizuku.guidance}")
+            val lastError = UdpReceiverService.lastError
+            if (!lastError.isNullOrBlank()) details.append("\n\nÚltimo error: $lastError")
+            diagView.text = details.toString()
+        }
         if (showingTest) refreshTest()
     }
 }
