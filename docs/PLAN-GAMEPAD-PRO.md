@@ -513,6 +513,48 @@ pantalla.
 
 ### Fase 4 — Controles extra (L4/R4, turbo, macros, vibración, teclado, ratón, giroscopio)
 
+> **ESTADO — IMPLEMENTADO (2026-11-07):** código real en `main`, CI en
+> verde (runs 42423601658 y 42424085842). **SIN VERIFICAR en TV
+> real:** todo lo decisivo (L4/R4 por `getevent`, turbo, macros,
+> vibración al pulsar, teclado en el chat de GeForce NOW, ratón en
+> un menú, giroscopio) sigue pendiente de la Fase 0/6 — que además
+> sigue bloqueada: Shizuku no está instalado en la TV del usuario
+> y el teléfono aún no ha conectado (0 paquetes). CI en verde no es
+> verificación en dispositivo.
+>
+> 1. **L4/R4 — IMPLEMENTADO:** byte 29 del protocolo (bit 0 = L4,
+>    bit 1 = R4; fuera del CRC, como el profileId del byte 28),
+>    botones en pantalla editables/borrables en el editor, evdev
+>    `BTN_TRIGGER_HAPPY2/3` (0x2C1/0x2C2) en `uinput_gamepad.c`.
+>    El bitmask de 16 NO se tocó. El remapeo por juego NO cubre
+>    L4/R4. Por Bluetooth HID NO van (el descriptor no tiene hueco).
+> 2. **Turbo — IMPLEMENTADO (solo teléfono):** `Turbo.kt` en
+>    `:core` + generador en `GamepadViewModel` (10 Hz por defecto,
+>    5–20 Hz en la UI, botones A/B/X/Y/LB/RB), aplicado ANTES del
+>    remapeo. Sin cambios en la TV.
+> 3. **Macros — IMPLEMENTADO (solo teléfono):** `Macros.kt`
+>    (graba botones físicos con tiempos, máx. 30 s / 200 eventos)
+>    + UI grabar/nombrar/reproducir/borrar en `ExtrasScreen`.
+> 4. **Vibración — PARCIAL:** vibración al pulsar en el teléfono
+>    SÍ (`Vibrator`, 15 ms, respeta el ajuste del perfil de juego).
+>    **Vibración DEL JUEGO (EV_FF/FF_RUMBLE) NO implementada:**
+>    necesitaría force feedback en el mando virtual y no está;
+>    ninguna pantalla la promete.
+> 5. **Teclado virtual y modo ratón — IMPLEMENTADO por uinput en
+>    la TV:** dispositivos SEPARADOS ("Ultimate Gamepad Keyboard"
+>    0x1234/0x5679, "Ultimate Gamepad Mouse" 0x1234/0x567A), nunca
+>    mezclados con el gamepad; paquetes de 8 bytes `UK`/`UM` por
+>    UDP 51999; la TV los crea perezosamente y los destruye con
+>    ACTION_DESTROY. Vía HID descartada (segundo `registerApp`,
+>    sin probar). Solo UDP.
+> 6. **Giroscopio — IMPLEMENTADO (solo teléfono + protocolo
+>    normal):** sensor de rotación → stick derecho (`GyroMapper`),
+>    interruptor + sensibilidad 0,5–2. **Desviación del plan:** NO
+>    se inventaron ejes nuevos de protocolo (el plan pedía
+>    "protocolo v2: 2-3 floats más"); los bytes reservados son
+>    pocos y ya los usan profileId y L4/R4. La convención de signo
+>    exacta está pendiente de verificar en el teléfono real.
+
 **Objetivo:** completar el §9, en orden de valor/riesgo. Cada uno
 es un mini-proyecto; no se hacen todos a la vez.
 

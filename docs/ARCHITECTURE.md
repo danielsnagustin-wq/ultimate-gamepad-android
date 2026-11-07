@@ -110,6 +110,10 @@ Cómo lo evitamos en Ultimate Gamepad (ver `GamepadClassification.kt`):
 Paquete fijo de 32 bytes, little-endian (ver `GamepadProtocol.kt` para el layout exacto byte a byte):
 magic `UG` (0x55 0x47), versión 1, flags, secuencia uint16, timestamp ms, bitmask de botones uint16, sticks int16 (-32767..32767), gatillos uint8, CRC-16/CCITT-FALSE sobre bytes 0..25, 4 bytes reservados a 0.
 
+Byte 28 = profileId de emulación (Fase 2: Xbox 360, Xbox One, DualShock 4, DualSense, genérico). Byte 29 = botones extra L4/R4 (Fase 4: bit 0 = L4, bit 1 = R4). Los bytes 28–29 están FUERA del CRC (un bit corrupto solo pulsa un instante o cambia el perfil un paquete). Bytes 30–31 siguen a 0.
+
+Extras (Fase 4, teclado virtual y modo ratón): paquetes SEPARADOS de 8 bytes por UDP 51999, magic `UK` (teclado) / `UM` (ratón) — ver `ExtrasProtocol.kt`. No son paquetes de mando: el receptor de la TV los distingue ANTES del ping (un paquete de tecla soltada tiene el byte 3 a 1 y se confundiría con un ping) y crea dispositivos uinput aparte ("Ultimate Gamepad Keyboard" 0x1234/0x5679, "Ultimate Gamepad Mouse" 0x1234/0x567A), nunca mezclados con el gamepad.
+
 Reglas: la TV descarta magic/versión/CRC incorrectos y paquetes con secuencia más vieja que la última aplicada. Sin retransmisión UDP: un paquete perdido se reemplaza por el siguiente. TCP lee exactamente 32 bytes por paquete (`readFully`).
 
 Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a otra TV por error; no es cifrado. Todo ocurre solo en la red local. Hotspot: mismo protocolo, IP del hotspot (192.168.43.x).
@@ -117,7 +121,7 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 ## Teléfono — :app-phone
 
 - `MainActivity`: tema oscuro, una pantalla.
-- `GamepadViewModel`: estado de botones/sticks, dead zone 0.05, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID.
+- `GamepadViewModel`: estado de botones/sticks, dead zone 0.05, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID. Extras Fase 4: L4/R4 (bitmask extra, byte 29), turbo (10 Hz), macros (grabar/reproducir), vibración al pulsar (15 ms, respeta el perfil de juego), giroscopio (inclinación → stick derecho), teclado virtual y modo ratón (paquetes `UK`/`UM` por UDP); pantalla Extras (`ExtrasScreen.kt`, ajustes en `ExtrasPrefs.kt`).
 - `GamepadSenderService`: servicio en primer plano, envía a 120 Hz por UDP o TCP, ping real por eco (UDP y TCP) cada 500 ms, reconexión automática (reintento 1 s sin cerrar el servicio). Si el socket falla, guarda `lastError` y la UI lo muestra.
 - `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el teléfono no expone el perfil, queda en FAILED.
 - `BluetoothDataTransport`: solo interfaz, PENDING_STAGE2.
@@ -127,12 +131,12 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 ## TV — :app-tv
 
 - `MainActivity`: pantalla de estado en vivo (500 ms): IP, puertos, transporte activo, conectado sí/no, último paquete, paquetes recibidos, última entrada (botones/sticks), Shizuku, inyección activa, diagnóstico "¿Cómo me ve Android?".
-- `UdpReceiverService`: `DatagramSocket(51999)`, valida, hace eco de ping, descarta secuencias viejas, expone `lastState`/`lastPacketAtMs`/`packetsReceived`/`activeTransport`/`injectionMethod`. Arranca también `TcpReceiverService`.
+- `UdpReceiverService`: `DatagramSocket(51999)`, valida, hace eco de ping, descarta secuencias viejas, expone `lastState`/`lastPacketAtMs`/`packetsReceived`/`activeTransport`/`injectionMethod`. Arranca también `TcpReceiverService`. Extras Fase 4: antes del ping, distingue los paquetes `UK`/`UM` (teclado/ratón) y los pasa a `ShizukuHelper` (dispositivos uinput aparte).
 - `TcpReceiverService`: `ServerSocket(52000)`, lee 32 bytes, mismo `recordPacket()`.
 - `Diagnostics`: `InputDevice.getDeviceIds()`, sources, ejes, veredicto "MANDO DE JUEGO" / "CONTROL DE TV - FALLO" y "Parece mando real: SÍ / NO" con motivo.
 - `InputMapper`: GamepadState → `KeyEvent` (BUTTON_*) y `MotionEvent` (ejes + HAT) con source `SOURCE_GAMEPAD | SOURCE_JOYSTICK`. Es la inyección B.
 - `ShizukuHelper`: comprueba instalación, `pingBinder()`, permiso. Guía específica para Hyundai sin depuración inalámbrica (ADB por red :5555 + Bugjaeger).
-- `GamepadUserService` (AIDL `IGamepadInputService`): corre como shell. `createVirtualGamepad()` / `sendReport()` / `injectGamepadEvent()`.
+- `GamepadUserService` (AIDL `IGamepadInputService`): corre como shell. `createVirtualGamepad()` / `sendReport()` / `injectGamepadEvent()`. Fase 4: `sendReport()` lleva `extraButtons` (L4/R4 → `BTN_TRIGGER_HAPPY2/3`); `keyboardEvent()` / `mouseEvent()` / `destroyExtras()` para los dispositivos uinput aparte de teclado y ratón.
 - `UinputGamepad`: **pendiente de Etapa 0**. Devuelve false hasta que su librería JNI (.so) exista y se demuestre en la Hyundai. No se finge un mando.
 - `BluetoothDataReceiverStub`: PENDING_STAGE2.
 
