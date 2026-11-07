@@ -73,7 +73,7 @@ object ShizukuHelper {
             return false
         }
         return runCatching {
-            if (!service.isVirtualGamepadReady) service.createVirtualGamepad()
+            if (!service.isVirtualGamepadReady()) service.createVirtualGamepad()
             service.sendReport(rawPacket)
         }.getOrDefault(false)
     }

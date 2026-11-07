@@ -49,6 +49,8 @@ interface IGamepadInputService : IInterface {
             attachInterface(this, DESCRIPTOR)
         }
 
+        override fun asBinder(): IBinder = this
+
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             when (code) {
                 IBinder.INTERFACE_TRANSACTION -> {
