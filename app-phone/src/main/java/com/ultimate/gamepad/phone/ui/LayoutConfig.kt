@@ -18,6 +18,8 @@ data class ButtonLayout(
     val scale: Float = 1f,
     val offsetXdp: Int = 0,
     val offsetYdp: Int = 0,
+    /** Opacidad del botón (1 = sólido, 0.3 = casi transparente). */
+    val opacity: Float = 1f,
 )
 
 data class LayoutConfig(val elements: Map<String, ButtonLayout> = defaultElements()) {
@@ -59,6 +61,16 @@ data class LayoutConfig(val elements: Map<String, ButtonLayout> = defaultElement
 object LayoutPrefs {
     private const val PREFS = "ultimate_gamepad_layout"
     private const val KEY_JSON = "layout_json"
+    private const val KEY_DEADZONE = "dead_zone"
+
+    /** Zona muerta de los sticks (0.05 = 5% del recorrido no hace nada). */
+    fun loadDeadZone(context: Context): Float =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_DEADZONE, 0.05f).coerceIn(0f, 0.15f)
+
+    fun saveDeadZone(context: Context, deadZone: Float) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_DEADZONE, deadZone.coerceIn(0f, 0.15f)).apply()
+    }
 
     fun load(context: Context): LayoutConfig {
         val json = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_JSON, null)
@@ -69,9 +81,10 @@ object LayoutPrefs {
                 val obj = root.optJSONObject(id) ?: JSONObject()
                 ButtonLayout(
                     visible = obj.optBoolean("visible", true),
-                    scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(0.6f, 1.5f),
-                    offsetXdp = obj.optInt("x", 0).coerceIn(-80, 80),
-                    offsetYdp = obj.optInt("y", 0).coerceIn(-80, 80),
+                    scale = obj.optDouble("scale", 1.0).toFloat().coerceIn(0.6f, 1.6f),
+                    offsetXdp = obj.optInt("x", 0).coerceIn(-120, 120),
+                    offsetYdp = obj.optInt("y", 0).coerceIn(-120, 120),
+                    opacity = obj.optDouble("opacity", 1.0).toFloat().coerceIn(0.3f, 1f),
                 )
             }
             LayoutConfig(elements)
@@ -86,6 +99,7 @@ object LayoutPrefs {
                 put("scale", layout.scale.toDouble())
                 put("x", layout.offsetXdp)
                 put("y", layout.offsetYdp)
+                put("opacity", layout.opacity.toDouble())
             })
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

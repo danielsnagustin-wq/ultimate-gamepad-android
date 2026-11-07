@@ -34,10 +34,14 @@ import java.net.InetAddress
  * tiene "conexión" que se caiga: si la TV vuelve, los paquetes
  * vuelven a llegar solos.
  *
- * El ping es real: cada segundo se envía un paquete FLAG_PING y se
- * mide el tiempo hasta que la TV lo devuelve (eco). Si la TV no
- * hace eco, el ping se muestra como "—" y [isTvResponding] es false.
- * Nunca se muestra 0 ms inventado.
+ * El ping es real: cada medio segundo se envía un paquete
+ * FLAG_PING y se mide el tiempo hasta que la TV lo devuelve
+ * (eco). Si la TV no hace eco, el ping se muestra como "—" y
+ * [isTvResponding] es false. Nunca se muestra 0 ms inventado.
+ *
+ * Latencia: el estado se envía a 120 Hz (cada 8 ms) por UDP,
+ * no a 60 Hz: en red local 32 bytes a 120 Hz no cuestan nada y
+ * el mando responde el doble de rápido.
  */
 class GamepadSenderService : Service() {
     companion object {
@@ -101,7 +105,7 @@ class GamepadSenderService : Service() {
                             if (udp == null) udp = UdpTransport()
                             udp?.send(state, address, port)
                             val now = System.currentTimeMillis()
-                            if (now - lastPingSentAt >= 1000) {
+                            if (now - lastPingSentAt >= 500) {
                                 lastPingSentAt = now; pingSequence = sequence
                                 udp?.sendPing(pingSequence, now, address, port)
                             }
@@ -133,7 +137,7 @@ class GamepadSenderService : Service() {
                     runCatching { udp?.close() }; udp = null
                     delay(1000)
                 }
-                delay(16) // ~60 Hz
+                delay(8) // ~120 Hz: el mando responde el doble de rápido que a 60 Hz.
             }
         }
     }

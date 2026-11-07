@@ -66,8 +66,10 @@ fun Modifier.pressEffect(pressed: Boolean): Modifier {
 }
 
 /**
- * Stick analógico, 160 dp con más recorrido (antes 140 dp): el
- * recorrido corto era parte de la mala sensibilidad. Un toque
+ * Stick analógico, 180 dp con más recorrido (antes 160 dp): el
+ * recorrido corto era parte de la mala sensibilidad. El pomo
+ * viaja hasta 80 px desde el centro (antes 70 px), así el stick
+ * se puede mover más y llegar al tope de verdad. Un toque
  * corto sin arrastrar es pulsar el stick (L3/R3, como en un
  * mando real): el detector de toques y el de arrastre conviven —
  * el toque solo dispara si no hubo movimiento, y el arrastre
@@ -76,9 +78,9 @@ fun Modifier.pressEffect(pressed: Boolean): Modifier {
 @Composable
 fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick: (() -> Unit)? = null) {
     var knob by remember { mutableStateOf(Offset.Zero) }
-    val radius = 70f
+    val radius = 80f
     Box(
-        modifier = Modifier.size(160.dp)
+        modifier = Modifier.size(180.dp)
             .pointerInput(Unit) { detectTapGestures(onTap = { onClick?.invoke() }) }
             .pointerInput(Unit) {
             detectDragGestures(
@@ -95,7 +97,7 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
             }
         },
     ) {
-        Canvas(modifier = Modifier.size(160.dp)) {
+        Canvas(modifier = Modifier.size(180.dp)) {
             val c = center
             // Halo neón suave detrás del stick.
             drawCircle(
@@ -107,8 +109,8 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
                 radius = size.minDimension / 2f,
                 center = c,
             )
-            // Base oscura con doble anillo neón (morado + cian tenue).
-            drawCircle(color = Color(0xFF12151F), radius = size.minDimension / 2f - 4.dp.toPx(), center = c)
+            // Base AMOLED (negro puro) con doble anillo neón (morado + cian tenue).
+            drawCircle(color = Color.Black, radius = size.minDimension / 2f - 4.dp.toPx(), center = c)
             drawCircle(
                 brush = Brush.sweepGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF), Color(0xFF7C4DFF))),
                 radius = size.minDimension / 2f - 4.dp.toPx(),
@@ -125,30 +127,34 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
             val knobCenter = c + knob
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF4A5268), Color(0xFF232839)),
+                    colors = listOf(Color(0xFF3A3F52), Color(0xFF0B0B0B)),
                     center = knobCenter + Offset(-10.dp.toPx(), -10.dp.toPx()),
-                    radius = 52.dp.toPx(),
+                    radius = 56.dp.toPx(),
                 ),
-                radius = 32.dp.toPx(),
+                radius = 36.dp.toPx(),
                 center = knobCenter,
             )
             drawCircle(
                 color = Color.White.copy(alpha = 0.14f),
-                radius = 26.dp.toPx(),
+                radius = 29.dp.toPx(),
                 center = knobCenter,
                 style = Stroke(width = 1.5.dp.toPx()),
             )
             drawCircle(
                 color = Color.White.copy(alpha = 0.08f),
-                radius = 18.dp.toPx(),
+                radius = 20.dp.toPx(),
                 center = knobCenter,
                 style = Stroke(width = 1.dp.toPx()),
             )
-            drawCircle(color = Color(0xFF7C4DFF), radius = 9.dp.toPx(), center = knobCenter)
+            drawCircle(color = Color(0xFF7C4DFF), radius = 10.dp.toPx(), center = knobCenter)
         }
     }
 }
 
+/**
+ * Cruceta sobre un plato circular, como el mando Xbox Series:
+ * las 4 teclas van sobre un disco oscuro con anillo tenue, en
+ * vez de flotar sueltas. */
 @Composable
 fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit) {
     var up by remember { mutableStateOf(false) }
@@ -156,17 +162,25 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit) {
     var left by remember { mutableStateOf(false) }
     var right by remember { mutableStateOf(false) }
     fun emit() = onChange(up, down, left, right)
-    Column {
-        Row {
-            Box(Modifier.size(56.dp)); DpadKey("▲") { p -> up = p; emit() }; Box(Modifier.size(56.dp))
-        }
-        Row {
-            DpadKey("◀") { p -> left = p; emit() }
-            Box(Modifier.size(56.dp))
-            DpadKey("▶") { p -> right = p; emit() }
-        }
-        Row {
-            Box(Modifier.size(56.dp)); DpadKey("▼") { p -> down = p; emit() }; Box(Modifier.size(56.dp))
+    Box(
+        modifier = Modifier.size(196.dp)
+            .clip(CircleShape)
+            .background(Color.Black)
+            .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.35f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column {
+            Row {
+                Box(Modifier.size(56.dp)); DpadKey("▲") { p -> up = p; emit() }; Box(Modifier.size(56.dp))
+            }
+            Row {
+                DpadKey("◀") { p -> left = p; emit() }
+                Box(Modifier.size(56.dp))
+                DpadKey("▶") { p -> right = p; emit() }
+            }
+            Row {
+                Box(Modifier.size(56.dp)); DpadKey("▼") { p -> down = p; emit() }; Box(Modifier.size(56.dp))
+            }
         }
     }
 }
@@ -184,7 +198,7 @@ fun DpadKey(label: String, onPress: (Boolean) -> Unit) {
             .background(
                 Brush.verticalGradient(
                     if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
-                    else listOf(Color(0xFF2A3040), Color(0xFF171B26)),
+                    else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
             .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.55f), RoundedCornerShape(16.dp))

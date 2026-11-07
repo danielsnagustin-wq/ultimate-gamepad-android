@@ -45,18 +45,22 @@ import com.ultimate.gamepad.core.GamepadButtons
 import kotlinx.coroutines.delay
 
 /**
- * Mando estilo Xbox, neón (según los mockups del usuario).
- * Toda la pantalla es el mando: dos sticks, cruceta, A/B/X/Y,
- * LB/RB, LT/RT analógicos, L3/R3 (tocando el stick), VIEW, MENU,
- * botón Xbox (HOME) y Compartir. Nada es decorativo: cada botón
- * envía su bit real por el protocolo de 32 bytes.
+ * Mando estilo Xbox Series, AMOLED (negro puro) con acentos neón.
+ * Toda la pantalla es el mando: sticks asimétricos (izquierdo
+ * arriba, derecho abajo, como el mando Xbox real), cruceta sobre
+ * su plato, A/B/X/Y con los colores oficiales de Xbox, LB/RB,
+ * LT/RT analógicos, L3/R3 (tocando el stick), VIEW a la izquierda
+ * del botón Xbox, MENU a la derecha y Compartir debajo. Nada es
+ * decorativo: cada botón envía su bit real por el protocolo de
+ * 32 bytes.
  *
  * Lo de arriba (estado, métodos, conexión) no estorba: vive en
  * Ajustes (⚙, arriba a la derecha) y en la píldora de estado del
  * centro, que también abre Ajustes al tocarla.
  *
  * Personalización: cada elemento se puede ocultar, agrandar,
- * achicar o mover desde Ajustes > Personalizar botones
+ * achicar, mover o hacer transparente desde Ajustes >
+ * Personalizar botones o desde el panel visual de botones
  * (LayoutConfig); el ⚙ siempre queda visible para poder volver.
  */
 @Composable
@@ -69,12 +73,15 @@ fun GamepadScreen(vm: GamepadViewModel) {
         // El ping se vigila también en CONECTANDO: si no, el estado
         // CONECTANDO nunca se resolvería y la pantalla se quedaría
         // tiesa esperando un eco que nadie comprueba.
-        while (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) { vm.refreshPing(); delay(1000) }
+        while (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) { vm.refreshPing(); delay(500) }
     }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF141126), Color(0xFF0B0E14))))
+            // AMOLED: negro puro (los píxeles apagados no gastan
+            // batería y el neón resalta más); el degradado azulado
+            // de antes se veía gris en pantallas AMOLED.
+            .background(Color.Black)
             .border(
                 1.5.dp,
                 Brush.linearGradient(listOf(Color(0xFF00E5FF).copy(alpha = 0.35f), Color(0xFF7C4DFF).copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.35f))),
@@ -126,11 +133,14 @@ fun GamepadScreen(vm: GamepadViewModel) {
             }
         }
         if (ui.showSettings) SettingsScreen(vm, ui)
+        if (ui.showLayoutEditor) LayoutEditorScreen(vm) { vm.closeLayoutEditor() }
         if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeSettings() })
     }
 }
 
-/** Fondo neón: curvas luminosas + brillos suaves, como los mockups. */
+/** Fondo neón sobre negro puro: curvas luminosas + brillos
+ * suaves, como los mockups, con menos intensidad para que el
+ * negro siga siendo negro (AMOLED). */
 @Composable
 private fun NeonBackground(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
@@ -138,7 +148,7 @@ private fun NeonBackground(modifier: Modifier = Modifier) {
         val h = size.height
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.16f), Color.Transparent),
+                colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.12f), Color.Transparent),
                 center = Offset(w * 0.15f, h * 0.2f),
                 radius = w * 0.35f,
             ),
@@ -147,7 +157,7 @@ private fun NeonBackground(modifier: Modifier = Modifier) {
         )
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF00E5FF).copy(alpha = 0.10f), Color.Transparent),
+                colors = listOf(Color(0xFF00E5FF).copy(alpha = 0.08f), Color.Transparent),
                 center = Offset(w * 0.85f, h * 0.85f),
                 radius = w * 0.35f,
             ),
@@ -158,17 +168,18 @@ private fun NeonBackground(modifier: Modifier = Modifier) {
             moveTo(0f, h * 0.78f)
             quadraticBezierTo(w * 0.5f, h * 0.35f, w, h * 0.62f)
         }
-        drawPath(curve1, Color(0xFF7C4DFF).copy(alpha = 0.20f), style = Stroke(width = 2.dp.toPx()))
+        drawPath(curve1, Color(0xFF7C4DFF).copy(alpha = 0.16f), style = Stroke(width = 2.dp.toPx()))
         val curve2 = Path().apply {
             moveTo(0f, h * 0.22f)
             quadraticBezierTo(w * 0.5f, h * 0.62f, w, h * 0.18f)
         }
-        drawPath(curve2, Color(0xFF00E5FF).copy(alpha = 0.12f), style = Stroke(width = 1.5.dp.toPx()))
+        drawPath(curve2, Color(0xFF00E5FF).copy(alpha = 0.10f), style = Stroke(width = 1.5.dp.toPx()))
     }
 }
 
 /** Un elemento personalizable: oculto no se dibuja; si no, se
- * mueve y se escala según el diseño guardado en Ajustes. */
+ * mueve, se escala y se hace transparente según el diseño
+ * guardado en Ajustes. */
 @Composable
 private fun LayoutElement(layout: LayoutConfig, id: String, content: @Composable () -> Unit) {
     val el = layout.element(id)
@@ -176,7 +187,7 @@ private fun LayoutElement(layout: LayoutConfig, id: String, content: @Composable
     Box(
         modifier = Modifier
             .offset(el.offsetXdp.dp, el.offsetYdp.dp)
-            .graphicsLayer { scaleX = el.scale; scaleY = el.scale },
+            .graphicsLayer { scaleX = el.scale; scaleY = el.scale; alpha = el.opacity },
     ) { content() }
 }
 
@@ -219,7 +230,7 @@ private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF151A26).copy(alpha = 0.92f))
+            .background(Color.Black.copy(alpha = 0.92f))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), RoundedCornerShape(20.dp))
             .clickable { vm.openSettings() }
             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -239,14 +250,14 @@ private fun GearButton(onClick: () -> Unit) {
         modifier = Modifier.size(40.dp)
             .pressEffect(pressed)
             .clip(CircleShape)
-            .background(Brush.verticalGradient(listOf(Color(0xFF2A3040), Color(0xFF171B26))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), CircleShape)
             .pointerPress { p -> pressed = p; if (p) onClick() },
         contentAlignment = Alignment.Center,
     ) { Text("⚙", color = Color.White, fontSize = 20.sp) }
 }
 
-/** Izquierda: stick + cruceta. */
+/** Izquierda, como el mando Xbox: stick arriba, cruceta abajo (asimétrico). */
 @Composable
 private fun LeftControls(vm: GamepadViewModel, layout: LayoutConfig) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -255,7 +266,7 @@ private fun LeftControls(vm: GamepadViewModel, layout: LayoutConfig) {
     }
 }
 
-/** Derecha: A/B/X/Y + stick derecho. */
+/** Derecha, como el mando Xbox: A/B/X/Y arriba, stick abajo (asimétrico). */
 @Composable
 private fun RightControls(vm: GamepadViewModel, layout: LayoutConfig) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -293,7 +304,7 @@ private fun StickLabel(label: String) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF232839))
+                .background(Color(0xFF111111))
                 .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 8.dp, vertical = 3.dp),
         ) { Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
@@ -301,7 +312,8 @@ private fun StickLabel(label: String) {
     }
 }
 
-/** Centro: botón Xbox, VIEW, Compartir y MENU. */
+/** Centro, como el mando Xbox Series: VIEW a la izquierda del
+ * botón Xbox, MENU a la derecha y Compartir debajo, centrado. */
 @Composable
 private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizontal: Boolean) {
     if (horizontal) {
@@ -311,25 +323,27 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
             modifier = Modifier.fillMaxWidth(),
         ) {
             Spacer(Modifier.weight(1f))
-            LayoutElement(layout, LayoutConfig.XBOX) { XboxButton(vm, sizeDp = 56) }
             LayoutElement(layout, LayoutConfig.VIEW) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
-            LayoutElement(layout, LayoutConfig.SHARE) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+            LayoutElement(layout, LayoutConfig.XBOX) { XboxButton(vm, sizeDp = 64) }
             LayoutElement(layout, LayoutConfig.MENU) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
+            LayoutElement(layout, LayoutConfig.SHARE) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
             Spacer(Modifier.weight(1f))
         }
     } else {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            LayoutElement(layout, LayoutConfig.XBOX) { XboxButton(vm, sizeDp = 72) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 LayoutElement(layout, LayoutConfig.VIEW) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
-                LayoutElement(layout, LayoutConfig.SHARE) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+                LayoutElement(layout, LayoutConfig.XBOX) { XboxButton(vm, sizeDp = 80) }
                 LayoutElement(layout, LayoutConfig.MENU) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
             }
+            LayoutElement(layout, LayoutConfig.SHARE) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
         }
     }
 }
 
-/** Botón Xbox (HOME): oscuro brillante con anillo neón cian-magenta. Un toque = pulso HOME. */
+/** Botón Xbox (HOME): esfera negra con brillo verde Xbox y el
+ * logo dibujado (dos trazos cruzados, como el mando real), con
+ * anillo verde luminoso. Un toque = pulso HOME. */
 @Composable
 private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
     var pressed by remember { mutableStateOf(false) }
@@ -338,21 +352,31 @@ private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
             .pressEffect(pressed)
             .shadow(12.dp, CircleShape)
             .clip(CircleShape)
-            .background(Brush.verticalGradient(listOf(Color(0xFF2A3040), Color(0xFF141824))))
-            .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFF00E5FF), Color(0xFFE040FB), Color(0xFF00E5FF))), CircleShape)
+            .background(Brush.radialGradient(listOf(Color(0xFF1E2A1E), Color.Black)))
+            .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFF9BF00B), Color(0xFF107C10), Color(0xFF52D273), Color(0xFF107C10), Color(0xFF9BF00B))), CircleShape)
             .pointerPress { p -> pressed = p; if (p) vm.pulseButton(GamepadButtons.HOME) },
         contentAlignment = Alignment.Center,
-    ) { Text("✕", color = Color.White, fontSize = (sizeDp / 2).sp, fontWeight = FontWeight.Bold) }
+    ) {
+        Canvas(Modifier.size((sizeDp * 0.52f).dp)) {
+            val w = size.width
+            val h = size.height
+            val sw = (sizeDp * 0.09f).dp.toPx()
+            // Logo Xbox: X de dos trazos gruesos con puntas redondas.
+            drawLine(Color.White, Offset(w * 0.18f, h * 0.18f), Offset(w * 0.82f, h * 0.82f), strokeWidth = sw, cap = StrokeCap.Round)
+            drawLine(Color.White, Offset(w * 0.82f, h * 0.18f), Offset(w * 0.18f, h * 0.82f), strokeWidth = sw, cap = StrokeCap.Round)
+        }
+    }
 }
 
-/** A/B/X/Y en rombo, oscuros con anillo neón de su color + halo. */
+/** A/B/X/Y en rombo con los colores oficiales de Xbox:
+ * A verde #107C10, B rojo #E81123, X azul #0078D7, Y amarillo #FFB900. */
 @Composable
 private fun AbxyPad(vm: GamepadViewModel) {
     Box(modifier = Modifier.size(200.dp)) {
-        GamepadButton("Y", Color(0xFFFFC107), Modifier.align(Alignment.TopCenter)) { p -> vm.setButton(GamepadButtons.Y, p) }
-        GamepadButton("X", Color(0xFF2196F3), Modifier.align(Alignment.CenterStart)) { p -> vm.setButton(GamepadButtons.X, p) }
-        GamepadButton("B", Color(0xFFF44336), Modifier.align(Alignment.CenterEnd)) { p -> vm.setButton(GamepadButtons.B, p) }
-        GamepadButton("A", Color(0xFF4CAF50), Modifier.align(Alignment.BottomCenter)) { p -> vm.setButton(GamepadButtons.A, p) }
+        GamepadButton("Y", Color(0xFFFFB900), Modifier.align(Alignment.TopCenter)) { p -> vm.setButton(GamepadButtons.Y, p) }
+        GamepadButton("X", Color(0xFF0078D7), Modifier.align(Alignment.CenterStart)) { p -> vm.setButton(GamepadButtons.X, p) }
+        GamepadButton("B", Color(0xFFE81123), Modifier.align(Alignment.CenterEnd)) { p -> vm.setButton(GamepadButtons.B, p) }
+        GamepadButton("A", Color(0xFF107C10), Modifier.align(Alignment.BottomCenter)) { p -> vm.setButton(GamepadButtons.A, p) }
     }
 }
 
@@ -372,7 +396,7 @@ fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, on
                 .clip(CircleShape)
                 .background(
                     if (pressed) Brush.linearGradient(listOf(color, color))
-                    else Brush.verticalGradient(listOf(Color(0xFF2E3444), Color(0xFF141824))),
+                    else Brush.verticalGradient(listOf(Color(0xFF1E2026), Color(0xFF000000))),
                 )
                 .border(2.dp, color, CircleShape)
                 .pointerPress { p -> pressed = p; onPress(p) },
@@ -392,7 +416,7 @@ private fun ShoulderButton(label: String, onPress: (Boolean) -> Unit) {
             .background(
                 Brush.verticalGradient(
                     if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
-                    else listOf(Color(0xFF2A3040), Color(0xFF171B26)),
+                    else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
             .border(1.dp, Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))), RoundedCornerShape(19.dp))
@@ -412,7 +436,7 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) 
             .background(
                 Brush.verticalGradient(
                     if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
-                    else listOf(Color(0xFF232839), Color(0xFF171B26)),
+                    else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
@@ -434,7 +458,7 @@ private fun PulsePill(label: String, icon: @Composable () -> Unit, onTap: () -> 
         modifier = Modifier.size(width = 76.dp, height = 48.dp)
             .pressEffect(pressed)
             .clip(RoundedCornerShape(14.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFF232839), Color(0xFF171B26))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .pointerPress { p -> pressed = p; if (p) onTap() },
         contentAlignment = Alignment.Center,

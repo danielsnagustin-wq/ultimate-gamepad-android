@@ -12,6 +12,14 @@ import java.net.SocketTimeoutException
  */
 class UdpTransport(private val socket: DatagramSocket = DatagramSocket()) {
 
+    init {
+        // Baja latencia: marca los paquetes como "low delay"
+        // (IPTOS_LOWDELAY) para que el router no los ponga en cola
+        // detrás de otro tráfico. Si el sistema no lo permite, se
+        // ignora sin romper nada.
+        runCatching { socket.trafficClass = 0x10 }
+    }
+
     fun send(state: GamepadState, host: InetAddress, port: Int) {
         val bytes = GamepadProtocol.encode(state)
         socket.send(DatagramPacket(bytes, bytes.size, host, port))

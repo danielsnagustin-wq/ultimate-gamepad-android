@@ -54,6 +54,7 @@ import com.google.mlkit.vision.common.InputImage
 @Composable
 fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     val layout by vm.layoutConfig.collectAsState()
+    val deadZone by vm.deadZone.collectAsState()
     var host by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     // Pantalla completa OPACA con scroll: el fondo opaco tapa el
@@ -62,7 +63,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0E14))
+            .background(Color.Black)
             .verticalScroll(rememberScrollState())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -134,18 +135,36 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Button(onClick = { vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
         Spacer(Modifier.height(16.dp))
         // --- Personalizar botones ---
+        Text("Personalizar botones", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Abre el panel visual y arrastra cada botón con el dedo, como en los juegos: ahí lo mueves, lo haces más grande o más pequeño, más transparente o lo quitas.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.openLayoutEditor() }, modifier = Modifier.fillMaxWidth()) {
+            Text("🎮  Abrir panel de botones")
+        }
+        Spacer(Modifier.height(12.dp))
         LayoutEditor(vm, layout)
+        Spacer(Modifier.height(16.dp))
+        // --- Sensibilidad de sticks ---
+        Text("Sensibilidad de sticks", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Zona muerta: cuánto tienes que mover el stick para que empiece a responder. Más baja = responde desde el primer toque; más alta = no se mueve solo. Ahora: ${(deadZone * 100).toInt()}%.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Slider(
+            value = deadZone,
+            onValueChange = { vm.setDeadZone(it) },
+            valueRange = 0f..0.15f,
+        )
         Spacer(Modifier.height(16.dp))
         Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }
     }
 }
 
-/** Editor de botones: quitar, agrandar, achicar o mover cada elemento del mando. */
+/** Editor de botones: quitar, agrandar, achicar, mover o hacer transparente cada elemento del mando. */
 @Composable
 private fun LayoutEditor(vm: GamepadViewModel, layout: LayoutConfig) {
-    Text("Personalizar botones", fontSize = 15.sp)
+    Text("Ajuste rápido por botón", fontSize = 15.sp)
     Spacer(Modifier.height(4.dp))
-    Text("Acomoda cada botón a tu gusto: quítalo, hazlo más grande o más pequeño, o muévelo. El botón ⚙ siempre queda visible para poder volver a Ajustes.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+    Text("Lo mismo que en el panel, en lista: quítalo, hazlo más grande o más pequeño, muévelo o hazlo transparente. El botón ⚙ siempre queda visible para poder volver a Ajustes.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
     for ((id, name) in LayoutConfig.NAMES) {
         val el = layout.element(id)
         Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -158,7 +177,13 @@ private fun LayoutEditor(vm: GamepadViewModel, layout: LayoutConfig) {
                 Slider(
                     value = el.scale,
                     onValueChange = { vm.updateElement(id, el.copy(scale = it)) },
-                    valueRange = 0.7f..1.4f,
+                    valueRange = 0.7f..1.6f,
+                )
+                Text("Opacidad: ${(el.opacity * 100).toInt()}%", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+                Slider(
+                    value = el.opacity,
+                    onValueChange = { vm.updateElement(id, el.copy(opacity = it)) },
+                    valueRange = 0.3f..1f,
                 )
                 Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(16.dp)) {
                     Stepper("← →", el.offsetXdp) { vm.updateElement(id, el.copy(offsetXdp = it)) }
@@ -175,9 +200,9 @@ private fun LayoutEditor(vm: GamepadViewModel, layout: LayoutConfig) {
 private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, fontSize = 12.sp, color = Color(0xFF9AA0B0))
-        Button(onClick = { onChange((value - 8).coerceIn(-80, 80)) }) { Text("−") }
+        Button(onClick = { onChange((value - 8).coerceIn(-120, 120)) }) { Text("−") }
         Text("${value}dp", fontSize = 12.sp)
-        Button(onClick = { onChange((value + 8).coerceIn(-80, 80)) }) { Text("+") }
+        Button(onClick = { onChange((value + 8).coerceIn(-120, 120)) }) { Text("+") }
     }
 }
 
@@ -204,7 +229,7 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0E14))
+            .background(Color.Black)
             .verticalScroll(rememberScrollState())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

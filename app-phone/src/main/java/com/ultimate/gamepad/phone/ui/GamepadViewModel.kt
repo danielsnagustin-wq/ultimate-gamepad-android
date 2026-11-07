@@ -45,6 +45,7 @@ data class GamepadUiState(
     val attemptMethod: TransportMethod = TransportMethod.WIFI_UDP,
     val error: String? = null,
     val showSettings: Boolean = false,
+    val showLayoutEditor: Boolean = false,
     val showQrScanner: Boolean = false,
     // Descubrimiento de TVs en la red (Ajustes > Buscar TV).
     val discovering: Boolean = false,
@@ -72,6 +73,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Diseño del mando a gusto del usuario (tamaño/posición/quitar). */
     private val _layout = MutableStateFlow(LayoutPrefs.load(application))
     val layoutConfig: StateFlow<LayoutConfig> = _layout.asStateFlow()
+
+    /** Zona muerta de los sticks (0.05 = 5%): se ajusta en Ajustes > Sensibilidad. */
+    private val _deadZone = MutableStateFlow(LayoutPrefs.loadDeadZone(application))
+    val deadZone: StateFlow<Float> = _deadZone.asStateFlow()
+
+    fun setDeadZone(value: Float) {
+        val next = value.coerceIn(0f, 0.15f)
+        _deadZone.value = next
+        LayoutPrefs.saveDeadZone(getApplication(), next)
+    }
 
     fun updateElement(id: String, layout: ButtonLayout) {
         val next = _layout.value.withElement(id, layout)
@@ -114,16 +125,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun publish() {
-        // Sensibilidad: la zona muerta era 0.12 (12% del recorrido
-        // no hacía nada) y la respuesta lineal dejaba el stick
-        // flojo en movimientos cortos. Ahora: zona muerta 0.08 y
-        // curva 0.85 (un poco más vivo en el centro, sin volverse
-        // brusco), para que el stick responda desde el primer toque.
+        // Sensibilidad: la zona muerta (ajustable en Ajustes,
+        // 0.05 por defecto) es el % del recorrido que no hace
+        // nada; la curva 0.85 deja el stick más vivo en el centro,
+        // sin volverse brusco, para que responda desde el primer toque.
         val state = GamepadState(
             buttons = buttons, leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
             leftTrigger = leftTrigger, rightTrigger = rightTrigger,
-        ).withDeadZone(0.08f).withResponseCurve(0.85f)
+        ).withDeadZone(_deadZone.value).withResponseCurve(0.85f)
         GamepadSender.currentState = state
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.
@@ -132,8 +142,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** La pantalla del mando es solo el mando: todo lo de conexión vive en Ajustes (⚙). */
     fun openSettings() = _ui.update { it.copy(showSettings = true, error = null) }
-    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false) }
+    fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false) }
     fun openQrScanner() = _ui.update { it.copy(showQrScanner = true) }
+
+    /** Panel visual de botones: se abre desde Ajustes y se cierra volviendo al mando. */
+    fun openLayoutEditor() = _ui.update { it.copy(showLayoutEditor = true, showSettings = false) }
+    fun closeLayoutEditor() = _ui.update { it.copy(showLayoutEditor = false) }
 
     fun setTransportMode(mode: TransportMode) = _ui.update { it.copy(transportMode = mode) }
     fun setHotspotMode(enabled: Boolean) = _ui.update { it.copy(hotspotMode = enabled) }
@@ -302,8 +316,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                             transportStatus = it.transportStatus + (it.selectedMethod to TransportStatus.CONNECTED),
                         )
                     }
-                } else if (System.currentTimeMillis() - _ui.value.connectingSinceMs > 5000) {
-                    // 5 s sin eco: en AUTO se prueba el siguiente
+                } else if (System.currentTimeMillis() - _ui.value.connectingSinceMs > 3000) {
+                    // 3 s sin eco: en AUTO se prueba el siguiente
                     // método; en MANUAL se dice el error y se para,
                     // en vez de quedarse tieso en "Conectando".
                     if (_ui.value.transportMode == TransportMode.AUTO) {
