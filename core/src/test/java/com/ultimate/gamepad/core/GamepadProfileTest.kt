@@ -49,9 +49,12 @@ class GamepadProfileTest {
     @Test fun `sin profileId el paquete es Xbox 360 como antes`() {
         val bytes = GamepadProtocol.encode(GamepadState())
         assertEquals(GamepadProfiles.XBOX_360_ID, GamepadProtocol.profileIdOf(bytes))
-        assertEquals(0, bytes[29])
-        assertEquals(0, bytes[30])
-        assertEquals(0, bytes[31])
+        // OJO: comparar como Byte, no como Int: assertEquals(0, bytes[29])
+        // compara Integer(0) con Byte(0) por Object.equals y FALLA
+        // aunque los dos valgan 0.
+        assertEquals(0.toByte(), bytes[29])
+        assertEquals(0.toByte(), bytes[30])
+        assertEquals(0.toByte(), bytes[31])
     }
 
     @Test fun `el descriptor HID es por perfil y mantiene 7 bytes de reporte`() {
