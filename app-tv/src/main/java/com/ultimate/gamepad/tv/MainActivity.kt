@@ -12,7 +12,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProtocol
-import com.ultimate.gamepad.core.PairingInfo
 import com.ultimate.gamepad.tv.receiver.Diagnostics
 import com.ultimate.gamepad.tv.receiver.ReceiverConfig
 import com.ultimate.gamepad.tv.receiver.TcpReceiverService
@@ -46,7 +45,7 @@ class MainActivity : Activity() {
     private lateinit var shizukuView: TextView
     private lateinit var gamepadView: TextView
     private lateinit var diagView: TextView
-    private val pin: String = PairingInfo.generatePin() // Una sola vez por apertura; Etapa 2 lo hará persistente.
+    private lateinit var pin: String // Persistente (TvPairing): el mismo en cada apertura.
     private val handler = Handler(Looper.getMainLooper())
     private val refresher = object : Runnable {
         override fun run() { refresh(); handler.postDelayed(this, 500) }
@@ -54,6 +53,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pin = TvPairing.getOrCreatePin(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
@@ -81,6 +81,10 @@ class MainActivity : Activity() {
         layout.addView(shizukuView); layout.addView(gamepadView); layout.addView(diagView)
         layout.addView(startBtn); layout.addView(stopBtn)
         setContentView(ScrollView(this).apply { addView(layout) })
+        // Auto-arranque: al abrir la app de la TV el receptor ya
+        // está escuchando (UDP 51999 + TCP 52000) y el teléfono
+        // puede descubrirla por broadcast sin pulsar el botón.
+        startReceiver()
     }
 
     override fun onResume() { super.onResume(); handler.post(refresher) }

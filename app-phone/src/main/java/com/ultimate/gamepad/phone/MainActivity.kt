@@ -9,6 +9,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ultimate.gamepad.phone.ui.GamepadScreen
 import com.ultimate.gamepad.phone.ui.GamepadViewModel
@@ -21,6 +24,12 @@ import com.ultimate.gamepad.phone.ui.GamepadViewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Modo inmersivo: la barra de botones del teléfono (atrás,
+        // inicio, recientes) y la barra de estado se ocultan y el
+        // mando usa toda la pantalla. Vuelven con un deslizamiento
+        // desde el borde y se vuelven a ocultar solas.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemBars()
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -37,5 +46,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
+    private fun hideSystemBars() {
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
     }
 }

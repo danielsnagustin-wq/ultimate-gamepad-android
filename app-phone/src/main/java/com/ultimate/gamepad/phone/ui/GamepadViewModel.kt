@@ -1,9 +1,13 @@
 package com.ultimate.gamepad.phone.ui
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ultimate.gamepad.core.DiscoveredTv
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
@@ -13,6 +17,7 @@ import com.ultimate.gamepad.core.TransportSelector
 import com.ultimate.gamepad.core.TransportStatus
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
+import com.ultimate.gamepad.phone.network.DiscoveryClient
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
 import kotlinx.coroutines.delay
@@ -41,6 +46,11 @@ data class GamepadUiState(
     val error: String? = null,
     val showSettings: Boolean = false,
     val showQrScanner: Boolean = false,
+    // Descubrimiento de TVs en la red (Ajustes > Buscar TV).
+    val discovering: Boolean = false,
+    val discoveredTvs: List<DiscoveredTv> = emptyList(),
+    /** ¿El teléfono está en Wi-Fi? Sin Wi-Fi no hay TV que descubrir. */
+    val wifiConnected: Boolean = true,
     // Selector multi-transporte (Etapa 1).
     val transportMode: TransportMode = TransportMode.AUTO,
     val selectedMethod: TransportMethod = TransportMethod.WIFI_UDP,
@@ -58,6 +68,22 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private val _ui = MutableStateFlow(GamepadUiState())
     val ui: StateFlow<GamepadUiState> = _ui.asStateFlow()
     private val hidService = BluetoothHidService(application)
+
+    /** Diseño del mando a gusto del usuario (tamaño/posición/quitar). */
+    private val _layout = MutableStateFlow(LayoutPrefs.load(application))
+    val layoutConfig: StateFlow<LayoutConfig> = _layout.asStateFlow()
+
+    fun updateElement(id: String, layout: ButtonLayout) {
+        val next = _layout.value.withElement(id, layout)
+        _layout.value = next
+        LayoutPrefs.save(getApplication(), next)
+    }
+
+    fun resetLayout() {
+        val next = LayoutConfig()
+        _layout.value = next
+        LayoutPrefs.save(getApplication(), next)
+    }
 
     private var buttons = 0
     private var leftX = 0f
@@ -88,11 +114,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun publish() {
+        // Sensibilidad: la zona muerta era 0.12 (12% del recorrido
+        // no hacía nada) y la respuesta lineal dejaba el stick
+        // flojo en movimientos cortos. Ahora: zona muerta 0.08 y
+        // curva 0.85 (un poco más vivo en el centro, sin volverse
+        // brusco), para que el stick responda desde el primer toque.
         val state = GamepadState(
             buttons = buttons, leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
             leftTrigger = leftTrigger, rightTrigger = rightTrigger,
-        ).withDeadZone(0.12f)
+        ).withDeadZone(0.08f).withResponseCurve(0.85f)
         GamepadSender.currentState = state
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.
@@ -149,6 +180,39 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         val info = PairingInfo.parseQrPayload(payload)
         if (info == null) { _ui.update { it.copy(error = "QR no válido. Debe ser un QR de Ultimate Gamepad (UGP1).") }; return }
         connect(info, _ui.value.selectedMethod)
+    }
+
+    /** ¿El teléfono está en Wi-Fi? Sin Wi-Fi no hay TV que descubrir ni conectar. */
+    fun refreshWifiState() {
+        val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val wifi = cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        _ui.update { it.copy(wifiConnected = wifi) }
+    }
+
+    /** Busca TVs con el receptor abierto en la misma Wi-Fi (~3 s). */
+    fun discoverTvs() {
+        if (_ui.value.discovering) return
+        refreshWifiState()
+        if (!_ui.value.wifiConnected) {
+            _ui.update { it.copy(error = "No estás en Wi-Fi. Conecta el teléfono a la misma red Wi-Fi que la TV.") }
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(discovering = true, error = null) }
+            val found = DiscoveryClient.discover()
+            _ui.update {
+                it.copy(
+                    discovering = false,
+                    discoveredTvs = found,
+                    error = if (found.isEmpty()) "No se encontró ninguna TV. Abre Ultimate Gamepad en la TV (el receptor arranca solo) y revisa que esté en la misma Wi-Fi." else null,
+                )
+            }
+        }
+    }
+
+    /** Conectar con un toque a una TV descubierta (ya trae IP y PIN). */
+    fun connectToDiscovered(tv: DiscoveredTv) {
+        connect(PairingInfo(tv.ip, tv.port, tv.pin), _ui.value.selectedMethod)
     }
 
     private fun connect(info: PairingInfo, method: TransportMethod) {

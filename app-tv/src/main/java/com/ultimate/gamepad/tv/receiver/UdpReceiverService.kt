@@ -4,13 +4,18 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ultimate.gamepad.core.ConnectionHealth
+import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.TransportMethod
+import com.ultimate.gamepad.tv.TvPairing
 import com.ultimate.gamepad.tv.shizuku.ShizukuHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +94,24 @@ class UdpReceiverService : Service() {
                     val packet = DatagramPacket(buf, buf.size)
                     socket?.receive(packet)
                     val data = packet.data.copyOf(packet.length)
+                    // Descubrimiento (Discovery.kt): el teléfono emite
+                    // "UGDISC1" por broadcast y la TV responde con su
+                    // nombre, IP, puerto y PIN persistente, para que
+                    // conectar sea tocar la TV en la lista. Se
+                    // comprueba ANTES del ping: no es un paquete de
+                    // juego de 32 bytes ni un ping.
+                    if (String(data, Charsets.UTF_8) == Discovery.MAGIC_REQUEST) {
+                        val wifi = getSystemService(Context.WIFI_SERVICE) as WifiManager
+                        val ip = ShizukuHelper.localIpFromWifi(wifi)
+                        if (ip != null) {
+                            val response = Discovery.buildResponse(
+                                Build.MODEL, ip, GamepadProtocol.DEFAULT_PORT,
+                                TvPairing.getOrCreatePin(this@UdpReceiverService),
+                            )
+                            socket?.send(DatagramPacket(response, response.size, packet.address, packet.port))
+                        }
+                        continue
+                    }
                     if (GamepadProtocol.isPing(data)) {
                         socket?.send(DatagramPacket(data, data.size, packet.address, packet.port))
                         continue

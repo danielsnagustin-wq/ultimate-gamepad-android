@@ -12,7 +12,9 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,12 +24,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -40,13 +46,14 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 
 /**
- * Ajustes y conexión (⚙). Antes todo esto vivía en la barra de
- * arriba del mando y estorbaba toda la pantalla: ahora la pantalla
- * del mando es solo el mando, y aquí dentro está el estado, el
- * selector de transporte, el QR y la IP/PIN.
+ * Ajustes y conexión (⚙). La pantalla del mando es solo el
+ * mando; aquí dentro está el estado, la búsqueda de la TV en la
+ * red, el selector de transporte, el QR y la IP/PIN, y el editor
+ * para acomodar los botones a gusto.
  */
 @Composable
 fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
+    val layout by vm.layoutConfig.collectAsState()
     var host by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     // Pantalla completa OPACA con scroll: el fondo opaco tapa el
@@ -89,7 +96,26 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = { vm.disconnect() }) { Text("Desconectar") }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
+        // --- Buscar TV en la red (sin escribir IP ni PIN) ---
+        Text("Buscar TV en la red", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("El teléfono busca la TV con el receptor abierto en la misma Wi-Fi. Toca la TV en la lista y conecta directo, sin escribir IP ni PIN.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        if (!ui.wifiConnected) {
+            Spacer(Modifier.height(4.dp))
+            Text("No estás en Wi-Fi. Conecta el teléfono a la misma red Wi-Fi que la TV.", color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.discoverTvs() }, enabled = !ui.discovering) {
+            Text(if (ui.discovering) "Buscando TV…" else "🔍  Buscar TV en la red")
+        }
+        for (tv in ui.discoveredTvs) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { vm.connectToDiscovered(tv) }, modifier = Modifier.fillMaxWidth()) {
+                Text("${tv.name} — ${tv.ip}")
+            }
+        }
+        Spacer(Modifier.height(16.dp))
         Text("Método de conexión", fontSize = 15.sp)
         TransportSelectorRow(vm, ui)
         Spacer(Modifier.height(12.dp))
@@ -106,8 +132,52 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(16.dp))
+        // --- Personalizar botones ---
+        LayoutEditor(vm, layout)
+        Spacer(Modifier.height(16.dp))
         Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }
+    }
+}
+
+/** Editor de botones: quitar, agrandar, achicar o mover cada elemento del mando. */
+@Composable
+private fun LayoutEditor(vm: GamepadViewModel, layout: LayoutConfig) {
+    Text("Personalizar botones", fontSize = 15.sp)
+    Spacer(Modifier.height(4.dp))
+    Text("Acomoda cada botón a tu gusto: quítalo, hazlo más grande o más pequeño, o muévelo. El botón ⚙ siempre queda visible para poder volver a Ajustes.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+    for ((id, name) in LayoutConfig.NAMES) {
+        val el = layout.element(id)
+        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Text(name, fontSize = 14.sp)
+                Switch(checked = el.visible, onCheckedChange = { vm.updateElement(id, el.copy(visible = it)) })
+            }
+            if (el.visible) {
+                Text("Tamaño: ${"%.2f".format(el.scale)}x", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+                Slider(
+                    value = el.scale,
+                    onValueChange = { vm.updateElement(id, el.copy(scale = it)) },
+                    valueRange = 0.7f..1.4f,
+                )
+                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(16.dp)) {
+                    Stepper("← →", el.offsetXdp) { vm.updateElement(id, el.copy(offsetXdp = it)) }
+                    Stepper("↑ ↓", el.offsetYdp) { vm.updateElement(id, el.copy(offsetYdp = it)) }
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = { vm.resetLayout() }) { Text("Restablecer diseño") }
+}
+
+@Composable
+private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF9AA0B0))
+        Button(onClick = { onChange((value - 8).coerceIn(-80, 80)) }) { Text("−") }
+        Text("${value}dp", fontSize = 12.sp)
+        Button(onClick = { onChange((value + 8).coerceIn(-80, 80)) }) { Text("+") }
     }
 }
 
@@ -115,6 +185,9 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
  * Escaneo QR real con CameraX + ML Kit Barcode Scanning.
  * Si la cámara no tiene permiso, se pide; si el usuario lo niega,
  * queda la entrada manual de IP/PIN. No hay QR simulado.
+ * El resultado solo se entrega una vez: antes el escáner llamaba
+ * a onResult en cada fotograma con el QR y se reiniciaba la
+ * conexión una y otra vez.
  */
 @Composable
 fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
@@ -123,6 +196,7 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
     var hasPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
+    var handled by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> hasPermission = granted }
     // Igual que SettingsScreen: pantalla completa OPACA. Antes el
     // PreviewView y el botón se emitían sueltos dentro del Box del
@@ -160,7 +234,9 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
                         val input = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                         scanner.process(input)
                             .addOnSuccessListener { barcodes ->
-                                barcodes.firstOrNull()?.rawValue?.let { onResult(it) }
+                                barcodes.firstOrNull()?.rawValue?.let {
+                                    if (!handled) { handled = true; onResult(it) }
+                                }
                             }
                             .addOnCompleteListener { imageProxy.close() }
                     }
