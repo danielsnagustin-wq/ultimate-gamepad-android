@@ -14,6 +14,7 @@ import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.core.GamepadState
+import com.ultimate.gamepad.core.NetworkStats
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.WifiLatencyLock
 import com.ultimate.gamepad.tv.TvPairing
@@ -60,6 +61,18 @@ class UdpReceiverService : Service() {
             private set
         @Volatile var packetsReceived: Long = 0
             private set
+        /**
+         * Paquetes perdidos (Fase 3): huecos de secuencia entre dos
+         * paquetes aceptados (NetworkStats.sequenceGap). Solo la TV
+         * puede medirlo: el teléfono no ve lo que no llega por UDP.
+         */
+        @Volatile var packetsLost: Long = 0
+            private set
+        /** Paquetes/s recibidos (ventana deslizante de 1 s; objetivo ~120). */
+        @Volatile var packetsPerSecond: Int = 0
+            private set
+        private var ppsWindowStartMs: Long = 0L
+        private var ppsWindowCount: Int = 0
         @Volatile var lastPacketAtMs: Long = 0L
             private set
         @Volatile var lastState: GamepadState = GamepadState()
@@ -95,8 +108,21 @@ class UdpReceiverService : Service() {
             val forward = (state.sequence - lastSequence + 65536) % 65536
             val freshSession = lastSequence == -1 || now - lastPacketAtMs > ConnectionHealth.TIMEOUT_MS
             if (!freshSession && (forward == 0 || forward > 32768)) return
+            // Pérdida real (Fase 3): hueco entre la última secuencia
+            // aceptada y esta. En sesión nueva no se cuenta (el
+            // teléfono reinicia su secuencia en 0 al reconectar).
+            if (!freshSession) packetsLost += NetworkStats.sequenceGap(lastSequence, state.sequence)
             lastSequence = state.sequence
             packetsReceived++
+            // Paquetes/s: ventana de 1 s que se cierra al pasar el
+            // segundo (el valor mostrado es el del segundo anterior
+            // completo; a 120 Hz se actualiza solo).
+            if (now - ppsWindowStartMs >= 1000) {
+                packetsPerSecond = ppsWindowCount
+                ppsWindowStartMs = now
+                ppsWindowCount = 0
+            }
+            ppsWindowCount++
             lastPacketAtMs = now
             lastState = state
             activeTransport = method

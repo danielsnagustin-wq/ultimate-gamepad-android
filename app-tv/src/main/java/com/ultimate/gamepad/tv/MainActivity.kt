@@ -10,13 +10,19 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.ultimate.gamepad.core.ControllerTestChecklist
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.tv.receiver.Diagnostics
 import com.ultimate.gamepad.tv.receiver.ReceiverConfig
 import com.ultimate.gamepad.tv.receiver.TcpReceiverService
+import com.ultimate.gamepad.tv.receiver.TvTestPrefs
 import com.ultimate.gamepad.tv.receiver.UdpReceiverService
 import com.ultimate.gamepad.tv.shizuku.ShizukuHelper
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Pantalla de estado de la TV — Fase 1 visible + diagnóstico de mando real.
@@ -46,6 +52,20 @@ class MainActivity : Activity() {
     private lateinit var gamepadView: TextView
     private lateinit var diagView: TextView
     private lateinit var pin: String // Persistente (TvPairing): el mismo en cada apertura.
+    // PRUEBA DE MANDO (Fase 3): segunda vista conmutable desde
+    // esta misma Activity (la TV no usa Compose). La checklist se
+    // alimenta del último estado recibido por red, no de
+    // /dev/input: Android no expone valores en vivo del
+    // dispositivo por API y la pantalla lo dice así.
+    private val testChecklist = ControllerTestChecklist()
+    private var showingTest = false
+    private lateinit var mainScroll: ScrollView
+    private lateinit var testScroll: ScrollView
+    private lateinit var testDeviceView: TextView
+    private lateinit var testLiveView: TextView
+    private lateinit var testChecklistView: TextView
+    private lateinit var testStagesView: TextView
+    private lateinit var testConfirmBtn: Button
     private val handler = Handler(Looper.getMainLooper())
     private val refresher = object : Runnable {
         override fun run() { refresh(); handler.postDelayed(this, 500) }
@@ -77,10 +97,16 @@ class MainActivity : Activity() {
                 refresh()
             }
         }
+        val testBtn = Button(this).apply {
+            text = "🧪  Prueba de mando"
+            setOnClickListener { showTest() }
+        }
         layout.addView(title); layout.addView(statusView); layout.addView(liveView)
         layout.addView(shizukuView); layout.addView(gamepadView); layout.addView(diagView)
-        layout.addView(startBtn); layout.addView(stopBtn)
-        setContentView(ScrollView(this).apply { addView(layout) })
+        layout.addView(startBtn); layout.addView(stopBtn); layout.addView(testBtn)
+        mainScroll = ScrollView(this).apply { addView(layout) }
+        testScroll = buildTestLayout()
+        setContentView(mainScroll)
         // Auto-arranque: al abrir la app de la TV el receptor ya
         // está escuchando (UDP 51999 + TCP 52000) y el teléfono
         // puede descubrirla por broadcast sin pulsar el botón.
@@ -93,6 +119,116 @@ class MainActivity : Activity() {
     private fun startReceiver() {
         startForegroundService(Intent(this, UdpReceiverService::class.java))
         refresh()
+    }
+
+    private fun showTest() {
+        showingTest = true
+        setContentView(testScroll)
+        refreshTest()
+    }
+
+    private fun showMain() {
+        showingTest = false
+        setContentView(mainScroll)
+        refresh()
+    }
+
+    /**
+     * PRUEBA DE MANDO (Fase 3) — vista de la TV.
+     *
+     * - Dispositivo virtual actual leído del sistema (nombre, id,
+     *   vendor/product, ejes y botones con hasKeys).
+     * - Checklist interactiva por control, con valores analógicos
+     *   en vivo del ÚLTIMO PAQUETE RECIBIDO POR RED (no del
+     *   dispositivo: Android no expone valores en vivo por API y
+     *   no se finge una lectura de /dev/input).
+     * - Las 4 etapas con veredicto propio. La 4ª (OpenNOW) SOLO
+     *   se marca con el botón manual tras probar un juego; la
+     *   confirmación se guarda (TvTestPrefs) y nunca se marca sola.
+     */
+    private fun buildTestLayout(): ScrollView {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 48, 48, 48)
+            setBackgroundColor(Color.parseColor("#0B0E14"))
+        }
+        val title = TextView(this).apply { text = "Prueba de mando — TV"; textSize = 28f; setTextColor(Color.WHITE) }
+        testDeviceView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
+        testLiveView = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE) }
+        testChecklistView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
+        testStagesView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
+        testConfirmBtn = Button(this).apply {
+            text = "Confirmo que funciona en un juego"
+            setOnClickListener {
+                if (TvTestPrefs.getOpenNowConfirmedAtMs(this@MainActivity) > 0) {
+                    TvTestPrefs.clearOpenNowConfirmation(this@MainActivity)
+                } else {
+                    TvTestPrefs.setOpenNowConfirmed(this@MainActivity, System.currentTimeMillis())
+                }
+                refreshTest()
+            }
+        }
+        val resetBtn = Button(this).apply {
+            text = "Reiniciar prueba"
+            setOnClickListener { testChecklist.reset(); refreshTest() }
+        }
+        val backBtn = Button(this).apply {
+            text = "Volver"
+            setOnClickListener { showMain() }
+        }
+        layout.addView(title); layout.addView(testDeviceView); layout.addView(testLiveView)
+        layout.addView(testChecklistView); layout.addView(testStagesView)
+        layout.addView(testConfirmBtn); layout.addView(resetBtn); layout.addView(backBtn)
+        return ScrollView(this).apply { addView(layout) }
+    }
+
+    private fun refreshTest() {
+        testChecklist.update(UdpReceiverService.lastState)
+        val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
+        val reports = Diagnostics.scan()
+        val device = reports.firstOrNull { it.looksLikeRealGamepad }
+            ?: reports.firstOrNull { it.name.equals(profile.deviceName, ignoreCase = true) }
+        testDeviceView.text = if (device == null) {
+            "Dispositivo virtual actual: ninguno detectado como ${profile.name} (${profile.deviceName}).\n" +
+                "Conecta el teléfono y revisa el diagnóstico de la pantalla principal."
+        } else {
+            "Dispositivo virtual actual\n" +
+                "[${device.id}] ${device.name}\n" +
+                "vendor=0x${device.vendorId.toString(16)} product=0x${device.productId.toString(16)}\n" +
+                "sources: ${device.sourcesText}\n" +
+                "ejes: ${if (device.axes.isEmpty()) "ninguno" else device.axes.joinToString(", ")}\n" +
+                "botones (según el sistema): ${if (device.buttons.isEmpty()) "ninguno detectado" else device.buttons.joinToString(", ")}\n" +
+                "${device.verdict}\n" +
+                "Parece mando real: ${if (device.looksLikeRealGamepad) "SÍ" else "NO"} — ${device.looksLikeRealReason}"
+        }
+        val s = UdpReceiverService.lastState
+        testLiveView.text = "En vivo — valores del ÚLTIMO PAQUETE RECIBIDO POR RED\n" +
+            "(Android no expone valores en vivo del dispositivo por API; no se lee /dev/input)\n" +
+            "Botones: ${pressedNames(s)}  " +
+            "Stick izq: (${"%.2f".format(s.leftX)}, ${"%.2f".format(s.leftY)})  " +
+            "Stick der: (${"%.2f".format(s.rightX)}, ${"%.2f".format(s.rightY)})  " +
+            "LT: ${"%.2f".format(s.leftTrigger)} RT: ${"%.2f".format(s.rightTrigger)}\n" +
+            "Paquetes: ${UdpReceiverService.packetsReceived} · ${UdpReceiverService.packetsPerSecond}/s · perdidos (huecos de secuencia): ${UdpReceiverService.packetsLost}"
+        val items = testChecklist.items(UdpReceiverService.activeProfileId)
+        testChecklistView.text = "Checklist — ${testChecklist.testedCount}/${testChecklist.totalCount} controles probados\n" +
+            items.joinToString("\n") { (if (it.tested) "✓ " else "○ ") + it.label }
+        val connected = UdpReceiverService.isConnected()
+        val agoSec = if (UdpReceiverService.lastPacketAtMs > 0) (System.currentTimeMillis() - UdpReceiverService.lastPacketAtMs) / 1000 else -1
+        val stage1 = if (connected) "1. Teléfono envía: SÍ — ${UdpReceiverService.packetsReceived} paquetes, último hace $agoSec s."
+        else "1. Teléfono envía: NO — sin paquetes recientes."
+        val stage2 = if (UdpReceiverService.packetsReceived > 0) "2. Receptor recibe: SÍ — último paquete decodificado hace ${if (agoSec < 0) "nunca" else "$agoSec s"}."
+        else "2. Receptor recibe: NO — sin paquetes todavía."
+        val stage3 = if (Diagnostics.anyRealGamepad()) "3. Android registra: SÍ — ${reports.firstOrNull { it.looksLikeRealGamepad }?.name}."
+        else "3. Android registra: NO — ningún dispositivo parece un mando real del perfil ${profile.name}."
+        val confirmedAt = TvTestPrefs.getOpenNowConfirmedAtMs(this)
+        val stage4 = if (confirmedAt > 0) {
+            val whenText = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(confirmedAt))
+            "4. OpenNOW recibe: SÍ — confirmado por ti el $whenText tras probar un juego."
+        } else {
+            "4. OpenNOW recibe: PENDIENTE — solo se marca tras probar un juego. Nada en la app puede comprobarlo desde dentro."
+        }
+        testStagesView.text = "Las 4 etapas\n$stage1\n$stage2\n(Las etapas 1 y 2 comparten el mismo contador: si la TV ve paquetes decodificados, el teléfono envía y el receptor recibe.)\n$stage3\n$stage4"
+        testConfirmBtn.text = if (confirmedAt > 0) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego"
     }
 
     private fun pressedNames(state: com.ultimate.gamepad.core.GamepadState): String {
@@ -158,5 +294,6 @@ class MainActivity : Activity() {
         }
         gamepadView.setTextColor(if (real) Color.GREEN else Color.RED)
         diagView.text = Diagnostics.render()
+        if (showingTest) refreshTest()
     }
 }

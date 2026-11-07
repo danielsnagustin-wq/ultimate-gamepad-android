@@ -1,6 +1,7 @@
 package com.ultimate.gamepad.tv.receiver
 
 import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.MotionEvent
 import com.ultimate.gamepad.core.GamepadClassification
 import com.ultimate.gamepad.core.GamepadProfiles
@@ -45,6 +46,15 @@ object Diagnostics {
         val hasGamepad: Boolean,
         val hasJoystick: Boolean,
         val axes: List<String>,
+        /**
+         * Botones que el sistema dice que tiene el dispositivo
+         * (Fase 3, InputDevice.hasKeys sobre los KEYCODE_BUTTON_*
+         * del mando). Android no expone valores en vivo del
+         * dispositivo por API: los valores analógicos en vivo de
+         * la PRUEBA DE MANDO salen del último paquete recibido
+         * por red, y la pantalla lo dice así.
+         */
+        val buttons: List<String>,
         val verdict: String,
         /** SÍ solo si parece un mando físico del perfil activo (ver looksLikeRealGamepad). */
         val looksLikeRealGamepad: Boolean,
@@ -94,6 +104,34 @@ object Diagnostics {
         return if (parts.isEmpty()) "ninguna (0x${sources.toString(16)})" else parts.joinToString(" | ")
     }
 
+    /** Códigos de botón de mando que se comprueban con hasKeys(). */
+    private val BUTTON_KEYCODES: List<Pair<Int, String>> = listOf(
+        KeyEvent.KEYCODE_BUTTON_A to "A",
+        KeyEvent.KEYCODE_BUTTON_B to "B",
+        KeyEvent.KEYCODE_BUTTON_X to "X",
+        KeyEvent.KEYCODE_BUTTON_Y to "Y",
+        KeyEvent.KEYCODE_BUTTON_L1 to "L1",
+        KeyEvent.KEYCODE_BUTTON_R1 to "R1",
+        KeyEvent.KEYCODE_BUTTON_L2 to "L2",
+        KeyEvent.KEYCODE_BUTTON_R2 to "R2",
+        KeyEvent.KEYCODE_BUTTON_START to "START",
+        KeyEvent.KEYCODE_BUTTON_SELECT to "SELECT",
+        KeyEvent.KEYCODE_BUTTON_THUMBL to "L3",
+        KeyEvent.KEYCODE_BUTTON_THUMBR to "R3",
+        KeyEvent.KEYCODE_BUTTON_MODE to "HOME",
+        KeyEvent.KEYCODE_DPAD_UP to "DPAD ↑",
+        KeyEvent.KEYCODE_DPAD_DOWN to "DPAD ↓",
+        KeyEvent.KEYCODE_DPAD_LEFT to "DPAD ←",
+        KeyEvent.KEYCODE_DPAD_RIGHT to "DPAD →",
+    )
+
+    /** Botones que el sistema reconoce en el dispositivo (hasKeys); lista vacía si no se puede leer. */
+    fun buttonNames(device: InputDevice): List<String> = runCatching {
+        val keys = BUTTON_KEYCODES.map { it.first }.toIntArray()
+        val present = device.hasKeys(*keys)
+        BUTTON_KEYCODES.filterIndexed { i, _ -> present.getOrNull(i) == true }.map { it.second }
+    }.getOrDefault(emptyList())
+
     fun scan(): List<DeviceReport> {
         return InputDevice.getDeviceIds().toList().mapNotNull { id ->
             val device = InputDevice.getDevice(id) ?: return@mapNotNull null
@@ -111,7 +149,7 @@ object Diagnostics {
                 vendorId = device.vendorId, productId = device.productId,
                 sourcesText = sourcesText(sources),
                 hasGamepad = hasGamepad, hasJoystick = hasJoystick,
-                axes = axes, verdict = verdict,
+                axes = axes, buttons = buttonNames(device), verdict = verdict,
                 looksLikeRealGamepad = real, looksLikeRealReason = realReason,
             )
         }
@@ -129,6 +167,7 @@ object Diagnostics {
             sb.append("  sources: ${r.sourcesText}\n")
             sb.append("  GAMEPAD=${if (r.hasGamepad) "SÍ" else "NO"}  JOYSTICK=${if (r.hasJoystick) "SÍ" else "NO"}\n")
             sb.append("  ejes: ${if (r.axes.isEmpty()) "ninguno" else r.axes.joinToString(", ")}\n")
+            sb.append("  botones (según el sistema): ${if (r.buttons.isEmpty()) "ninguno detectado" else r.buttons.joinToString(", ")}\n")
             sb.append("  ${r.verdict}\n")
             sb.append("  Parece mando real: ${if (r.looksLikeRealGamepad) "SÍ" else "NO"} — ${r.looksLikeRealReason}\n")
         }

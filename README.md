@@ -59,7 +59,7 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 | `:app-phone` | Mando completo estilo Xbox (dos sticks, cruceta, A/B/X/Y, LB/RB, LT/RT analógicos, L3/R3, VIEW/MENU/SHARE) + editor visual de botones, zona muerta ajustable; selector de método con estado real por método; modo Automático y manual; Hotspot; ping real por eco (UDP y TCP); conexión por QR real o IP/PIN; comprobación Bluetooth HID |
 | `:app-tv` | Receptor UDP 51999 + TCP 52000, pantalla de estado en vivo, diagnóstico "¿Cómo me ve Android?" con "Parece mando real: SÍ/NO", Shizuku UserService + fallback `injectInputEvent` |
 
-**No hay en Etapa 1 (y no se finge):** perfiles por juego, import/export, Bluetooth datos completo. El mando completo (stick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3), el editor de controles y el mando virtual uinput nativo YA existen; lo que falta es verificarlos en la TV real (Fase 0). Lo demás llega en Etapas 2–3 y está marcado TODO / "Pendiente Etapa 2" en el código y la UI.
+**No hay en Etapa 1 (y no se finge):** import/export de perfiles, Bluetooth datos completo. Los perfiles por juego, TIPO DE MANDO, PRUEBA DE MANDO y Rendimiento YA existen (Fase 3, Gamepad PRO). El mando completo (stick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3), el editor de controles y el mando virtual uinput nativo YA existen; lo que falta es verificarlos en la TV real (Fase 0). Lo demás llega en Etapas 2–3 y está marcado TODO / "Pendiente Etapa 2" en el código y la UI.
 
 ## Compilar sin PC
 
