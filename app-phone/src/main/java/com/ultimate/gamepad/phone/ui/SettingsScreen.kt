@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 
@@ -222,6 +223,12 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     var handled by remember { mutableStateOf(false) }
+    // La cámara se ligaba al ciclo de vida de la actividad y nunca
+    // se soltaba al cerrar el escáner: seguía corriendo (y gastando
+    // batería) detrás del mando. Se guarda el proveedor y el escáner
+    // para soltarlos en onRelease.
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var barcodeScanner by remember { mutableStateOf<BarcodeScanner?>(null) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> hasPermission = granted }
     // Igual que SettingsScreen: pantalla completa OPACA. Antes el
     // PreviewView y el botón se emitían sueltos dentro del Box del
@@ -250,8 +257,10 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
                 val providerFuture = ProcessCameraProvider.getInstance(ctx)
                 providerFuture.addListener({
                     val provider = providerFuture.get()
+                    cameraProvider = provider
                     val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                     val scanner = BarcodeScanning.getClient()
+                    barcodeScanner = scanner
                     val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                     analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
                         val mediaImage = imageProxy.image
@@ -269,6 +278,11 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
                     provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
                 }, ContextCompat.getMainExecutor(ctx))
             }
+        }, onRelease = {
+            runCatching { cameraProvider?.unbindAll() }
+            runCatching { barcodeScanner?.close() }
+            cameraProvider = null
+            barcodeScanner = null
         }, modifier = Modifier.fillMaxWidth().height(320.dp))
         Spacer(Modifier.height(12.dp))
         Button(onClick = onClose) { Text("Cancelar escaneo") }

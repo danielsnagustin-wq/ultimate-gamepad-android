@@ -168,7 +168,18 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** Comprueba HID en el teléfono y actualiza su estado real. Llamar al abrir la pantalla de conexión. */
+    private var lastHidCheckAtMs: Long = 0L
+
     fun refreshHidStatus() {
+        // Cada llamada registra otro listener de perfil Bluetooth:
+        // sin freno, cada cambio de estado de conexión pedía el
+        // proxy de nuevo y los listeners se acumulaban. Como mucho
+        // una comprobación cada 10 s (suficiente: el usuario puede
+        // encender el Bluetooth y se re-detecta en el siguiente
+        // cambio de estado).
+        val now = System.currentTimeMillis()
+        if (now - lastHidCheckAtMs < 10_000) return
+        lastHidCheckAtMs = now
         hidService.checkAvailability { availability ->
             val status = when (availability) {
                 HidAvailability.AVAILABLE -> TransportStatus.AVAILABLE

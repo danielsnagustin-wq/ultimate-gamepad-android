@@ -35,13 +35,33 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sqrt
 
+/** Pulsación con liberación garantizada: si el gesto se cancela
+ * (llamada, bloqueo de pantalla, otro gesto que se lo queda),
+ * el botón no se queda pulsado para siempre. También cuenta
+ * dedos: con dos dedos en el mismo botón, no se suelta hasta
+ * que se levanten los dos. Antes, una cancelación dejaba el
+ * botón pegado (el juego lo seguía recibiendo). */
 fun Modifier.pointerPress(onPress: (Boolean) -> Unit): Modifier = this.pointerInput(Unit) {
     awaitPointerEventScope {
-        while (true) {
-            val event = awaitPointerEvent()
-            when (event.type) {
-                androidx.compose.ui.input.pointer.PointerEventType.Press -> onPress(true)
-                androidx.compose.ui.input.pointer.PointerEventType.Release -> onPress(false)
+        var presses = 0
+        try {
+            while (true) {
+                val event = awaitPointerEvent()
+                when (event.type) {
+                    androidx.compose.ui.input.pointer.PointerEventType.Press -> {
+                        presses++
+                        if (presses == 1) onPress(true)
+                    }
+                    androidx.compose.ui.input.pointer.PointerEventType.Release -> {
+                        presses = (presses - 1).coerceAtLeast(0)
+                        if (presses == 0) onPress(false)
+                    }
+                }
+            }
+        } finally {
+            if (presses > 0) {
+                presses = 0
+                onPress(false)
             }
         }
     }
@@ -93,8 +113,12 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
                 val len = sqrt(next.x * next.x + next.y * next.y)
                 val clamped = if (len > radius) next * (radius / len) else next
                 knob = clamped
-                // Y invertida: arriba en pantalla = -1 (adelante), como un mando real.
-                onMove(clamped.x / radius, -clamped.y / radius)
+                // Y: arriba en pantalla = -1 (adelante), como un
+                // mando real (AXIS_Y / ABS_Y: arriba es negativo).
+                // La versión anterior negaba el valor y mandaba
+                // +1 al subir: el personaje o el menú se movían
+                // al revés en el juego.
+                onMove(clamped.x / radius, clamped.y / radius)
             }
         },
     ) {

@@ -28,12 +28,14 @@ import com.ultimate.gamepad.core.TransportStatus
  * Hyundai — es parte de la Etapa 0 de Bluetooth.
  *
  * Descriptor: gamepad genérico Xbox 360 (vendor 0x045E, product
- * 0x028E). Reporte HID de 13 bytes, formato estándar de gamepad:
- *   byte 0: botones A/B/X/Y/LB/RB/Back/Start
- *   byte 1: L3/R3/D-pad (4 bits) + resto
- *   bytes 2-3: stick izquierdo X/Y (0..255, centro 128)
- *   bytes 4-5: stick derecho X/Y
- *   bytes 6-7: gatillos LT/RT (0..255)
+ * 0x028E). Reporte HID de 7 bytes, EXACTO según
+ * HidGamepadDescriptor.BYTES:
+ *   byte 0: botones 1-8 (A, B, X, Y, LB, RB, SELECT, START)
+ *   byte 1: botones 9-12 (L3, R3, LT digital, RT digital) + relleno
+ *   byte 2: hat switch (0=arriba, 1=arriba-derecha, 2=derecha,
+ *           3=abajo-derecha, 4=abajo, 5=abajo-izquierda,
+ *           6=izquierda, 7=arriba-izquierda, 8=centro)
+ *   bytes 3-6: ejes X, Y, Z, Rz (0..255, centro 128; Y arriba = 0)
  * Los valores se escalan desde GamepadState (-1..1 / 0..1).
  * Este descriptor es el que usan los proyectos open-source de
  * BluetoothHidDevice; el descriptor exacto se valida en Etapa 0
@@ -135,9 +137,14 @@ class BluetoothHidService(private val context: Context) {
         return runCatching { hid.sendReport(device, 0, report) }.getOrDefault(false)
     }
 
+    /** Reporte de 7 bytes según el descriptor. La versión anterior
+     * mandaba 13 bytes con otra disposición: el eje izquierdo caía
+     * en el byte del hat (basura), los ejes salían revueltos
+     * (X=leftY, Y=rightX, Z=rightY, Rz=LT), la cruceta nunca se
+     * enviaba como hat y el RT se ignoraba. La TV leía botones y
+     * sticks equivocados por Bluetooth HID. */
     fun hidReportFrom(state: GamepadState): ByteArray {
         fun axis(v: Float): Byte = ((v.coerceIn(-1f, 1f) * 127f) + 128f).toInt().toByte()
-        fun trig(v: Float): Byte = (v.coerceIn(0f, 1f) * 255f).toInt().toByte()
         var b0 = 0
         if (state.isPressed(GamepadButtons.A)) b0 = b0 or 0x01
         if (state.isPressed(GamepadButtons.B)) b0 = b0 or 0x02
@@ -150,12 +157,29 @@ class BluetoothHidService(private val context: Context) {
         var b1 = 0
         if (state.isPressed(GamepadButtons.L3)) b1 = b1 or 0x01
         if (state.isPressed(GamepadButtons.R3)) b1 = b1 or 0x02
+        // El descriptor no tiene ejes de gatillo: LT/RT van como
+        // botones digitales 11/12 al pasar de la mitad.
+        if (state.leftTrigger > 0.5f) b1 = b1 or 0x04
+        if (state.rightTrigger > 0.5f) b1 = b1 or 0x08
+        val up = state.isPressed(GamepadButtons.DPAD_UP)
+        val down = state.isPressed(GamepadButtons.DPAD_DOWN)
+        val left = state.isPressed(GamepadButtons.DPAD_LEFT)
+        val right = state.isPressed(GamepadButtons.DPAD_RIGHT)
+        val hat = when {
+            up && right -> 1
+            right && down -> 3
+            down && left -> 5
+            left && up -> 7
+            up -> 0
+            right -> 2
+            down -> 4
+            left -> 6
+            else -> 8 // Centro: sin dirección (valor nulo del hat, estándar HID).
+        }
         return byteArrayOf(
-            b0.toByte(), b1.toByte(),
-            axis(state.leftX), axis(-state.leftY),
-            axis(state.rightX), axis(-state.rightY),
-            trig(state.leftTrigger), trig(state.rightTrigger),
-            0, 0, 0, 0, 0,
+            b0.toByte(), b1.toByte(), hat.toByte(),
+            axis(state.leftX), axis(state.leftY),
+            axis(state.rightX), axis(state.rightY),
         )
     }
 

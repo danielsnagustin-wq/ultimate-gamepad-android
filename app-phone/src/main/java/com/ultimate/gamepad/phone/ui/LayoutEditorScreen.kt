@@ -4,7 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -68,15 +68,22 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     // el scroll se lo robaba y el botón no se movía (o se movía
     // a trompicones). Ahora la previa es fija y solo la barra de
     // herramientas de abajo tiene scroll.
+    // En horizontal la pantalla mide ~360dp de alto: con la vista
+    // previa fija en 300dp la barra de herramientas (tamaño y
+    // transparencia) quedaba sin espacio. La altura de la vista
+    // previa ahora se adapta a la pantalla (45% de la altura,
+    // entre 180 y 300dp).
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp),
+    ) {
+        val previewHeight = (maxHeight * 0.45f).coerceIn(180.dp, 300.dp)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { }
-            .padding(16.dp),
+            ) { },
     ) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Text("🎮  Panel de botones", fontSize = 20.sp)
@@ -94,7 +101,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(300.dp)
+                .height(previewHeight)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF050505))
                 .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
@@ -155,7 +162,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 Text("Ocultos (tócalos para volver a mostrarlos):", color = Color(0xFF9AA0B0), fontSize = 12.sp)
                 Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (id in hidden) {
                         Button(onClick = {
                             val next = draft.element(id).copy(visible = true)
@@ -198,7 +205,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                         onValueChangeFinished = { vm.updateElement(selId, draft.element(selId)) },
                         valueRange = 0.3f..1f,
                     )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         EditorStepper("← →", el.offsetXdp) {
                             val next = el.copy(offsetXdp = it)
                             draft = draft.withElement(selId, next)
@@ -219,6 +226,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             }) { Text("Restablecer diseño") }
             Spacer(Modifier.height(8.dp))
             Button(onClick = onClose) { Text("Volver al mando") }
+        }
         }
     }
 }
