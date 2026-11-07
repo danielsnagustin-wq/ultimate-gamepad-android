@@ -1,0 +1,94 @@
+package com.ultimate.gamepad.phone.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+
+/**
+ * RENDIMIENTO (Fase 3) — latencia, jitter, paquetes/s y método,
+ * en vivo y sin gráficos complicados: tabla de valores.
+ *
+ * Datos reales del servicio de envío (GamepadSenderService):
+ * ping por eco UDP/TCP, jitter (variación del ping, media de
+ * |ping[i] - ping[i-1]| sobre las últimas 20 muestras),
+ * paquetes/s enviados (ventana de 1 s) y total enviado.
+ *
+ * Pérdida de paquetes: el teléfono NO la puede medir — por UDP el
+ * emisor no ve lo que no llega. La pérdida se mide en la TV por
+ * huecos de secuencia y se muestra en la PRUEBA DE MANDO de la TV.
+ * Aquí se dice así en vez de inventar un 0%.
+ */
+@Composable
+fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) {
+    LaunchedEffect(Unit) {
+        while (true) { vm.refreshPerformance(); delay(500) }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
+        Text("📶  Rendimiento", fontSize = 20.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Valores en vivo del envío por Wi-Fi. Sin gráficos: lo que importa es el número.",
+            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(12.dp))
+        PerformanceRow("Estado", when (ui.status) {
+            ConnectionStatus.CONNECTED -> "Conectado"
+            ConnectionStatus.CONNECTING -> "Conectando…"
+            ConnectionStatus.ERROR -> "Error"
+            else -> "Desconectado"
+        })
+        PerformanceRow("Método activo", "${ui.attemptMethod.label} (${ui.transportMode})")
+        PerformanceRow("TV responde", if (ui.tvResponding) "SÍ" else "NO")
+        PerformanceRow("Latencia (ping)", ui.pingMs?.let { "$it ms" } ?: "—")
+        PerformanceRow(
+            "Jitter (variación del ping)",
+            ui.pingJitterMs?.let { "$it ms" } ?: "— (faltan muestras: hacen falta 2 ecos)",
+        )
+        PerformanceRow("Paquetes/s enviados", "${ui.packetsPerSec} /s (objetivo ~120 /s)")
+        PerformanceRow("Paquetes enviados (total)", "${ui.packetsSent}")
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Pérdida de paquetes: no se puede medir en el teléfono (por UDP el emisor no ve lo que no llega). Se mide en la TV por huecos de secuencia y se muestra en la PRUEBA DE MANDO de la TV.",
+            color = Color(0xFFFFC107), fontSize = 13.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Referencia en red local: ping 1–10 ms, jitter 0–3 ms y ~120 paquetes/s. Si el ping sube o los paquetes/s caen, la red está saturada o la TV no responde; el modo Automático cambia a TCP.",
+            color = Color(0xFF9AA0B0), fontSize = 12.sp,
+        )
+        if (ui.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text("Último error: ${ui.error}", color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+    }
+}
+
+@Composable
+private fun PerformanceRow(label: String, value: String) {
+    Text(label, color = Color(0xFF9AA0B0), fontSize = 13.sp)
+    Text(value, fontSize = 17.sp)
+    Spacer(Modifier.height(10.dp))
+}
