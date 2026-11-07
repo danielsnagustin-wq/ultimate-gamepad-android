@@ -67,10 +67,25 @@ class UdpReceiverService : Service() {
 
         /** Punto único de entrada para UDP y TCP: mismo paquete, mismo registro. */
         fun recordPacket(state: GamepadState, method: TransportMethod) {
-            if (state.sequence <= lastSequence && lastSequence != -1) return
+            val now = System.currentTimeMillis()
+            // Secuencia con wrap uint16 + reinicio de sesión. La
+            // comparación vieja (sequence <= lastSequence) tiraba
+            // TODA la entrada cuando el teléfono reconectaba (su
+            // sequence vuelve a 0) y cuando la secuencia envolvía
+            // en 65535: la TV descartaba paquetes hasta que la
+            // secuencia volviera a subir (hasta ~9 min a 120 Hz),
+            // mientras el ping seguía funcionando y el teléfono
+            // mostraba "Conectado" con los botones muertos. Ahora
+            // se acepta si la distancia hacia adelante (módulo
+            // 65536) está en 1..32768, o si no llegó ningún paquete
+            // en más de 2 s (sesión nueva: se acepta cualquier
+            // secuencia). El hueco máximo de entrada queda en ~2 s.
+            val forward = (state.sequence - lastSequence + 65536) % 65536
+            val freshSession = lastSequence == -1 || now - lastPacketAtMs > ConnectionHealth.TIMEOUT_MS
+            if (!freshSession && (forward == 0 || forward > 32768)) return
             lastSequence = state.sequence
             packetsReceived++
-            lastPacketAtMs = System.currentTimeMillis()
+            lastPacketAtMs = now
             lastState = state
             activeTransport = method
         }

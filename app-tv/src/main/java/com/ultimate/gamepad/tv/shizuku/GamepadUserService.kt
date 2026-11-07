@@ -37,7 +37,17 @@ class GamepadUserService : IGamepadInputService.Stub() {
         @Volatile var boundService: IGamepadInputService? = null
             private set
 
+        /** Último intento de bind: sin este freno,
+         * ShizukuHelper.sendToGamepad() llamaba a bind() en cada
+         * paquete (120 Hz) mientras el servicio no estaba enlazado:
+         * cientos de intentos de bind por segundo. */
+        @Volatile private var lastBindAttemptAtMs: Long = 0L
+
         fun bind(context: Context) {
+            if (boundService != null) return
+            val now = System.currentTimeMillis()
+            if (now - lastBindAttemptAtMs < 2000) return
+            lastBindAttemptAtMs = now
             val args = Shizuku.UserServiceArgs(
                 ComponentName(context.packageName, GamepadUserService::class.java.name),
             ).daemon(false).processNameSuffix("gamepad").debuggable(false).version(1)
@@ -94,16 +104,32 @@ class GamepadUserService : IGamepadInputService.Stub() {
     }
 
     /** InputManager.injectInputEvent es API oculta: se llama por reflexión, como hacen los proyectos que usan Shizuku. */
+    // Reflexión cacheada: antes inject() hacía Class.forName +
+    // getDeclaredMethod en CADA evento (hasta ~17 por paquete a
+    // 120 Hz, unas 2000 búsquedas por segundo). Ahora se resuelve
+    // una sola vez y se reutiliza; si no se puede resolver, la
+    // inyección devuelve false sin romper nada.
+    private val inputManagerGlobal: Any? by lazy {
+        runCatching {
+            val clazz = Class.forName("android.hardware.input.InputManagerGlobal")
+            clazz.getDeclaredMethod("getInstance").invoke(null)
+        }.getOrNull()
+    }
+    private val injectMethod: java.lang.reflect.Method? by lazy {
+        runCatching {
+            Class.forName("android.hardware.input.InputManagerGlobal")
+                .getDeclaredMethod(
+                    "injectInputEvent",
+                    android.view.InputEvent::class.java,
+                    Int::class.javaPrimitiveType,
+                )
+        }.getOrNull()
+    }
+
     private fun inject(event: android.view.InputEvent) {
-        val clazz = Class.forName("android.hardware.input.InputManagerGlobal")
-        val getInstance = clazz.getDeclaredMethod("getInstance")
-        val instance = getInstance.invoke(null)
-        val inject = clazz.getDeclaredMethod(
-            "injectInputEvent",
-            android.view.InputEvent::class.java,
-            Int::class.javaPrimitiveType,
-        )
+        val instance = inputManagerGlobal ?: return
+        val method = injectMethod ?: return
         // 0 = INJECT_INPUT_EVENT_MODE_ASYNC (no bloquea el hilo shell).
-        inject.invoke(instance, event, 0)
+        runCatching { method.invoke(instance, event, 0) }
     }
 }

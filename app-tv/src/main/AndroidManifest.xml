@@ -31,6 +31,14 @@
             android:name=".receiver.UdpReceiverService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
+        <!-- Receptor TCP (puerto 52000): lo arranca UdpReceiverService
+             al iniciar. Sin esta declaración, startService() lo ignora
+             en silencio (devuelve null sin error) y el TCP nunca
+             escucha: el teléfono no puede conectar por TCP aunque la
+             UI diga que está disponible. -->
+        <service
+            android:name=".receiver.TcpReceiverService"
+            android:exported="false" />
         <!-- Proveedor de Shizuku: necesario para que Shizuku encuentre
              nuestro UserService. Sin él, bindUserService falla. -->
         <provider

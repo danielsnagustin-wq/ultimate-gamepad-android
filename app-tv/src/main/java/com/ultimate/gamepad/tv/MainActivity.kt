@@ -110,6 +110,24 @@ class MainActivity : Activity() {
         return if (names.isEmpty()) "ninguno" else names.joinToString(" ")
     }
 
+    // Estado de Shizuku cacheado: refresh() corre cada 500 ms y
+    // ShizukuHelper.status() hace PackageManager + ping al binder
+    // en cada llamada. El estado cambia pocas veces (el usuario
+    // arranca o para Shizuku a mano), así que basta con mirarlo
+    // cada 5 s.
+    private var lastShizukuStatus: ShizukuHelper.Status? = null
+    private var lastShizukuCheckAtMs: Long = 0L
+
+    private fun shizukuStatusCached(): ShizukuHelper.Status {
+        val now = System.currentTimeMillis()
+        val cached = lastShizukuStatus
+        if (cached != null && now - lastShizukuCheckAtMs < 5000) return cached
+        val fresh = ShizukuHelper.status(this)
+        lastShizukuStatus = fresh
+        lastShizukuCheckAtMs = now
+        return fresh
+    }
+
     private fun refresh() {
         val wifi = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
         val ip = ShizukuHelper.localIpFromWifi(wifi) ?: "sin Wi-Fi"
@@ -124,7 +142,7 @@ class MainActivity : Activity() {
             "Stick izq: (${"%.2f".format(s.leftX)}, ${"%.2f".format(s.leftY)})  " +
             "Stick der: (${"%.2f".format(s.rightX)}, ${"%.2f".format(s.rightY)})  " +
             "LT: ${"%.2f".format(s.leftTrigger)} RT: ${"%.2f".format(s.rightTrigger)}"
-        val shizuku = ShizukuHelper.status(this)
+        val shizuku = shizukuStatusCached()
         shizukuView.text = if (ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
             "Shizuku: ${shizuku.label}\n${shizuku.guidance}"
         } else {
