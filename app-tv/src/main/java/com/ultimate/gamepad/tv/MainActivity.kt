@@ -20,6 +20,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.ultimate.gamepad.core.ControllerTestChecklist
 import com.ultimate.gamepad.core.GamepadButtons
+import com.ultimate.gamepad.core.GamepadExtraButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.tv.receiver.Diagnostics
@@ -532,6 +533,14 @@ class MainActivity : Activity() {
         if (state.isPressed(GamepadButtons.B)) names += "B"
         if (state.isPressed(GamepadButtons.X)) names += "X"
         if (state.isPressed(GamepadButtons.Y)) names += "Y"
+        if (state.isPressed(GamepadButtons.LB)) names += "LB"
+        if (state.isPressed(GamepadButtons.RB)) names += "RB"
+        if (state.isPressed(GamepadButtons.L3)) names += "L3"
+        if (state.isPressed(GamepadButtons.R3)) names += "R3"
+        if (state.isPressed(GamepadButtons.HOME)) names += "HOME"
+        if (state.isPressed(GamepadButtons.CAPTURE)) names += "CAPTURE"
+        if (state.isExtraPressed(GamepadExtraButtons.L4)) names += "L4"
+        if (state.isExtraPressed(GamepadExtraButtons.R4)) names += "R4"
         if (state.isPressed(GamepadButtons.START)) names += "START"
         if (state.isPressed(GamepadButtons.SELECT)) names += "SELECT"
         if (state.isPressed(GamepadButtons.DPAD_UP)) names += "↑"

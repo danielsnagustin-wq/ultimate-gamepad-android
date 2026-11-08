@@ -242,6 +242,9 @@ class UdpReceiverService : Service() {
             // mando equivocado al soltar los controles.
             deliver(context, zero, GamepadProtocol.encode(zero, activeProfileId))
             lastState = zero
+            // T5: sin paquetes recientes no hay inyección activa:
+            // que no quede "uinput"/"inject" obsoleto en pantalla.
+            injectionMethod = "ninguno"
             return true
         }
     }
