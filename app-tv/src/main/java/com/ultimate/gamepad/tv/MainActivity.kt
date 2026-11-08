@@ -106,6 +106,10 @@ class MainActivity : Activity() {
     private lateinit var diagView: TextView
     private var detailsVisible = false
     private var lastQrPayload: String? = null
+    // T10: payload del QR que se está generando en segundo plano
+    // y payload vigente en esta pasada de refresh().
+    private var qrJobPayload: String? = null
+    private var currentQrPayload: String? = null
     private lateinit var pin: String // Persistente (TvPairing): el mismo en cada apertura.
     // PRUEBA DE MANDO (Fase 3): segunda vista conmutable desde
     // esta misma Activity (la TV no usa Compose). La checklist se
@@ -478,10 +482,13 @@ class MainActivity : Activity() {
         return ScrollView(this).apply { addView(layout) }
     }
 
-    private fun refreshTest() {
+    private fun refreshTest(cachedReports: List<Diagnostics.DeviceReport>? = null) {
         testChecklist.update(UdpReceiverService.lastState)
         val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
-        val reports = Diagnostics.scan()
+        // T10: un solo scan() por tick: refresh() ya escaneó y pasa
+        // sus informes; solo se escanea aquí si se llama directo
+        // (abrir la prueba, pulsar un botón).
+        val reports = cachedReports ?: Diagnostics.scan()
         val device = reports.firstOrNull { it.looksLikeRealGamepad }
             ?: reports.firstOrNull { it.name.equals(profile.deviceName, ignoreCase = true) }
         testDeviceView.text = if (device == null) {
@@ -514,7 +521,7 @@ class MainActivity : Activity() {
         else "1. Teléfono envía: NO — sin paquetes recientes."
         val stage2 = if (connected) "2. Receptor recibe: SÍ — último paquete decodificado hace ${if (agoSec < 0) "nunca" else "$agoSec s"}."
         else "2. Receptor recibe: NO — sin paquetes recientes (último hace ${if (agoSec < 0) "nunca" else "$agoSec s"})."
-        val stage3 = if (Diagnostics.anyRealGamepad()) "3. Android registra: SÍ — ${reports.firstOrNull { it.looksLikeRealGamepad }?.name}."
+        val stage3 = if (reports.any { it.looksLikeRealGamepad }) "3. Android registra: SÍ — ${reports.firstOrNull { it.looksLikeRealGamepad }?.name}."
         else "3. Android registra: NO — ningún dispositivo parece un mando real del perfil ${profile.name}."
         val confirmedAt = TvTestPrefs.getOpenNowConfirmedAtMs(this)
         val stage4 = if (confirmedAt > 0) {
@@ -590,8 +597,11 @@ class MainActivity : Activity() {
     }.getOrNull()
 
     private fun refresh() {
-        val wifi = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-        val ip = ShizukuHelper.localIpFromWifi(wifi) ?: "sin Wi-Fi"
+        // T10: cast comprobado: sin WifiManager no hay IP, pero la
+        // pantalla sigue funcionando (antes el cast directo podía
+        // lanzar ClassCastException y matar el refresco).
+        val wifi = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
+        val ip = wifi?.let { ShizukuHelper.localIpFromWifi(it) } ?: "sin Wi-Fi"
         val connected = UdpReceiverService.isConnected()
         val agoSec = if (UdpReceiverService.lastPacketAtMs > 0) (System.currentTimeMillis() - UdpReceiverService.lastPacketAtMs) / 1000 else -1
         val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
@@ -617,18 +627,31 @@ class MainActivity : Activity() {
             qrHintView.text = "Conecta la TV al Wi-Fi para ver el QR."
             qrPayloadView.text = ""
             lastQrPayload = null
+            currentQrPayload = null
         } else {
+            currentQrPayload = qrPayload
             qrHintView.text = "Escanea el QR con el teléfono, o escribe la IP y el PIN a mano."
             qrPayloadView.text = qrPayload
-            if (qrPayload != lastQrPayload) {
-                lastQrPayload = qrPayload
-                val bmp = makeQrBitmap(qrPayload, 360)
-                if (bmp != null) {
-                    qrImageView.setImageBitmap(bmp)
-                    qrImageView.visibility = View.VISIBLE
-                } else {
-                    qrImageView.visibility = View.GONE
-                }
+            if (qrPayload != lastQrPayload && qrPayload != qrJobPayload) {
+                // T10: el QR (360x360 con setPixel) se genera fuera
+                // del hilo principal: antes bloqueaba el refresco
+                // de 500 ms. El resultado solo se aplica si el
+                // payload sigue siendo el vigente.
+                qrJobPayload = qrPayload
+                Thread {
+                    val bmp = makeQrBitmap(qrPayload, 360)
+                    handler.post {
+                        if (currentQrPayload != qrPayload) return@post
+                        if (qrJobPayload == qrPayload) qrJobPayload = null
+                        lastQrPayload = qrPayload
+                        if (bmp != null) {
+                            qrImageView.setImageBitmap(bmp)
+                            qrImageView.visibility = View.VISIBLE
+                        } else {
+                            qrImageView.visibility = View.GONE
+                        }
+                    }
+                }.start()
             }
         }
 
@@ -680,12 +703,13 @@ class MainActivity : Activity() {
 
         // ——— Detalles (solo se renderizan abiertos) ———
         if (detailsVisible) {
-            val details = StringBuilder(Diagnostics.render())
+            // T10: reutiliza el scan() de esta pasada, no otro.
+            val details = StringBuilder(Diagnostics.render(reports))
             details.append("\n\nShizuku: ${shizuku.label}\n${shizuku.guidance}")
             val lastError = UdpReceiverService.lastError
             if (!lastError.isNullOrBlank()) details.append("\n\nÚltimo error: $lastError")
             diagView.text = details.toString()
         }
-        if (showingTest) refreshTest()
+        if (showingTest) refreshTest(reports)
     }
 }

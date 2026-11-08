@@ -159,8 +159,12 @@ object Diagnostics {
         }
     }
 
-    fun render(): String {
-        val reports = scan()
+    fun render(): String = render(scan())
+
+    // T10: renderiza unos informes ya escaneados, sin volver a
+    // escanear: refresh() escanea 1x por tick y reutiliza el
+    // resultado para la vista principal, la prueba y el detalle.
+    fun render(reports: List<DeviceReport>): String {
         val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
         val header = "¿Cómo me ve Android?\nPerfil activo: ${profile.name} (${profile.deviceName}, vendor=0x${profile.vendorId.toString(16)} product=0x${profile.productId.toString(16)})"
         if (reports.isEmpty()) return "$header\nSin dispositivos de entrada detectados."
