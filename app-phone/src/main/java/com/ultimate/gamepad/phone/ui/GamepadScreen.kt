@@ -43,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadExtraButtons
 import com.ultimate.gamepad.core.LayoutGeometry
@@ -71,13 +73,29 @@ import kotlinx.coroutines.delay
 fun GamepadScreen(vm: GamepadViewModel) {
     val ui by vm.ui.collectAsState()
     val layout by vm.layoutConfig.collectAsState()
-    LaunchedEffect(ui.status) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
+    // Segundo plano: soltar todo y parar el giroscopio; al volver,
+    // reactivar. Sin esto, el polling de ping y el giroscopio seguían
+    // en segundo plano y un botón pulsado al apagar la pantalla se
+    // quedaba atascado en el juego.
+    LaunchedEffect(lifecycleState) {
+        if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) vm.onAppForegrounded()
+        else vm.onAppBackgrounded()
+    }
+    LaunchedEffect(ui.status, lifecycleState) {
         vm.refreshHidStatus()
         vm.refreshWifiState()
         // El ping se vigila también en CONECTANDO: si no, el estado
         // CONECTANDO nunca se resolvería y la pantalla se quedaría
         // tiesa esperando un eco que nadie comprueba.
-        while (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) { vm.refreshPing(); delay(500) }
+        while (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) {
+            // Solo con la app en primer plano: en segundo plano el
+            // fallback llamaba a startService/startForegroundService
+            // y el sistema lo rechaza (BackgroundServiceStartNotAllowed).
+            if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) vm.refreshPing()
+            delay(500)
+        }
     }
 
     BoxWithConstraints(

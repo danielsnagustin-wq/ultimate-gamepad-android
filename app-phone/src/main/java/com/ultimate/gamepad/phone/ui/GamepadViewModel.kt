@@ -187,6 +187,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Fase del pulso de turbo (true = botón activo, false = soltado). */
     private var turboPhaseOn: Boolean = true
+    /** La app está en primer plano (RESUMED): en segundo plano el giroscopio no publica. */
+    private var appForegrounded: Boolean = true
     private var turboJob: Job? = null
     private var macroRecorder: MacroRecorder? = null
     private var macroPlayJob: Job? = null
@@ -600,6 +602,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
+                // En segundo plano el sensor sigue entregando eventos:
+                // sin esta guarda, el stick derecho se movía solo con
+                // el teléfono en el bolsillo (ver onAppBackgrounded).
+                if (!appForegrounded) return
                 val (pitch, roll) = tiltFromEvent(event) ?: return
                 val (x, y) = GyroMapper.mapTilt(pitch, roll, _gyroSensitivity.value)
                 gyroX = x
@@ -790,6 +796,37 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // reporte va también por HID, sin pasar por la TV receptora.
         // L4/R4 no van por HID (el descriptor no tiene hueco).
         if (hidService.status == TransportStatus.CONNECTED) hidService.sendReport(finalState)
+    }
+
+    /**
+     * La app pasa a segundo plano (pantalla apagada, cambio de app):
+     * el dedo ya no está y el touch-up nunca llega. Sin esto, el
+     * servicio seguía enviando el último estado a 120 Hz y el botón
+     * quedaba atascado en el juego (el watchdog de la TV no dispara
+     * porque siguen llegando paquetes). Se suelta todo y se para el
+     * giroscopio (su listener publicaba en cada evento incluso en
+     * segundo plano, moviendo el stick derecho con el teléfono en
+     * el bolsillo).
+     */
+    fun onAppBackgrounded() {
+        appForegrounded = false
+        stopGyroSensor()
+        releaseAllInputs()
+    }
+
+    /** Vuelta a primer plano: el giroscopio vuelve solo si estaba activado. */
+    fun onAppForegrounded() {
+        appForegrounded = true
+        if (_gyroEnabled.value) startGyroSensor()
+    }
+
+    /** Suelta todos los botones, sticks y gatillos y publica el estado cero. */
+    private fun releaseAllInputs() {
+        buttons = 0; extraButtons = 0
+        leftX = 0f; leftY = 0f; rightX = 0f; rightY = 0f
+        leftTrigger = 0f; rightTrigger = 0f
+        turboPhaseOn = true
+        publish()
     }
 
     /** La pantalla del mando es solo el mando: todo lo de conexión vive en Ajustes (⚙). */
@@ -1130,7 +1167,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             putExtra(GamepadSenderService.EXTRA_PORT, info.port)
             putExtra(GamepadSenderService.EXTRA_METHOD, method.name)
         }
-        getApplication<Application>().startForegroundService(intent)
+        // En segundo plano el sistema rechaza el arranque (ForegroundServiceStartNotAllowed):
+        // antes crasheaba si el fallback de AUTO lo intentaba con la app dormida.
+        runCatching { getApplication<Application>().startForegroundService(intent) }
+            .onFailure {
+                _ui.update {
+                    it.copy(status = ConnectionStatus.ERROR, error = "No se pudo iniciar el servicio de envío. Inténtalo de nuevo con la app abierta.")
+                }
+            }
     }
 
     private fun connectHid() {
@@ -1270,7 +1314,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         turboJob?.cancel(); turboJob = null; turboPhaseOn = true
         GamepadSenderService.resetHealth()
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
-        getApplication<Application>().startService(intent)
+        // Parar es mejor esfuerzo: en segundo plano el sistema puede rechazarlo y el
+        // servicio ya estaría muerto o se parará al volver; nunca debe crashear.
+        runCatching { getApplication<Application>().startService(intent) }
         if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, info = null) }
     }
 
