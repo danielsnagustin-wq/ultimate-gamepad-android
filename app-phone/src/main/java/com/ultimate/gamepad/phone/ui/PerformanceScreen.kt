@@ -67,6 +67,14 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         )
         PerformanceRow("Paquetes/s enviados", "${ui.packetsPerSec} /s (objetivo ~120 /s)")
         PerformanceRow("Paquetes enviados (total)", "${ui.packetsSent}")
+        PerformanceRow(
+            "TV recibe paquetes",
+            when {
+                ui.tvReceivingPackets -> "SÍ — ${ui.tvPacketsReceived} recibidos por la TV"
+                ui.tvResponding -> "NO — la TV responde al ping pero no recibe paquetes de mando"
+                else -> "Sin datos (sin eco de la TV)"
+            },
+        )
         Spacer(Modifier.height(12.dp))
         Text(
             "Pérdida de paquetes: no se puede medir en el teléfono (por UDP el emisor no ve lo que no llega). Se mide en la TV por huecos de secuencia y se muestra en la PRUEBA DE MANDO de la TV.",

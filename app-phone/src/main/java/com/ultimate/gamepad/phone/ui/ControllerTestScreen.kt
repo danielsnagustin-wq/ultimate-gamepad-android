@@ -65,6 +65,16 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             delay(100)
         }
     }
+    // El ping (y con él, si la TV recibe paquetes) solo se
+    // refrescaba en la pantalla del mando: al abrir la prueba, el
+    // dato se quedaba viejo. Aquí se refresca cada 500 ms para que
+    // la etapa 2 sea en vivo.
+    LaunchedEffect(Unit) {
+        while (true) {
+            vm.refreshPing()
+            delay(500)
+        }
+    }
     // `state` es State: cada muestreo (100 ms) recompone y la
     // checklist se vuelve a leer con lo marcado hasta ahora.
     Column(
@@ -116,7 +126,11 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             fontSize = 14.sp,
         )
         Text(
-            "2. Receptor recibe: sin datos en el teléfono — míralo en la PRUEBA DE MANDO de la TV (contador de paquetes).",
+            "2. Receptor recibe: " + when {
+                ui.tvReceivingPackets -> "SÍ — la TV ha recibido ${ui.tvPacketsReceived} paquetes de mando. Si el juego no responde con paquetes llegando, falta Shizuku en la TV."
+                ui.tvResponding -> "NO — la TV responde al ping pero no recibe paquetes de mando."
+                else -> "Sin datos — conecta primero (el teléfono aún no tiene eco de la TV)."
+            },
             fontSize = 14.sp,
         )
         Text(

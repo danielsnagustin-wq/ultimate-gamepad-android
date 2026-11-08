@@ -72,6 +72,51 @@ class GamepadSenderService : Service() {
         /** Inicio de la sesión TCP actual (se renueva en cada reconexión): los envíos solo valen como prueba de vida en los primeros 3 s sin eco (ver isTvResponding). */
         @Volatile var tcpSessionStartMs: Long = 0L
             private set
+        /**
+         * Paquetes de mando recibidos por la TV, leídos del eco de
+         * ping estampado (GamepadProtocol.stampTvPacketsReceived:
+         * el campo de botones del eco lleva packetsReceived).
+         * Acumulado con deltas uint16: sobrevive al envoltorio de
+         * la estampa en 65535. Es lo que distingue "la TV no
+         * recibe nada" de "recibe pero no inyecta (sin Shizuku)".
+         */
+        @Volatile var tvPacketsReceived: Long = 0
+            private set
+        /** ¿La TV está recibiendo paquetes de mando ahora mismo (el contador subió en el último eco)? */
+        @Volatile var tvReceivingPackets: Boolean = false
+            private set
+        /** Momento del último eco con estampa (para saber si el dato está fresco). */
+        @Volatile var lastTvPacketsAtMs: Long = 0L
+            private set
+        /** Última estampa uint16 vista; -1 = aún no llegó ningún eco estampado. */
+        @Volatile private var lastTvPacketsStamp: Int = -1
+
+        /**
+         * Lee el contador estampado por la TV en un eco de ping.
+         * Solo se llama con ecos válidos (sequence coincidente en
+         * UDP, cualquier eco en TCP). Si el contador no sube entre
+         * dos ecos (~60 paquetes a 120 Hz), la TV no está
+         * recibiendo: receiving=false.
+         */
+        fun recordTvPackets(echoed: GamepadState) {
+            val stamp = echoed.buttons
+            val now = System.currentTimeMillis()
+            val prev = lastTvPacketsStamp
+            if (prev >= 0) {
+                val delta = (stamp - prev + 65536) % 65536
+                if (delta > 0) {
+                    tvPacketsReceived += delta
+                    tvReceivingPackets = true
+                } else {
+                    tvReceivingPackets = false
+                }
+            } else {
+                tvPacketsReceived = stamp.toLong()
+                tvReceivingPackets = stamp > 0
+            }
+            lastTvPacketsStamp = stamp
+            lastTvPacketsAtMs = now
+        }
         @Volatile var activeMethod: TransportMethod = TransportMethod.WIFI_UDP
             private set
         // --- Estadísticas de rendimiento (Fase 3, pantalla Rendimiento) ---
@@ -140,6 +185,7 @@ class GamepadSenderService : Service() {
         /** Limpia los marcadores de salud (al entrar en HID o al desconectar): un eco viejo de Wi-Fi no debe fingir que la TV responde. */
         fun resetHealth() {
             lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L; tcpSessionStartMs = 0L
+            tvPacketsReceived = 0; tvReceivingPackets = false; lastTvPacketsAtMs = 0L; lastTvPacketsStamp = -1
             resetStats()
         }
     }
@@ -222,6 +268,7 @@ class GamepadSenderService : Service() {
                                         lastPingMs = System.currentTimeMillis() - echoed.timestampMs
                                         recordPingSample(lastPingMs!!)
                                         lastEchoAtMs = System.currentTimeMillis()
+                                        recordTvPackets(echoed)
                                     }
                                 }
                             }
@@ -259,6 +306,7 @@ class GamepadSenderService : Service() {
                                             lastPingMs = System.currentTimeMillis() - echoed.timestampMs
                                             recordPingSample(lastPingMs!!)
                                             lastEchoAtMs = System.currentTimeMillis()
+                                            recordTvPackets(echoed)
                                         }
                                     }
                                 }

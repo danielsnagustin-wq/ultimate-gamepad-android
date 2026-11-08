@@ -90,6 +90,13 @@ class TcpGamepadTransport(
 /** Lado TV: acepta una conexión TCP y lee paquetes de 32 bytes. */
 class TcpGamepadReceiver(
     private val port: Int = GamepadProtocol.DEFAULT_PORT + 1,
+    /**
+     * Contador de paquetes recibidos por la TV (para estamparlo
+     * en el eco de ping, igual que por UDP). El receptor es de
+     * :core y no puede leer UdpReceiverService: el servicio TCP
+     * lo pasa como lambda.
+     */
+    private val tvPacketsReceived: () -> Long = { 0L },
 ) : GamepadReceiver {
     override val method: TransportMethod = TransportMethod.WIFI_TCP
     private val server = ServerSocket(port)
@@ -133,9 +140,12 @@ class TcpGamepadReceiver(
                 // este cheque, un ping se decodificaría como un
                 // estado todo-cero y borraría el mando 2 veces por
                 // segundo. Si el eco falla, el cliente está muerto.
+                // El eco lleva estampado el contador de paquetes
+                // recibidos (igual que por UDP), para que el
+                // teléfono sepa si la TV recibe o solo responde.
                 try {
                     val o = output ?: throw java.io.IOException("Sin salida TCP")
-                    o.write(buf)
+                    o.write(GamepadProtocol.stampTvPacketsReceived(buf, tvPacketsReceived()))
                     o.flush()
                 } catch (_: java.io.IOException) {
                     closeClient()

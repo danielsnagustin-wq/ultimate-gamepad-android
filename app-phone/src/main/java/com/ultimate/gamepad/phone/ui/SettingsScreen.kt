@@ -92,6 +92,17 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             color = Color(0xFF9AA0B0),
             fontSize = 13.sp,
         )
+        // ¿La TV recibe paquetes de mando, o solo responde al ping?
+        // Es la diferencia entre "no llega nada" (red) y "llega
+        // pero no inyecta" (falta Shizuku en la TV): el ping solo
+        // no la distingue.
+        if ((ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) && ui.tvResponding) {
+            Text(
+                text = if (ui.tvReceivingPackets) "TV recibe: ${ui.tvPacketsReceived} paquetes de mando" else "La TV no recibe paquetes de mando (responde al ping)",
+                color = if (ui.tvReceivingPackets) Color(0xFF4CAF50) else Color(0xFFFF5252),
+                fontSize = 13.sp,
+            )
+        }
         if (ui.status == ConnectionStatus.CONNECTED) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = { vm.disconnect() }) { Text("Desconectar") }

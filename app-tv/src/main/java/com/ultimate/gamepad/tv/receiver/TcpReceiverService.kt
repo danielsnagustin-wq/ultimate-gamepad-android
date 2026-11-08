@@ -49,7 +49,7 @@ class TcpReceiverService : Service() {
                 // esperar y reintentar en vez de morir en silencio.
                 var attempt = 0
                 while (isActive && localReceiver == null) {
-                    localReceiver = runCatching { TcpGamepadReceiver(GamepadProtocol.DEFAULT_PORT + 1) }.onFailure {
+                    localReceiver = runCatching { TcpGamepadReceiver(GamepadProtocol.DEFAULT_PORT + 1) { UdpReceiverService.packetsReceived } }.onFailure {
                         delay(1000L * (attempt + 1).coerceAtMost(5))
                     }.getOrNull()
                     attempt++

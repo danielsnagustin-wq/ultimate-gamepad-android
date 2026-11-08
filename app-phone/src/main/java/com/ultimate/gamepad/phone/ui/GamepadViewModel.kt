@@ -1,8 +1,11 @@
 package com.ultimate.gamepad.phone.ui
 
 import android.app.Application
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -69,6 +72,15 @@ data class GamepadUiState(
     val pin: String = "",
     val pingMs: Long? = null,
     val tvResponding: Boolean = false,
+    /**
+     * Paquetes de mando recibidos por la TV (del eco de ping
+     * estampado, ver GamepadSenderService.tvPacketsReceived).
+     * Es lo que distingue "conectado pero no envía nada" en dos
+     * casos: TV no recibe (red) vs TV recibe pero no inyecta
+     * (falta Shizuku). Se actualiza con refreshPing().
+     */
+    val tvPacketsReceived: Long = 0,
+    val tvReceivingPackets: Boolean = false,
     /** Momento en que empezó el intento actual (para el timeout sin eco). */
     val connectingSinceMs: Long = 0L,
     /** Método que se está probando en este intento (se muestra en "Conectando por…"). */
@@ -138,6 +150,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Callback de red (cambio/pérdida de Wi-Fi): se desregistra en onCleared. */
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    /** Receptor de encendido/apagado del Bluetooth: se desregistra en onCleared. */
+    private var bluetoothReceiver: BroadcastReceiver? = null
 
     /** Reenvío HID periódico (10 Hz) del último estado mientras el HID está conectado (ver startHidHeartbeat). */
     private var hidHeartbeatJob: Job? = null
@@ -194,6 +208,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // o al activar el hotspot, el estado de red solo se
         // refrescaba al reabrir la pantalla; ahora reacciona solo.
         registerNetworkCallback()
+        // El Bluetooth puede encenderse después de abrir la app:
+        // sin receptor, la comprobación HID se quedaba en
+        // "No disponible" para siempre (foto del usuario 2026-11-07).
+        registerBluetoothStateReceiver()
         // Perfil guardado (Fase 3): el emisor en proceso debe llevar
         // el mismo que el guardado, no el 0 por defecto, o el primer
         // paquete tras arrancar saldría como Xbox 360 con otro perfil
@@ -225,6 +243,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             runCatching { cm.unregisterNetworkCallback(cb) }
         }
         networkCallback = null
+        bluetoothReceiver?.let { runCatching { getApplication<Application>().unregisterReceiver(it) } }
+        bluetoothReceiver = null
         turboJob?.cancel()
         macroPlayJob?.cancel()
         stopGyroSensor()
@@ -820,10 +840,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Cada llamada registra otro listener de perfil Bluetooth:
         // sin freno, cada cambio de estado de conexión pedía el
         // proxy de nuevo y los listeners se acumulaban. Como mucho
-        // una comprobación cada 10 s (suficiente: el usuario puede
-        // encender el Bluetooth y se re-detecta en el siguiente
-        // cambio de estado). Con force=true (tras dar el permiso),
-        // se salta el freno.
+        // una comprobación cada 10 s. Al encender el Bluetooth, el
+        // receptor de estado (registerBluetoothStateReceiver)
+        // re-comprueba de inmediato con force=true. Con force=true
+        // (tras dar el permiso), se salta el freno.
         val now = System.currentTimeMillis()
         if (!force && now - lastHidCheckAtMs < 10_000) return
         lastHidCheckAtMs = now
@@ -1033,6 +1053,39 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         runCatching { cm.registerDefaultNetworkCallback(callback) }
     }
 
+    /**
+     * Escucha el encendido/apagado del Bluetooth del teléfono.
+     * Sin esto, si el Bluetooth estaba apagado al abrir la app,
+     * la comprobación HID quedaba en "No disponible" y nada la
+     * volvía a intentar al encenderlo (foto del usuario 2026-11-07:
+     * chip en "No disponible" para siempre). Al encender:
+     * re-comprobación forzada. Al apagar: HID pasa a NO DISPONIBLE
+     * de inmediato (el proxy muere con el radio).
+     */
+    private fun registerBluetoothStateReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
+                when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                    BluetoothAdapter.STATE_ON -> refreshHidStatus(force = true)
+                    BluetoothAdapter.STATE_OFF -> _ui.update {
+                        it.copy(
+                            hidAvailability = HidAvailability.UNAVAILABLE,
+                            transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE),
+                        )
+                    }
+                }
+            }
+        }
+        bluetoothReceiver = receiver
+        runCatching {
+            getApplication<Application>().registerReceiver(
+                receiver,
+                IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            )
+        }
+    }
+
     /** Busca TVs con el receptor abierto en la misma Wi-Fi (~3 s). */
     fun discoverTvs() {
         if (_ui.value.discovering) return
@@ -1231,6 +1284,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 packetsPerSec = GamepadSenderService.packetsPerSec,
                 packetsSent = GamepadSenderService.packetsSent,
                 tvResponding = responding,
+                tvPacketsReceived = GamepadSenderService.tvPacketsReceived,
+                tvReceivingPackets = GamepadSenderService.tvReceivingPackets,
                 error = GamepadSenderService.lastError,
             )
         }
@@ -1242,6 +1297,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             it.copy(
                 pingMs = GamepadSenderService.lastPingMs,
                 tvResponding = responding,
+                tvPacketsReceived = GamepadSenderService.tvPacketsReceived,
+                tvReceivingPackets = GamepadSenderService.tvReceivingPackets,
                 error = GamepadSenderService.lastError,
             )
         }

@@ -145,6 +145,15 @@ fun GamepadScreen(vm: GamepadViewModel) {
                 Spacer(Modifier.height(6.dp))
                 Text("TV sin respuesta (sin eco de ping en 3 s). En modo Automático se probará el siguiente método.", color = Color(0xFFFFC107), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
+            // La TV responde al ping pero no recibe paquetes de
+            // mando: el camino funciona pero la entrada no llega
+            // (red, IP vieja, receptor caído). Es distinto de "sin
+            // respuesta" y distinto de "recibe pero no inyecta"
+            // (eso es falta de Shizuku y lo dice la TV).
+            if (ui.status == ConnectionStatus.CONNECTED && ui.tvResponding && !ui.tvReceivingPackets) {
+                Spacer(Modifier.height(6.dp))
+                Text("La TV responde al ping pero no recibe paquetes de mando. Revisa la Wi-Fi o reconecta.", color = Color(0xFFFF5252), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
             if (isLandscape) {
                 // La fila mide lo que mide el contenido (no toda la
                 // pantalla): antes medía 301 dp con un contenido de

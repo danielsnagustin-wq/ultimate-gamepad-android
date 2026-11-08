@@ -159,4 +159,30 @@ object GamepadProtocol {
     }
 
     fun isPing(bytes: ByteArray): Boolean = bytes.size >= 4 && (bytes[3].toInt() and FLAG_PING.toInt()) != 0
+
+    /**
+     * Estampa el contador de paquetes recibidos por la TV en un eco
+     * de ping y recalcula el CRC. El ping lleva los botones a 0
+     * (bytes 14-15), así que ahí cabe el contador sin romper nada:
+     * la secuencia (4-5) y el timestamp (6-13) no se tocan y el
+     * RTT del ping sigue siendo real. El teléfono lo lee como
+     * `echoed.buttons` y así sabe si la TV RECIBE paquetes de
+     * mando, no solo si responde al ping: el eco prueba el camino,
+     * pero los paquetes de estado podrían descartarse (secuencia,
+     * decode) sin que el ping lo notara — justo el caso
+     * "Conectado pero no envía nada". El contador es uint16 y
+     * envuelve en 65535: el teléfono acumula deltas, no el valor
+     * absoluto. Solo la TV estampa; el teléfono nunca envía un
+     * ping con botones.
+     */
+    fun stampTvPacketsReceived(echo: ByteArray, packetsReceived: Long): ByteArray {
+        val out = echo.copyOf()
+        val count = (packetsReceived and 0xFFFF).toInt()
+        out[14] = (count and 0xFF).toByte()
+        out[15] = ((count shr 8) and 0xFF).toByte()
+        val crc = crc16(out, 0, 26)
+        out[26] = (crc and 0xFF).toByte()
+        out[27] = ((crc shr 8) and 0xFF).toByte()
+        return out
+    }
 }

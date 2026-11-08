@@ -301,7 +301,15 @@ class UdpReceiverService : Service() {
                             continue
                         }
                         if (GamepadProtocol.isPing(data)) {
-                            sock.send(DatagramPacket(data, data.size, packet.address, packet.port))
+                            // El eco lleva estampado cuántos paquetes
+                            // de mando ha recibido la TV: así el
+                            // teléfono distingue "la TV no recibe
+                            // nada" de "recibe pero no inyecta (sin
+                            // Shizuku)", en vez de fiarse solo del
+                            // ping (ver GamepadProtocol
+                            // .stampTvPacketsReceived).
+                            val stamped = GamepadProtocol.stampTvPacketsReceived(data, packetsReceived)
+                            sock.send(DatagramPacket(stamped, stamped.size, packet.address, packet.port))
                             continue
                         }
                         val state = GamepadProtocol.decode(data) ?: continue
