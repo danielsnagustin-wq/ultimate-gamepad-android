@@ -123,6 +123,7 @@ fun GamepadScreen(vm: GamepadViewModel) {
     }
     LaunchedEffect(ui.status, lifecycleState) {
         vm.refreshHidStatus()
+        vm.refreshBtDataStatus()
         vm.refreshWifiState()
         // El ping se vigila también en CONECTANDO: si no, el estado
         // CONECTANDO nunca se resolvería y la pantalla se quedaría
@@ -160,6 +161,8 @@ fun GamepadScreen(vm: GamepadViewModel) {
         if (ui.showPerformance) PerformanceScreen(vm, ui) { vm.closePerformance() }
         // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
         if (ui.showExtras) ExtrasScreen(vm, ui) { vm.closeExtras() }
+        // Pantalla "Personalizar interfaz" (ítem 3: se abre desde Ajustes, vuelve a Ajustes al cerrar).
+        if (ui.showUiCustomization) UiCustomizationScreen { vm.closeUiCustomization() }
     }
 }
 

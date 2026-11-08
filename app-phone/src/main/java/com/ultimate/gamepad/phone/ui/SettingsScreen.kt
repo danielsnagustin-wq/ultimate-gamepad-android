@@ -219,6 +219,15 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("✨  Extras (turbo, macros, teclado, ratón…)", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
+        // --- Personalizar interfaz (ítem 3) ---
+        Text("Personalizar interfaz", fontSize = 15.sp, color = Color.White)
+        Spacer(Modifier.height(4.dp))
+        Text("Color de acento, tamaño del texto y fondo de la app.", color = Color.White, fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { tick(); vm.openUiCustomization() }, modifier = Modifier.fillMaxWidth()) {
+            Text("🎨  Personalizar interfaz", color = Color.White)
+        }
+        Spacer(Modifier.height(16.dp))
         // --- Notificaciones (A4) ---
         // En Android 13+ el permiso POST_NOTIFICATIONS está
         // bloqueado hasta que la app lo pida: el canal ya existe

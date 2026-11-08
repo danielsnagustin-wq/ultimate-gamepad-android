@@ -18,6 +18,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ultimate.gamepad.phone.network.GamepadSenderService
 import com.ultimate.gamepad.phone.ui.GamepadScreen
 import com.ultimate.gamepad.phone.ui.GamepadViewModel
+import com.ultimate.gamepad.phone.ui.UiCustomizationProviders
+import com.ultimate.gamepad.phone.ui.rememberUiCustomizationHolder
+import com.ultimate.gamepad.phone.ui.uiColorSchemeFrom
 
 /**
  * Etapa 1: una sola pantalla de mando + conexión.
@@ -46,28 +49,36 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFF7C4DFF),
-                    // Sin onPrimary, Material3 usa su valor por
-                    // defecto oscuro (0xFF381E72): texto casi negro
-                    // sobre las píldoras moradas y no se lee. Blanco,
-                    // como el resto del texto de la app. Esto arregla
-                    // de una vez todos los Button de la app, que usan
-                    // primary de fondo y onPrimary de texto.
-                    onPrimary = Color.White,
-                    background = Color(0xFF0B0E14),
-                    surface = Color(0xFF151A26),
-                    onBackground = Color(0xFFE8EAF0),
-                    onSurface = Color(0xFFE8EAF0),
-                ),
-                // Los Button dibujan su texto con labelLarge (Medium
-                // por defecto). Seminegrita para el texto sobre morado.
-                typography = appTypography,
-            ) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    val vm: GamepadViewModel = viewModel()
-                    GamepadScreen(vm)
+            val uiHolder = rememberUiCustomizationHolder()
+            val customization = uiHolder.current
+            UiCustomizationProviders(holder = uiHolder) {
+                MaterialTheme(
+                    colorScheme = uiColorSchemeFrom(
+                        base = darkColorScheme(
+                            primary = Color(0xFF7C4DFF),
+                            // Sin onPrimary, Material3 usa su valor por
+                            // defecto oscuro (0xFF381E72): texto casi negro
+                            // sobre las píldoras moradas y no se lee. Blanco,
+                            // como el resto del texto de la app. Esto arregla
+                            // de una vez todos los Button de la app, que usan
+                            // primary de fondo y onPrimary de texto.
+                            onPrimary = Color.White,
+                            background = Color(0xFF0B0E14),
+                            surface = Color(0xFF151A26),
+                            onBackground = Color(0xFFE8EAF0),
+                            onSurface = Color(0xFFE8EAF0),
+                        ),
+                        accentArgb = customization.accentArgb,
+                        backgroundArgb = customization.backgroundArgb,
+                    ),
+                    // Los Button dibujan su texto con labelLarge (Medium
+                    // por defecto). Seminegrita para el texto sobre morado.
+                    typography = appTypography,
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        val vm: GamepadViewModel = viewModel()
+                        GamepadScreen(vm)
+                    }
                 }
             }
         }
