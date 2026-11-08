@@ -69,6 +69,9 @@ class GamepadSenderService : Service() {
         /** Último envío TCP sin excepción (prueba de vida por TCP; el ping con eco también actualiza lastEchoAtMs desde la Fase 1). */
         @Volatile var lastTcpSendAtMs: Long = 0L
             private set
+        /** Inicio de la sesión TCP actual (se renueva en cada reconexión): los envíos solo valen como prueba de vida en los primeros 3 s sin eco (ver isTvResponding). */
+        @Volatile var tcpSessionStartMs: Long = 0L
+            private set
         @Volatile var activeMethod: TransportMethod = TransportMethod.WIFI_UDP
             private set
         // --- Estadísticas de rendimiento (Fase 3, pantalla Rendimiento) ---
@@ -110,22 +113,33 @@ class GamepadSenderService : Service() {
 
         fun isTvResponding(): Boolean =
             if (activeMethod == TransportMethod.WIFI_TCP) {
-                // TCP tiene eco de ping desde la Fase 1 (también
-                // alimenta lastEchoAtMs), pero la prueba de vida
-                // sigue siendo el envío sin excepción en los
-                // últimos 3 s: si el envío no lanzó excepción, la
-                // TV está ahí. Antes esto siempre era false y TCP
-                // nunca llegaba a "Conectado": a los 3 s el modo
-                // AUTO lo abandonaba aunque funcionara.
-                lastTcpSendAtMs > 0 &&
-                    System.currentTimeMillis() - lastTcpSendAtMs <= ConnectionHealth.PING_TIMEOUT_MS
+                // TCP (2026-11-07): la prueba de vida es el ECO, no
+                // el envío. Un write() TCP con éxito solo dice que
+                // el kernel aceptó los bytes: si la TV muere sin
+                // RST (red caída, app matada, TV dormida), el envío
+                // sigue "funcionando" minutos mientras el juego no
+                // recibe nada, y AUTO nunca saltaba a HID. El eco
+                // (lector TCP, Fase 1) sí prueba que la TV vive.
+                // Solo antes del primer eco valen los envíos, y
+                // solo en los primeros 3 s de la sesión: pasado ese
+                // plazo sin eco, la TV no responde aunque el envío
+                // no falle, y AUTO debe probar el siguiente método.
+                val now = System.currentTimeMillis()
+                if (lastEchoAtMs > 0) {
+                    ConnectionHealth.isTvResponding(lastEchoAtMs, now)
+                } else {
+                    tcpSessionStartMs > 0 &&
+                        now - tcpSessionStartMs <= ConnectionHealth.PING_TIMEOUT_MS &&
+                        lastTcpSendAtMs > 0 &&
+                        now - lastTcpSendAtMs <= ConnectionHealth.PING_TIMEOUT_MS
+                }
             } else {
                 ConnectionHealth.isTvResponding(lastEchoAtMs)
             }
 
         /** Limpia los marcadores de salud (al entrar en HID o al desconectar): un eco viejo de Wi-Fi no debe fingir que la TV responde. */
         fun resetHealth() {
-            lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L
+            lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L; tcpSessionStartMs = 0L
             resetStats()
         }
     }
@@ -215,6 +229,15 @@ class GamepadSenderService : Service() {
                                 if (tcp == null) {
                                     tcp = TcpGamepadTransport(address, port + 1)
                                     tcp.connect()
+                                    // Sesión TCP nueva: los ecos viejos
+                                    // de la sesión anterior no valen
+                                    // (isTvResponding es por eco; un eco
+                                    // de hace 2 s no debe fingir que la
+                                    // TV nueva responde) y el plazo de
+                                    // gracia de "envío sin eco" empieza
+                                    // ahora, no en la sesión anterior.
+                                    lastEchoAtMs = 0L; lastPingMs = null
+                                    tcpSessionStartMs = System.currentTimeMillis()
                                     // Lector de ecos TCP (Fase 1): el eco del
                                     // ping llega por el mismo socket y hay
                                     // que leerlo en otra corrutina, o el
