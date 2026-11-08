@@ -119,6 +119,10 @@ object Diagnostics {
         KeyEvent.KEYCODE_BUTTON_THUMBL to "L3",
         KeyEvent.KEYCODE_BUTTON_THUMBR to "R3",
         KeyEvent.KEYCODE_BUTTON_MODE to "HOME",
+        // T8: CAPTURE llega por la vía B como KEYCODE_BUTTON_1 (y
+        // por la vía A como BTN_TRIGGER_HAPPY1, que Generic.kl
+        // traduce al mismo BUTTON_1). Antes no se listaba.
+        KeyEvent.KEYCODE_BUTTON_1 to "CAPTURE",
         KeyEvent.KEYCODE_DPAD_UP to "DPAD ↑",
         KeyEvent.KEYCODE_DPAD_DOWN to "DPAD ↓",
         KeyEvent.KEYCODE_DPAD_LEFT to "DPAD ←",

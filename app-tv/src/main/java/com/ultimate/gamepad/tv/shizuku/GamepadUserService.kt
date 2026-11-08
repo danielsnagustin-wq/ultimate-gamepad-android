@@ -124,6 +124,14 @@ class GamepadUserService : IGamepadInputService.Stub() {
                     inject(ev)
                 }
             }
+            // T8: gatillos digitales (L2/R2) al cruzar 0,5, como
+            // BTN_TL2/TR2 en la vía A (uinput).
+            InputMapper.triggerKeyEventFor(state, previousState, true, now)?.let { ev ->
+                inject(ev)
+            }
+            InputMapper.triggerKeyEventFor(state, previousState, false, now)?.let { ev ->
+                inject(ev)
+            }
             inject(InputMapper.motionEventFor(state, now))
             previousState = state
             true

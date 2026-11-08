@@ -46,6 +46,9 @@ object InputMapper {
         GamepadButtons.L3 -> KeyEvent.KEYCODE_BUTTON_THUMBL
         GamepadButtons.R3 -> KeyEvent.KEYCODE_BUTTON_THUMBR
         GamepadButtons.HOME -> KeyEvent.KEYCODE_BUTTON_MODE
+        // T8: mismo código que BTN_TRIGGER_HAPPY1 de la vía A
+        // (Generic.kl traduce 0x2c0 a BUTTON_1): CAPTURE converge
+        // en el mismo KeyEvent por ambas vías.
         GamepadButtons.CAPTURE -> KeyEvent.KEYCODE_BUTTON_1
         GamepadButtons.DPAD_UP -> KeyEvent.KEYCODE_DPAD_UP
         GamepadButtons.DPAD_DOWN -> KeyEvent.KEYCODE_DPAD_DOWN
@@ -74,6 +77,33 @@ object InputMapper {
             nowMs, nowMs,
             if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
             keyCode, 0, 0,
+            KeyEvent.KEYCODE_UNKNOWN, 0,
+            KeyEvent.FLAG_FROM_SYSTEM,
+            GAMEPAD_SOURCE,
+        )
+    }
+
+    /**
+     * T8: gatillo digital por la vía B. La vía A (uinput) reporta
+     * los gatillos como ejes analógicos Y como botones digitales
+     * BTN_TL2/TR2 al pasar de la mitad, como un Xbox 360 real; la
+     * vía B solo mandaba los ejes (AXIS_LTRIGGER/RTRIGGER). Ahora
+     * también emite KEYCODE_BUTTON_L2/R2 al cruzar el umbral 0,5,
+     * igual que la vía A. Los juegos que leen solo los ejes no
+     * notan el cambio; los que leen botones digitales ya ven los
+     * gatillos por ambas vías.
+     */
+    fun triggerKeyEventFor(state: GamepadState, previous: GamepadState, isLeft: Boolean, nowMs: Long): KeyEvent? {
+        val value = if (isLeft) state.leftTrigger else state.rightTrigger
+        val wasValue = if (isLeft) previous.leftTrigger else previous.rightTrigger
+        val pressed = value > 0.5f
+        val wasPressed = wasValue > 0.5f
+        if (pressed == wasPressed) return null
+        return KeyEvent(
+            nowMs, nowMs,
+            if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP,
+            if (isLeft) KeyEvent.KEYCODE_BUTTON_L2 else KeyEvent.KEYCODE_BUTTON_R2,
+            0, 0,
             KeyEvent.KEYCODE_UNKNOWN, 0,
             KeyEvent.FLAG_FROM_SYSTEM,
             GAMEPAD_SOURCE,
