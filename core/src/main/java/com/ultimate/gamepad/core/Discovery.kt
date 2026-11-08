@@ -1,5 +1,8 @@
 package com.ultimate.gamepad.core
 
+import java.net.InetAddress
+import java.net.NetworkInterface
+
 /**
  * Descubrimiento automático de la TV en la red local.
  *
@@ -18,6 +21,17 @@ package com.ultimate.gamepad.core
  * No choca con los paquetes de juego de 32 bytes: esos empiezan
  * por el magic "UG" pero miden 32 bytes y nunca son exactamente
  * la cadena "UGDISC1".
+ *
+ * Broadcast dirigido (2026-11-07): además del 255.255.255.255, la
+ * petición se envía al broadcast dirigido de cada subred local
+ * (p. ej. 192.168.1.255). Algunos routers filtran el broadcast
+ * limitado pero dejan pasar el dirigido a la subred, y con el
+ * hotspot del teléfono como punto de acceso la TV está en la
+ * subred 192.168.43.0/24: sin el dirigido a esa subred, el
+ * teléfono como AP no la encontraba. Ojo, honestidad: si el
+ * router tiene aislamiento AP (los clientes no se ven entre sí),
+ * NINGÚN broadcast llega y solo queda el plan B (QR o IP+PIN
+ * manual); el dirigido no es magia contra el aislamiento.
  */
 object Discovery {
     const val MAGIC_REQUEST: String = "UGDISC1"
@@ -33,6 +47,93 @@ object Discovery {
         val port = parts[3].toIntOrNull() ?: return null
         if (parts[1].isBlank() || parts[2].isBlank() || parts[4].isBlank()) return null
         return DiscoveredTv(name = parts[1], ip = parts[2], port = port, pin = parts[4])
+    }
+
+    /**
+     * Broadcast dirigido de una subred: pone a 1 los bits de host
+     * según el prefijo (p. ej. 192.168.1.20/24 -> 192.168.1.255).
+     * null si la dirección no es IPv4 o el prefijo es inválido.
+     * Lógica pura, comprobada con tests en CI.
+     */
+    fun broadcastFor(address: InetAddress, prefixLength: Int): InetAddress? {
+        val raw = address.address
+        if (raw.size != 4 || prefixLength < 0 || prefixLength > 32) return null
+        var ip = 0
+        for (b in raw) ip = (ip shl 8) or (b.toInt() and 0xFF)
+        val mask = if (prefixLength == 0) 0 else (-1 shl (32 - prefixLength))
+        val bcast = ip or mask.inv()
+        return InetAddress.getByAddress(
+            byteArrayOf(
+                ((bcast ushr 24) and 0xFF).toByte(),
+                ((bcast ushr 16) and 0xFF).toByte(),
+                ((bcast ushr 8) and 0xFF).toByte(),
+                (bcast and 0xFF).toByte(),
+            ),
+        )
+    }
+
+    /** ¿Es una IPv4 privada (RFC 1918)? Solo esas subredes se usan para el broadcast dirigido. */
+    fun isPrivateIpv4(address: InetAddress): Boolean {
+        val b = address.address
+        if (b.size != 4) return false
+        val o0 = b[0].toInt() and 0xFF
+        val o1 = b[1].toInt() and 0xFF
+        return o0 == 10 || (o0 == 172 && o1 in 16..31) || (o0 == 192 && o1 == 168)
+    }
+
+    /**
+     * ¿Es una dirección de hotspot típica de Android (el teléfono
+     * como punto de acceso)? Android usa 192.168.43.0/24 por
+     * defecto para el hotspot. Cuando el teléfono es el AP, NO
+     * está en Wi-Fi (no hay TRANSPORT_WIFI activo) y la búsqueda
+     * se bloqueaba con "No estás en Wi-Fi" aunque la TV estuviera
+     * conectada a su hotspot: este chequeo es lo que la desbloquea.
+     */
+    fun isHotspotAddress(address: InetAddress): Boolean {
+        val b = address.address
+        return b.size == 4 && (b[0].toInt() and 0xFF) == 192 &&
+            (b[1].toInt() and 0xFF) == 168 && (b[2].toInt() and 0xFF) == 43
+    }
+
+    /**
+     * Broadcasts dirigidos de todas las interfaces locales útiles
+     * (Wi-Fi normal y hotspot del teléfono). Solo subredes privadas
+     * (RFC 1918): la interfaz de datos móviles (IP pública o CGNAT
+     * 100.64/10) nunca es una red local con una TV. Sin interfaces
+     * (o sin permiso), lista vacía: el llamador sigue teniendo el
+     * 255.255.255.255.
+     */
+    fun localBroadcastAddresses(): List<InetAddress> {
+        val out = LinkedHashSet<InetAddress>()
+        try {
+            val ifaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            for (iface in ifaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                for (ia in iface.interfaceAddresses) {
+                    val addr = ia.address
+                    if (addr.isLoopbackAddress || !isPrivateIpv4(addr)) continue
+                    broadcastFor(addr, ia.networkPrefixLength.toInt())?.let { out += it }
+                }
+            }
+        } catch (_: Exception) {
+            // Sin acceso a las interfaces: lista vacía, sin crashear.
+        }
+        return out.toList()
+    }
+
+    /** ¿Hay una interfaz de hotspot activa (el teléfono como punto de acceso)? */
+    fun hasHotspotInterface(): Boolean {
+        try {
+            val ifaces = NetworkInterface.getNetworkInterfaces() ?: return false
+            for (iface in ifaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                for (ia in iface.interfaceAddresses) {
+                    if (isHotspotAddress(ia.address)) return true
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return false
     }
 }
 

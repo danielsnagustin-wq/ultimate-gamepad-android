@@ -17,6 +17,7 @@ import android.view.WindowManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ultimate.gamepad.core.DiscoveredTv
+import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.ExtrasProtocol
 import com.ultimate.gamepad.core.GameProfile
 import com.ultimate.gamepad.core.GamepadButtons
@@ -941,7 +942,13 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun refreshWifiState() {
         val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val wifi = cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-        _ui.update { it.copy(wifiConnected = wifi) }
+        // Hotspot (2026-11-07): cuando el teléfono ES el punto de
+        // acceso, no hay TRANSPORT_WIFI activo (la TV está
+        // conectada a ÉL) y la búsqueda se bloqueaba con "No estás
+        // en Wi-Fi". Con una interfaz 192.168.43.x activa, hay red
+        // local aunque no haya Wi-Fi como cliente.
+        val hotspot = Discovery.hasHotspotInterface()
+        _ui.update { it.copy(wifiConnected = wifi || hotspot) }
     }
 
     /** Busca TVs con el receptor abierto en la misma Wi-Fi (~3 s). */
@@ -959,7 +966,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 it.copy(
                     discovering = false,
                     discoveredTvs = found,
-                    error = if (found.isEmpty()) "No se encontró ninguna TV. Abre Ultimate Gamepad en la TV (el receptor arranca solo) y revisa que esté en la misma Wi-Fi." else null,
+                    error = if (found.isEmpty()) "No se encontró ninguna TV. Comprueba que la TV tiene Ultimate Gamepad abierto y está en la misma Wi-Fi (o conectada a tu hotspot). Si el router bloquea el broadcast o tiene aislamiento AP, escanea el QR de la TV o escribe su IP + PIN abajo." else null,
                 )
             }
         }

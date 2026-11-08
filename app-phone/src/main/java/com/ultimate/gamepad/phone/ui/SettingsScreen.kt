@@ -115,6 +115,20 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
                 Text("${tv.name} — ${tv.ip}")
             }
         }
+        // El error de búsqueda ANTES no se veía aquí: discoverTvs()
+        // pone ui.error con el estado en DESCONECTADO, y esta
+        // pantalla solo mostraba ui.error cuando el estado era
+        // ERROR. El usuario veía "Buscar TV" sin resultado y sin
+        // explicación. Ahora el mensaje (con el plan B: QR o
+        // IP+PIN manual, justo debajo) se pinta siempre que exista.
+        if (ui.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(ui.error!!, color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        if (ui.info != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp)
+        }
         Spacer(Modifier.height(16.dp))
         Text("Método de conexión", fontSize = 15.sp)
         TransportSelectorRow(vm, ui)
