@@ -432,7 +432,14 @@ class MainActivity : Activity() {
         // T1: pulsar "Iniciar receptor" borra el "detenido".
         UdpReceiverService.setReceiverStopped(this, false)
         startForegroundService(Intent(this, UdpReceiverService::class.java))
-        startForegroundService(Intent(this, BluetoothDataReceiverService::class.java))
+        // Fase 5: el receptor BT es un servicio de fondo normal (como
+        // TcpReceiverService): NUNCA con startForegroundService(), porque
+        // BluetoothDataReceiverService no llama a startForeground() y en
+        // API 26+ el sistema mata la app ~5-10 s después del arranque
+        // (ForegroundServiceDidNotStartInTimeException). El proceso ya es
+        // de primer plano por UdpReceiverService, así que el BT no
+        // necesita su propio servicio en primer plano.
+        startService(Intent(this, BluetoothDataReceiverService::class.java))
         refresh()
     }
 
