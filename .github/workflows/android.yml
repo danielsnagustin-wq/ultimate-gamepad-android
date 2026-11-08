@@ -28,6 +28,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.7"
+          cache-disabled: true
 
       - name: Run core unit tests
         run: gradle :core:testDebugUnitTest --stacktrace
