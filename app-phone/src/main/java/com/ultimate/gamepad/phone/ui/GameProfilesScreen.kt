@@ -51,11 +51,41 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     var profiles by remember { mutableStateOf(GameProfilePrefs.loadAll(context)) }
     var editing by remember { mutableStateOf<GameProfile?>(null) }
-    val activeName by remember { mutableStateOf(GameProfilePrefs.loadActiveName(context)) }
+    // Nombre del perfil que se abrió en el editor (null = perfil
+    // nuevo): para distinguir "editar sin renombrar" de
+    // "renombrar a un nombre que ya existe" (P3).
+    var editingOriginalName by remember { mutableStateOf<String?>(null) }
+    // P2: antes `activeName` era `remember` de la carga inicial y
+    // "Aplicar" guardaba en prefs sin actualizarlo: la insignia
+    // "● ACTIVO" no se movía hasta reabrir la pantalla. Ahora es
+    // estado mutable y se actualiza en cada "Aplicar".
+    var activeName by remember { mutableStateOf(GameProfilePrefs.loadActiveName(context)) }
+    // P3: renombrar a un nombre existente borraba el otro perfil
+    // en silencio (filter + clean). Ahora se pide confirmación
+    // explícita y nunca se sobrescribe sin aviso.
+    var pendingOverwrite by remember { mutableStateOf<GameProfile?>(null) }
+    var pendingOverwriteApply by remember { mutableStateOf(false) }
 
     fun persist(next: List<GameProfile>) {
         profiles = next
         GameProfilePrefs.saveAll(context, next)
+    }
+
+    fun doSave(clean: GameProfile) {
+        val next = profiles.filter { p -> p.name != clean.name } + clean
+        persist(next.sortedBy { p -> p.name })
+        pendingOverwrite = null
+        editing = null
+    }
+
+    fun doApply(clean: GameProfile) {
+        val next = profiles.filter { p -> p.name != clean.name } + clean
+        persist(next.sortedBy { p -> p.name })
+        vm.applyGameProfile(clean)
+        GameProfilePrefs.saveActiveName(context, clean.name)
+        activeName = clean.name
+        pendingOverwrite = null
+        editing = null
     }
 
     Column(
@@ -95,38 +125,69 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                         Button(onClick = {
                             vm.applyGameProfile(p)
                             GameProfilePrefs.saveActiveName(context, p.name)
+                            activeName = p.name
                         }) { Text("Aplicar") }
                         Spacer(Modifier.weight(1f))
-                        OutlinedButton(onClick = { editing = p }) { Text("Editar") }
+                        OutlinedButton(onClick = { editingOriginalName = p.name; editing = p }) { Text("Editar") }
                     }
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Button(onClick = { editing = GameProfile(name = "Juego nuevo") }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { editingOriginalName = null; editing = GameProfile(name = "Juego nuevo") }, modifier = Modifier.fillMaxWidth()) {
                 Text("＋  Nuevo perfil de juego", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
             Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+        } else if (pendingOverwrite != null) {
+            // P3: confirmación de sobrescritura. Sin este paso, el
+            // perfil con ese nombre se borraba en silencio.
+            val clash = pendingOverwrite!!
+            Text("⚠  Ya existe un perfil llamado «${clash.name}».", fontSize = 15.sp, color = Color.White)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Si sigues, el perfil «${clash.name}» se sustituye por este. Si cancelas, no se borra nada y vuelves al editor.",
+                fontSize = 13.sp,
+                color = Color.White,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { if (pendingOverwriteApply) doApply(clash) else doSave(clash) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Sobrescribir «${clash.name}»", color = Color.White) }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { pendingOverwrite = null }, modifier = Modifier.fillMaxWidth()) {
+                Text("Cancelar, no borrar nada", color = Color.White)
+            }
         } else {
             GameProfileEditor(
                 draft = draft,
                 onDraftChange = { editing = it },
                 onSave = {
                     val clean = it.sanitized()
-                    val next = profiles.filter { p -> p.name != clean.name } + clean
-                    persist(next.sortedBy { p -> p.name })
-                    editing = null
+                    val clash = profiles.any { p -> p.name == clean.name && p.name != editingOriginalName }
+                    if (clash) {
+                        pendingOverwrite = clean
+                        pendingOverwriteApply = false
+                    } else {
+                        doSave(clean)
+                    }
                 },
                 onApply = {
                     val clean = it.sanitized()
-                    val next = profiles.filter { p -> p.name != clean.name } + clean
-                    persist(next.sortedBy { p -> p.name })
-                    vm.applyGameProfile(clean)
-                    editing = null
+                    val clash = profiles.any { p -> p.name == clean.name && p.name != editingOriginalName }
+                    if (clash) {
+                        pendingOverwrite = clean
+                        pendingOverwriteApply = true
+                    } else {
+                        doApply(clean)
+                    }
                 },
                 onDelete = {
                     persist(profiles.filter { p -> p.name != it.name })
-                    if (GameProfilePrefs.loadActiveName(context) == it.name) GameProfilePrefs.saveActiveName(context, null)
+                    if (GameProfilePrefs.loadActiveName(context) == it.name) {
+                        GameProfilePrefs.saveActiveName(context, null)
+                        activeName = null
+                    }
                     editing = null
                 },
                 onCancel = { editing = null },
