@@ -105,7 +105,9 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                 Spacer(Modifier.height(4.dp))
                 Text("La TV expone: \"${profile.deviceName}\"", color = Color.White, fontSize = 14.sp)
                 Text(
-                    "VID 0x${profile.vendorId.toString(16).uppercase()} · PID 0x${profile.productId.toString(16).uppercase()}",
+                    // Arreglo 10: VID/PID con ceros a la izquierda
+                    // (0x045E, no 0x45E).
+                    "VID 0x${profile.vendorId.toString(16).uppercase().padStart(4, '0')} · PID 0x${profile.productId.toString(16).uppercase().padStart(4, '0')}",
                     color = Color.White, fontSize = 13.sp,
                 )
                 Text(profileDescription(profile.id), color = Color.White, fontSize = 13.sp)
@@ -122,7 +124,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         val previous = ui.previousProfileId?.let { GamepadProfiles.fromId(it) }
         if (previous != null && previous.id != ui.activeProfileId) {
             Button(onClick = { tick(); vm.revertProfile() }, modifier = Modifier.fillMaxWidth()) {
-                Text("↩  Volver al perfil anterior: ${previous.name}", color = Color.White)
+                Text("↩  Cambiar al perfil anterior: ${previous.name}", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -137,7 +139,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
 
 private fun profileDescription(id: Int): String = when (id) {
     GamepadProfiles.XBOX_360_ID -> "El clásico de Xbox 360: A/B/X/Y, LB/RB, LT/RT analógicos, botón Xbox y Share."
-    GamepadProfiles.XBOX_ONE_ID -> "Xbox One: igual que el 360, con Menu/View y el mismo mapa de botones."
+    GamepadProfiles.XBOX_ONE_ID -> "Xbox One: como el 360, con botones Menu y View en vez de Start y Atrás, y el mismo mapa de botones."
     GamepadProfiles.DS4_ID -> "DualShock 4 (Sony): Cross/Circle/Square/Triangle, L1/R1, Options/Share, botón PS."
     GamepadProfiles.DUALSENSE_ID -> "DualSense (Sony): como el DS4, con botón Create. Sin háptica avanzada ni gatillos adaptativos (uinput no los expone)."
     else -> "Mando genérico, sin identidad de Microsoft ni de Sony: por si un juego no acepta los perfiles con marca."

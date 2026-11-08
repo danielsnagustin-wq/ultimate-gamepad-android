@@ -100,13 +100,9 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 ) { tick(); vm.selectMethod(method) }
             }
         }
-        if (ui.hotspotMode) {
-            Text(
-                "Modo Hotspot: activa el hotspot del teléfono y conecta la TV a esa red. " +
-                    "Escribe la IP del hotspot (normalmente 192.168.43.x) en Conectar.",
-                color = Color.White, fontSize = 12.sp,
-            )
-        }
+        // Arreglo 10: el texto del hotspot estaba duplicado aquí y
+        // en SettingsScreen (junto a IP/PIN, donde hace falta). Se
+        // quita de aquí y queda solo el de Ajustes.
         // Estado de la verificación HID, sin ambigüedad: antes el
         // chip decía "No disponible" desde el arranque, antes de
         // comprobar nada, y la nota mezclaba "no disponible" con

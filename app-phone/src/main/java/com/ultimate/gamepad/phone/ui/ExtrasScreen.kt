@@ -113,19 +113,24 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for ((bit, label) in listOf(
-                GamepadButtons.A to "A",
-                GamepadButtons.B to "B",
-                GamepadButtons.X to "X",
-                GamepadButtons.Y to "Y",
-                GamepadButtons.LB to "LB",
-                GamepadButtons.RB to "RB",
-            )) {
-                Button(onClick = { tick(); vm.setTurbo(bit, bit !in turboButtons) }) {
-                    Text(if (bit in turboButtons) "$label ✓" else label, color = Color.White)
+        // Arreglo 10: 6 botones en una sola fila desbordaban en
+        // 360 dp. Dos filas de 3, con peso igual.
+        for (row in listOf(
+            GamepadButtons.A to "A",
+            GamepadButtons.B to "B",
+            GamepadButtons.X to "X",
+            GamepadButtons.Y to "Y",
+            GamepadButtons.LB to "LB",
+            GamepadButtons.RB to "RB",
+        ).chunked(3)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for ((bit, label) in row) {
+                    Button(onClick = { tick(); vm.setTurbo(bit, bit !in turboButtons) }, modifier = Modifier.weight(1f)) {
+                        Text(if (bit in turboButtons) "$label ✓" else label, color = Color.White)
+                    }
                 }
             }
+            Spacer(Modifier.height(8.dp))
         }
         Spacer(Modifier.height(8.dp))
         Text("Velocidad: $turboRate Hz", fontSize = 12.sp, color = Color.White)
@@ -260,14 +265,20 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             enabled = ui.keyboardEnabled,
         )
         Spacer(Modifier.height(8.dp))
+        // Arreglo 10: 4 botones en una fila desbordaban en 360 dp.
+        // Dos filas de 2, con peso igual.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { tick(); vm.typeText(keyboardText) },
                 enabled = ui.keyboardEnabled && keyboardText.isNotEmpty(),
+                modifier = Modifier.weight(1f),
             ) { Text("Enviar texto") }
-            Button(onClick = { tick(); vm.sendSpecialKey("enter") }, enabled = ui.keyboardEnabled) { Text("Enter ⏎") }
-            Button(onClick = { tick(); vm.sendSpecialKey("backspace") }, enabled = ui.keyboardEnabled) { Text("⌫ Borrar") }
-            Button(onClick = { tick(); vm.sendSpecialKey("space") }, enabled = ui.keyboardEnabled) { Text("Espacio") }
+            Button(onClick = { tick(); vm.sendSpecialKey("enter") }, enabled = ui.keyboardEnabled, modifier = Modifier.weight(1f)) { Text("Enter ⏎") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { tick(); vm.sendSpecialKey("backspace") }, enabled = ui.keyboardEnabled, modifier = Modifier.weight(1f)) { Text("⌫ Borrar") }
+            Button(onClick = { tick(); vm.sendSpecialKey("space") }, enabled = ui.keyboardEnabled, modifier = Modifier.weight(1f)) { Text("Espacio") }
         }
 
         // --- Modo ratón ---
@@ -311,10 +322,12 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             Button(
                 onClick = { tick(); vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_LEFT) },
                 enabled = ui.mouseEnabled,
+                modifier = Modifier.weight(1f),
             ) { Text("Clic izquierdo") }
             Button(
                 onClick = { tick(); vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_RIGHT) },
                 enabled = ui.mouseEnabled,
+                modifier = Modifier.weight(1f),
             ) { Text("Clic derecho") }
         }
 

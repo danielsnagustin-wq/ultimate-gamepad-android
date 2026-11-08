@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -134,7 +135,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                     Text(
                         "${GamepadProfiles.fromId(p.profileId).name} · zona muerta ${(p.deadZone * 100).toInt()}% · curva ${"%.2f".format(p.curve)} · gatillos x${"%.2f".format(p.triggerScale)}" +
                             (if (p.remap.isNotEmpty()) " · remap ${p.remap.entries.joinToString(", ") { "${GameProfilePrefs.buttonLabel(it.key)}→${GameProfilePrefs.buttonLabel(it.value)}" }}" else "") +
-                            (if (p.layoutJson != null) " · diseño guardado" else ""),
+                            (if (p.layoutJson != null) " · con diseño de botones" else ""),
                         color = Color.White, fontSize = 12.sp,
                     )
                     Spacer(Modifier.height(4.dp))
@@ -244,9 +245,16 @@ private fun GameProfileEditor(
         Text("Tipo de mando", fontSize = 15.sp, color = Color.White)
         for (profile in GamepadProfiles.ALL) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                // Arreglo 10: el perfil elegido era indistinguible
+                // (solo un "● " delante). Ahora el elegido es morado
+                // sólido y los demás, gris oscuro.
                 Button(
                     onClick = { tick(); onDraftChange(draft.copy(profileId = profile.id)) },
                     modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (draft.profileId == profile.id) Color(0xFF7C4DFF) else Color(0xFF1A1D27),
+                        contentColor = Color.White,
+                    ),
                 ) {
                     Text((if (draft.profileId == profile.id) "● " else "") + profile.name, color = Color.White)
                 }
@@ -266,7 +274,7 @@ private fun GameProfileEditor(
             Switch(checked = draft.vibrationEnabled, onCheckedChange = { onDraftChange(draft.copy(vibrationEnabled = it)) })
         }
         Text(
-            "La vibración solo se GUARDA por ahora: es Fase 4 y la app todavía no vibra. No se finge que funcione.",
+            "La vibración se aplica al pulsar los botones del mando y de estas pantallas. Este ajuste se guarda en el perfil: al aplicar un perfil, su ajuste de vibración pisa el interruptor de Extras.",
             color = Color(0xFFFFC107), fontSize = 12.sp,
         )
         Spacer(Modifier.height(12.dp))
@@ -295,7 +303,10 @@ private fun GameProfileEditor(
             onClick = { tick(); onSaveLayout(draft.copy(name = name)) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (draft.layoutJson != null) "✓ Diseño guardado — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil", color = Color.White)
+            // Arreglo 10: "✓ Diseño guardado" mentía — esto solo
+            // deja el diseño en el borrador; se confirma al pulsar
+            // Guardar o Aplicar. El texto lo dice así.
+            Text(if (draft.layoutJson != null) "✓ Diseño de botones en este perfil (borrador) — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil (borrador: se confirma con Guardar o Aplicar)", color = Color.White)
         }
         Spacer(Modifier.height(12.dp))
         Button(onClick = { tick(); onApply(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Aplicar este perfil") }
