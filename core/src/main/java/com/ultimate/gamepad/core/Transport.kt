@@ -21,7 +21,10 @@ package com.ultimate.gamepad.core
  *                   sin app receptora y sin Shizuku.
  * El modo Automático prueba en orden 1 -> 2 -> 5 -> 4 en la
  * numeración de la tarea (UDP, TCP, BLE/SPP, HID). Ver
- * [TransportSelector.AUTO_ORDER].
+ * [TransportSelector.AUTO_ORDER]. OJO: BLE/SPP está en ese orden
+ * pero NO implementado (Fase 5, PENDING_STAGE2): el fallback lo
+ * salta siempre (ver GamepadViewModel.tryNextTransport) y la UI
+ * lo marca "No implementado", nunca como respaldo real.
  */
 enum class TransportMethod(val label: String, val priority: Int) {
     WIFI_UDP("Wi-Fi UDP", 1),
@@ -47,7 +50,13 @@ data class TransportInfo(
 )
 
 object TransportSelector {
-    /** Orden de prueba del modo Automático: UDP -> TCP -> BLE/SPP -> HID. */
+    /**
+     * Orden de prueba del modo Automático: UDP -> TCP -> BLE/SPP -> HID.
+     * BLE/SPP está en la lista pero NO implementado (Fase 5): el
+     * fallback lo salta (tryNextTransport filtra BLUETOOTH_DATA) y
+     * la UI lo muestra como "No implementado". No quitarlo de la
+     * lista: documenta el orden previsto cuando exista.
+     */
     val AUTO_ORDER: List<TransportMethod> = listOf(
         TransportMethod.WIFI_UDP,
         TransportMethod.WIFI_TCP,

@@ -21,11 +21,13 @@ package com.ultimate.gamepad.core
  *    El teléfono envía el mismo paquete de 32 bytes por BLE o por
  *    RFCOMM/SPP a la app de la TV, que lo recibe y lo inyecta como
  *    en Wi-Fi. Es el respaldo si falla TODO el Wi-Fi.
- *    En Etapa 1 solo está la interfaz y el receptor TV listo para
- *    recibir el mismo paquete ([BluetoothDataReceiver]). La
- *    implementación completa (GATT / RFCOMM, emparejamiento,
- *    fragmentación BLE) queda marcada PENDING_STAGE2. Ningún botón
- *    de la UI debe decir que funciona.
+ *    NO IMPLEMENTADO (Fase 5 del plan, 2026-11-07): solo la
+ *    interfaz y el receptor TV listo para recibir el mismo paquete
+ *    ([BluetoothDataReceiver]). La implementación completa (GATT /
+ *    RFCOMM, emparejamiento, fragmentación BLE) queda marcada
+ *    PENDING_STAGE2 y la UI dice "No implementado". Ningún botón
+ *    de la UI debe decir que funciona. No se implementa en este
+ *    lote: demasiado trabajo sin poder verificarlo en la TV real.
  */
 enum class HidAvailability {
     UNKNOWN,        // Aún no comprobado.

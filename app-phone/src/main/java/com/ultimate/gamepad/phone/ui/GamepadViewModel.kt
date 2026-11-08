@@ -775,10 +775,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun setTransportMode(mode: TransportMode) = _ui.update { it.copy(transportMode = mode) }
     fun setHotspotMode(enabled: Boolean) = _ui.update { it.copy(hotspotMode = enabled) }
 
-    /** Forzar un método manualmente. BLE/SPP no se puede forzar: está en Etapa 2. */
+    /** Forzar un método manualmente. BLE/SPP no se puede forzar: no implementado (Fase 5). */
     fun selectMethod(method: TransportMethod) {
         if (method == TransportMethod.BLUETOOTH_DATA) {
-            _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): Pendiente Etapa 2, no se puede forzar todavía.") }
+            _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): no implementado todavía (Fase 5 del plan). No se puede forzar; usa Wi-Fi o Bluetooth HID.") }
             return
         }
         _ui.update { it.copy(selectedMethod = method, transportMode = TransportMode.MANUAL, error = null) }
@@ -987,7 +987,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private fun connect(info: PairingInfo, method: TransportMethod) {
         if (method == TransportMethod.BLUETOOTH_HID) { connectHid(); return }
         if (method == TransportMethod.BLUETOOTH_DATA) {
-            _ui.update { it.copy(error = "Bluetooth datos: Pendiente Etapa 2.") }; return
+            _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): no implementado todavía (Fase 5 del plan).") }; return
         }
         // CONECTANDO hasta que la TV devuelva el primer eco de ping:
         // antes se marcaba CONECTADO al instante aunque la TV no

@@ -80,6 +80,14 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         if (ui.hidAvailability.name == "UNAVAILABLE") {
             Text("Bluetooth HID: no disponible en este teléfono o sin comprobar. Ver Etapa 0.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
         }
+        // BLE/SPP (2026-11-07): NO implementado, y hay que decirlo
+        // así. Antes el chip decía "Pendiente Etapa 2", que suena a
+        // que casi funciona; no es un respaldo real y no se puede
+        // forzar. Respaldos reales: Wi-Fi UDP/TCP y Bluetooth HID.
+        Text(
+            "Bluetooth datos (BLE/SPP): no implementado todavía — no se puede usar ni forzar. Si falla todo el Wi-Fi, los respaldos reales son Bluetooth HID y el hotspot.",
+            color = Color(0xFFFFC107), fontSize = 12.sp,
+        )
         if (ui.selectedMethod == TransportMethod.BLUETOOTH_HID) {
             // H3 / Fase 1: no prometer lo que el HID no da. Por
             // Bluetooth HID los gatillos LT/RT son digitales
@@ -105,7 +113,7 @@ private fun statusText(status: TransportStatus): String = when (status) {
     TransportStatus.UNAVAILABLE -> "No disponible"
     TransportStatus.CONNECTED -> "Conectado"
     TransportStatus.FAILED -> "Fallo"
-    TransportStatus.PENDING_STAGE2 -> "Pendiente Etapa 2"
+    TransportStatus.PENDING_STAGE2 -> "No implementado"
 }
 
 private fun statusColor(status: TransportStatus): Color = when (status) {
