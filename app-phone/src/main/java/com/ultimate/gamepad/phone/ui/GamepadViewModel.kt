@@ -125,6 +125,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
 
+    /** Reenvío HID periódico (10 Hz) del último estado mientras el HID está conectado (ver startHidHeartbeat). */
+    private var hidHeartbeatJob: Job? = null
+
     // --- Extras Fase 4 (estado; van ANTES del init porque el init
     // los lee: en Kotlin los inicializadores corren en orden textual
     // y un init que leyera un flow declarado después lo encontraría
@@ -841,6 +844,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         _ui.update { it.copy(transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to status)) }
         when (status) {
             TransportStatus.CONNECTED -> {
+                startHidHeartbeat()
                 if (_ui.value.status != ConnectionStatus.CONNECTED) {
                     // Estábamos en ERROR tras la caída y sin Wi-Fi: el mando vuelve a ser HID.
                     hidRetryJob?.cancel(); hidRetryJob = null
@@ -860,6 +864,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Bluetooth caído mientras jugábamos por HID: a Wi-Fi ahora mismo, sin tocar nada. */
     private fun onHidDropped() {
+        stopHidHeartbeat()
         _ui.update {
             it.copy(
                 error = "Bluetooth desconectado por la TV; cambiando a Wi-Fi…",
@@ -903,8 +908,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             while (isActive && hidService.status != TransportStatus.CONNECTED) {
                 // El callback del proxy puede no llegar nunca si el
                 // firmware no expone el perfil: con timeout no se
-                // queda colgado el bucle.
-                val ok = withTimeoutOrNull(5000) {
+                // queda colgado el bucle (3 s, como el timeout de
+                // refreshHidStatus: antes 5 s, y cada intento fallido
+                // tardaba 5 s en pasar al siguiente backoff).
+                val ok = withTimeoutOrNull(3000) {
                     suspendCancellableCoroutine<Boolean> { cont ->
                         // La lambda NO puede ir como trailing lambda:
                         // el último parámetro es profileId (Int), no
@@ -1001,26 +1008,93 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private fun connectHid() {
         if (hidService.availability == HidAvailability.PERMISSION_DENIED) {
             _ui.update {
-                it.copy(error = "Falta el permiso de Bluetooth. Toca \"Dar permiso de Bluetooth\" en el selector de método.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+                it.copy(status = ConnectionStatus.ERROR, error = "Falta el permiso de Bluetooth. Toca \"Dar permiso de Bluetooth\" en el selector de método.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+            }
+            return
+        }
+        if (hidService.availability == HidAvailability.UNKNOWN) {
+            // AUTO (TCP -> HID) llegaba aquí con la disponibilidad
+            // sin comprobar (el usuario nunca abrió la pantalla de
+            // conexión) y fallaba al instante con "no disponible"
+            // sin haberlo intentado. Ahora se comprueba de verdad
+            // (2,5 s, dentro del plazo de 3 s del refreshPing para
+            // que AUTO no dispare otro cambio mientras tanto) y
+            // luego se registra o se da el error real.
+            _ui.update {
+                it.copy(status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, info = "Comprobando Bluetooth HID…")
+            }
+            refreshHidStatus(force = true)
+            viewModelScope.launch {
+                delay(2500)
+                if (hidService.availability == HidAvailability.AVAILABLE) {
+                    registerHid()
+                } else {
+                    _ui.update {
+                        it.copy(status = ConnectionStatus.ERROR, error = "Bluetooth HID no disponible en este teléfono (no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+                    }
+                }
             }
             return
         }
         if (hidService.availability != HidAvailability.AVAILABLE) {
             _ui.update {
-                it.copy(error = "Bluetooth HID no disponible en este teléfono (no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+                it.copy(status = ConnectionStatus.ERROR, error = "Bluetooth HID no disponible en este teléfono (no expone HID_DEVICE o falta permiso). Prueba Wi-Fi.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
             }
             return
         }
+        registerHid()
+    }
+
+    /**
+     * Registra la app HID y entra en modo HID. Los fallos ponen
+     * estado ERROR de verdad: antes connectHid() dejaba el estado
+     * anterior (CONNECTING o CONECTADO por Wi-Fi) y la UI se
+     * quedaba en "Conectado" aunque el HID no existiera y AUTO
+     * ya no tuviera a dónde ir.
+     */
+    private fun registerHid() {
         if (!hidService.register(GamepadSender.activeProfileId)) {
-            _ui.update { it.copy(error = "No se pudo registrar el mando HID.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED)) }
+            _ui.update {
+                it.copy(status = ConnectionStatus.ERROR, error = "No se pudo registrar el mando HID.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED))
+            }
             return
         }
         // Entrar en HID: limpiar los ecos viejos de Wi-Fi, que si no
         // harían saltar el fallback como si la TV no respondiera.
         GamepadSenderService.resetHealth()
+        startHidHeartbeat()
         _ui.update {
             it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como '${GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName}'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
         }
+    }
+
+    /**
+     * Reenvío HID a 10 Hz del último estado mientras el HID está
+     * conectado. Por HID los reportes solo se enviaban cuando
+     * cambiaba la entrada (publish): si un reporte se perdía, el
+     * botón quedaba en el estado viejo hasta el siguiente cambio
+     * (H3 del plan). El reenvío es idempotente (mismo estado) y
+     * barato (7 bytes a 10 Hz); no sustituye al envío por cambio,
+     * lo refuerza. Se para al caer el HID o al desconectar.
+     */
+    private fun startHidHeartbeat() {
+        hidHeartbeatJob?.cancel()
+        hidHeartbeatJob = viewModelScope.launch {
+            while (isActive) {
+                delay(100)
+                if (hidService.status == TransportStatus.CONNECTED) {
+                    hidService.sendReport(GamepadSender.currentState)
+                } else {
+                    break
+                }
+            }
+            hidHeartbeatJob = null
+        }
+    }
+
+    private fun stopHidHeartbeat() {
+        hidHeartbeatJob?.cancel()
+        hidHeartbeatJob = null
     }
 
     /**
@@ -1049,6 +1123,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     fun disconnect(silent: Boolean = false) {
         hidRetryJob?.cancel(); hidRetryJob = null
+        stopHidHeartbeat()
         // Al desconectar, parar la macro y el turbo: si no, el
         // generador seguiría publicando estados que el servicio
         // ya no envía, y la siguiente conexión empezaría con la
