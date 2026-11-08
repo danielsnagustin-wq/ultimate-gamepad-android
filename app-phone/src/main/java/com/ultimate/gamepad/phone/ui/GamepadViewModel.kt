@@ -126,6 +126,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
 
+    /**
+     * Espera de 2,5 s de connectHid() (comprobación HID en curso).
+     * Sin guardar el Job, desconectar o cambiar de método no la
+     * cancelaba y disparaba registerHid() o ERROR después de que
+     * el intento ya había terminado: CONECTADO fantasma o ERROR
+     * sobre un estado nuevo. Se cancela en disconnect() y antes
+     * de cada connectHid() nuevo.
+     */
+    private var hidCheckJob: Job? = null
+
     /** Callback de red (cambio/pérdida de Wi-Fi): se desregistra en onCleared. */
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -817,6 +827,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         val now = System.currentTimeMillis()
         if (!force && now - lastHidCheckAtMs < 10_000) return
         lastHidCheckAtMs = now
+        val checkStartedAt = now
         hidService.checkAvailability { availability ->
             val status = when (availability) {
                 HidAvailability.AVAILABLE -> TransportStatus.AVAILABLE
@@ -833,9 +844,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Si el firmware no expone el perfil, el callback de arriba
         // no llega nunca y el estado se quedaba en UNKNOWN para
         // siempre: a los 3 s sin respuesta, es NO DISPONIBLE.
+        // Solo vale si no empezó otra comprobación después (si no,
+        // el timeout viejo marcaría NO DISPONIBLE una comprobación
+        // nueva que aún está en curso).
         viewModelScope.launch {
             delay(3000)
-            if (hidService.availability == HidAvailability.UNKNOWN) {
+            if (lastHidCheckAtMs == checkStartedAt && hidService.availability == HidAvailability.UNKNOWN) {
                 _ui.update {
                     it.copy(
                         hidAvailability = HidAvailability.UNAVAILABLE,
@@ -1081,11 +1095,20 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             // (2,5 s, dentro del plazo de 3 s del refreshPing para
             // que AUTO no dispare otro cambio mientras tanto) y
             // luego se registra o se da el error real.
+            // La espera va guardada en hidCheckJob: si el usuario
+            // desconecta o AUTO cambia de método antes, se cancela
+            // y no resucita la conexión después (antes la espera
+            // seguía viva y registraba el HID tras desconectar).
+            // Y se limpia la salud de Wi-Fi ANTES de esperar: un
+            // eco viejo hacía que refreshPing marcara CONECTADO
+            // por HID sin haber registrado nada.
+            hidCheckJob?.cancel()
+            GamepadSenderService.resetHealth()
             _ui.update {
                 it.copy(status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, info = "Comprobando Bluetooth HID…")
             }
             refreshHidStatus(force = true)
-            viewModelScope.launch {
+            hidCheckJob = viewModelScope.launch {
                 delay(2500)
                 if (hidService.availability == HidAvailability.AVAILABLE) {
                     registerHid()
@@ -1184,6 +1207,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     fun disconnect(silent: Boolean = false) {
         hidRetryJob?.cancel(); hidRetryJob = null
+        hidCheckJob?.cancel(); hidCheckJob = null
         stopHidHeartbeat()
         // Al desconectar, parar la macro y el turbo: si no, el
         // generador seguiría publicando estados que el servicio

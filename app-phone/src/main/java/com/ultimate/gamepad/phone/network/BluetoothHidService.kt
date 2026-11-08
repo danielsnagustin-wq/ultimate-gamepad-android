@@ -74,8 +74,23 @@ class BluetoothHidService(private val context: Context) {
     private var hidDevice: BluetoothHidDevice? = null
     private var proxyReady = false
 
+    /**
+     * Generación de la petición de proxy vigente: cada requestProxy
+     * abre un listener nuevo y el anterior queda obsoleto. Sin
+     * esto, el onServiceConnected de una petición vieja (p. ej. la
+     * del arranque) podía llegar tarde y pisar la disponibilidad
+     * con un proxy ya cerrado — el chip decía "Disponible" y el
+     * registro fallaba, o al revés. Los callbacks con otra
+     * generación se ignoran.
+     */
+    @Volatile private var proxyRequestId = 0
+
     /** Cierra el proxy de perfil anterior: cada getProfileProxy sin su closeProfileProxy acumulaba un listener y un proxy. */
     private fun closeProfileProxy() {
+        // Invalidar los callbacks pendientes de la petición vieja:
+        // si su onServiceConnected llega tarde, se ignora (ver
+        // proxyRequestId) en vez de resucitar un proxy cerrado.
+        proxyRequestId++
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         val proxy = hidDevice
         if (adapter != null && proxy != null) {
@@ -93,6 +108,7 @@ class BluetoothHidService(private val context: Context) {
      */
     private fun requestProxy(onResult: (HidAvailability) -> Unit) {
         closeProfileProxy()
+        val myId = ++proxyRequestId
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         if (adapter == null || !adapter.isEnabled) {
             availability = HidAvailability.UNAVAILABLE
@@ -107,6 +123,7 @@ class BluetoothHidService(private val context: Context) {
         val result = runCatching {
             adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                    if (myId != proxyRequestId) return
                     if (profile == BluetoothProfile.HID_DEVICE) {
                         hidDevice = proxy as BluetoothHidDevice
                         proxyReady = true
@@ -116,6 +133,7 @@ class BluetoothHidService(private val context: Context) {
                     }
                 }
                 override fun onServiceDisconnected(profile: Int) {
+                    if (myId != proxyRequestId) return
                     if (profile == BluetoothProfile.HID_DEVICE) {
                         proxyReady = false
                         availability = HidAvailability.UNAVAILABLE

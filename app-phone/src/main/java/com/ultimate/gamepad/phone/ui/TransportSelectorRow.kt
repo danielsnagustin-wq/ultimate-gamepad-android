@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.TransportStatus
 
@@ -63,8 +64,17 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 dotColor = Color(0xFF4CAF50),
             ) { vm.setHotspotMode(!ui.hotspotMode) }
             for ((method, status) in ui.transportStatus) {
+                // Mientras la comprobación HID no ha resuelto, el
+                // chip lo dice ("Comprobando…") en vez del "No
+                // disponible" inicial, que fingía un veredicto
+                // antes de comprobar nada.
+                val label = if (method == TransportMethod.BLUETOOTH_HID && ui.hidAvailability == HidAvailability.UNKNOWN) {
+                    "Bluetooth HID · Comprobando…"
+                } else {
+                    "${method.label} · ${statusText(status)}"
+                }
                 Chip(
-                    label = "${method.label} · ${statusText(status)}",
+                    label = label,
                     selected = ui.selectedMethod == method,
                     dotColor = statusColor(status),
                 ) { vm.selectMethod(method) }
@@ -77,8 +87,21 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 color = Color(0xFF9AA0B0), fontSize = 12.sp,
             )
         }
-        if (ui.hidAvailability.name == "UNAVAILABLE") {
-            Text("Bluetooth HID: no disponible en este teléfono o sin comprobar. Ver Etapa 0.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        // Estado de la verificación HID, sin ambigüedad: antes el
+        // chip decía "No disponible" desde el arranque, antes de
+        // comprobar nada, y la nota mezclaba "no disponible" con
+        // "sin comprobar". Ahora: UNKNOWN = comprobando (y se ve),
+        // UNAVAILABLE = comprobado y no disponible, con botón para
+        // volver a comprobar (p. ej. tras encender el Bluetooth).
+        if (ui.hidAvailability == HidAvailability.UNKNOWN) {
+            Text("Bluetooth HID: comprobando si este teléfono puede ser mando Bluetooth…", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        }
+        if (ui.hidAvailability == HidAvailability.UNAVAILABLE) {
+            Text("Bluetooth HID: no disponible en este teléfono (no expone HID_DEVICE o el Bluetooth está apagado).", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = { vm.refreshHidStatus(force = true) }) {
+                Text("Volver a comprobar Bluetooth")
+            }
         }
         // BLE/SPP (2026-11-07): NO implementado, y hay que decirlo
         // así. Antes el chip decía "Pendiente Etapa 2", que suena a
