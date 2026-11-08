@@ -1536,9 +1536,24 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (_ui.value.transportMode != TransportMode.AUTO) return
         if (_ui.value.status != ConnectionStatus.CONNECTED && _ui.value.status != ConnectionStatus.CONNECTING) return
         if (!force && GamepadSenderService.isTvResponding()) return
-        val current = GamepadSenderService.activeMethod
+        // A-1: el método actual es el que la UI está intentando
+        // (attemptMethod), no el del servicio: tras entrar en HID el
+        // servicio sigue con el último método Wi-Fi y la cadena se
+        // calculaba mal (p. ej. desde HID volvía a probar TCP).
+        // attemptMethod siempre está en AUTO_ORDER: nunca es
+        // HOTSPOT (es un modo, no un método) ni un método del
+        // servicio sin UI.
+        val current = _ui.value.attemptMethod
         val order = TransportSelector.AUTO_ORDER
-        val next = order.dropWhile { it != current }.drop(1).firstOrNull()
+        // A-1: Bluetooth datos sin TV emparejada no se puede ni
+        // intentar: connectBtData() da ERROR terminal ("Empareja la
+        // TV…") y la cadena muere ahí sin llegar nunca a HID, que
+        // era el último respaldo. En AUTO se salta ese paso cuando
+        // no hay MAC guardada; en MANUAL sigue dando su error
+        // honesto (el usuario lo eligió a propósito).
+        val savedMac = LastConnectionPrefs.load(getApplication())?.btAddress?.takeIf { it.isNotBlank() }
+        val next = order.dropWhile { it != current }.drop(1)
+            .firstOrNull { it != TransportMethod.BLUETOOTH_DATA || !savedMac.isNullOrBlank() }
         if (next == null) {
             // A7: nombrar el método real del último fallo, no
             // "ningún método Wi-Fi": si se llegó aquí por HID, el
