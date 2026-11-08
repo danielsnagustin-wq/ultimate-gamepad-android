@@ -367,6 +367,9 @@ class MainActivity : Activity() {
         val buttonsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val startBtn = bigButton("▶  Iniciar receptor", greenDark) { startReceiver() }
         val stopBtn = bigButton("■  Detener receptor", Color.parseColor("#3A3A4A")) {
+            // T1: soltar controles + destruir el mando virtual y
+            // recordar "detenido" antes de parar los servicios.
+            UdpReceiverService.stopAndRelease(this@MainActivity)
             stopService(Intent(this@MainActivity, UdpReceiverService::class.java))
             stopService(Intent(this@MainActivity, TcpReceiverService::class.java))
             refresh()
@@ -399,13 +402,17 @@ class MainActivity : Activity() {
         // Auto-arranque: al abrir la app de la TV el receptor ya
         // está escuchando (UDP 51999 + TCP 52000) y el teléfono
         // puede descubrirla por broadcast sin pulsar el botón.
-        startReceiver()
+        // T1: salvo que el usuario lo detuviera a mano: entonces
+        // no vuelve solo hasta pulsar "Iniciar receptor".
+        if (!UdpReceiverService.isReceiverStopped(this)) startReceiver()
     }
 
     override fun onResume() { super.onResume(); handler.post(refresher) }
     override fun onPause() { super.onPause(); handler.removeCallbacks(refresher) }
 
     private fun startReceiver() {
+        // T1: pulsar "Iniciar receptor" borra el "detenido".
+        UdpReceiverService.setReceiverStopped(this, false)
         startForegroundService(Intent(this, UdpReceiverService::class.java))
         refresh()
     }

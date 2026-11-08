@@ -83,6 +83,27 @@ object ShizukuHelper {
     }
 
     /**
+     * T1: destruye el mando virtual actual (sin crear otro).
+     * Devuelve false si Shizuku no está listo o no hay servicio
+     * enlazado. Lo usa UdpReceiverService al detener el receptor
+     * y en onDestroy, para que el mando no quede listado sin
+     * entrada y ningún botón quede atascado en el juego.
+     */
+    fun destroyVirtualGamepad(context: Context): Boolean {
+        if (!Shizuku.pingBinder()) return false
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+        val service: IGamepadInputService? = GamepadUserService.boundService
+        if (service == null) {
+            GamepadUserService.bind(context)
+            return false
+        }
+        return runCatching {
+            service.destroyVirtualGamepad()
+            true
+        }.getOrDefault(false)
+    }
+
+    /**
      * Cambio de perfil en caliente (Fase 2): destruye el mando
      * virtual actual y crea uno nuevo con [profileId]. Devuelve
      * false si Shizuku no está listo o no hay servicio enlazado:

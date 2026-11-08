@@ -98,6 +98,46 @@ class UdpReceiverService : Service() {
         @Volatile var lastError: String? = null
             private set
 
+        // T1: el usuario puede detener el receptor y que NO vuelva
+        // solo al abrir la app. Se guarda en las mismas
+        // SharedPreferences que el PIN (TvPairing).
+        private const val PREFS_NAME = "ultimate_gamepad_tv"
+        private const val KEY_RECEIVER_STOPPED = "receiver_stopped"
+
+        fun isReceiverStopped(context: Context): Boolean =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_RECEIVER_STOPPED, false)
+
+        fun setReceiverStopped(context: Context, stopped: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_RECEIVER_STOPPED, stopped).apply()
+        }
+
+        /**
+         * T1: suelta los controles y destruye el mando virtual (+
+         * dispositivos extra de teclado/ratón) y resetea la
+         * inyección a "ninguno". Solo envía el estado cero si había
+         * algo que soltar y había inyección activa: sin Shizuku no
+         * hay nada atascado que liberar.
+         */
+        fun releaseControls(context: Context) {
+            if (lastState != GamepadState() && (virtualGamepadReady || injectionMethod != "ninguno")) {
+                val zero = GamepadState()
+                deliver(context, zero, GamepadProtocol.encode(zero, activeProfileId))
+                lastState = zero
+            }
+            ShizukuHelper.destroyVirtualGamepad(context)
+            ShizukuHelper.destroyExtraDevices(context)
+            virtualGamepadReady = false
+            injectionMethod = "ninguno"
+        }
+
+        /** T1: parar a mano = soltar todo + recordar "detenido". */
+        fun stopAndRelease(context: Context) {
+            releaseControls(context)
+            setReceiverStopped(context, true)
+        }
+
         fun isConnected(): Boolean = ConnectionHealth.isAlive(lastPacketAtMs)
 
         /** Punto único de entrada para UDP y TCP: mismo paquete, mismo registro. */
@@ -363,6 +403,10 @@ class UdpReceiverService : Service() {
     }
 
     override fun onDestroy() {
+        // T1: al morir el servicio no queda nada atascado: estado
+        // cero + destruir el mando virtual. No se marca "detenido":
+        // si el sistema lo mata (START_STICKY), no fue el usuario.
+        releaseControls(this)
         job?.cancel(); watchdogJob?.cancel(); watchdogJob = null; runCatching { socket?.close() }; socket = null
         wifiLock.release()
         stopService(Intent(this, TcpReceiverService::class.java))
