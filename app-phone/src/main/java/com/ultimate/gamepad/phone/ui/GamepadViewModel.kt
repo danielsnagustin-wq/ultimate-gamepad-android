@@ -1061,7 +1061,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 if (_ui.value.status != ConnectionStatus.CONNECTED) {
                     // Estábamos en ERROR tras la caída y sin Wi-Fi: el mando vuelve a ser HID.
                     hidRetryJob?.cancel(); hidRetryJob = null
-                    _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "Bluetooth reconectado con la TV.") }
+                    _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "Bluetooth HID conectado con la TV.") }
                 } else {
                     _ui.update { it.copy(info = "Bluetooth disponible de nuevo (sigues por Wi-Fi).") }
                 }
@@ -1459,6 +1459,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
      * anterior (CONNECTING o CONECTADO por Wi-Fi) y la UI se
      * quedaba en "Conectado" aunque el HID no existiera y AUTO
      * ya no tuviera a dónde ir.
+     * El éxito del registro NO es conexión: se queda en CONECTANDO
+     * hasta que la TV empareje y conecte, que es lo que marca
+     * onHidConnectionChanged (STATE_CONNECTED). Registrar solo dice
+     * que el teléfono aceptó el perfil local.
      */
     private fun registerHid() {
         if (!hidService.register(GamepadSender.activeProfileId)) {
@@ -1469,10 +1473,18 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
         // Entrar en HID: limpiar los ecos viejos de Wi-Fi, que si no
         // harían saltar el fallback como si la TV no respondiera.
+        // NO se marca CONECTADO aquí: registerApp() solo dice que el
+        // teléfono aceptó el registro local; la TV aún no ha
+        // emparejado ni conectado. Marcar CONECTADO aquí era mentir:
+        // la UI decía "Conectado" sin que nada funcionara (publish()
+        // no envía nada hasta STATE_CONNECTED) y AUTO nunca saltaba
+        // de método porque resetHealth() dejaba los marcadores de
+        // eco a cero y la rama CONECTADO de refreshPing no disparaba
+        // el fallback. El latido HID lo arranca el callback al
+        // conectar de verdad (onHidConnectionChanged).
         GamepadSenderService.resetHealth()
-        startHidHeartbeat()
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.CONNECTED), error = null, info = "HID registrado como '${GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName}'. Empareja ese nombre en la TV (Ajustes > Mandos). Sin app receptora.")
+            it.copy(status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "HID registrado como '${GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName}'. Empareja ese nombre en la TV (Ajustes > Bluetooth). Esperando a que la TV conecte…")
         }
     }
 
@@ -1606,7 +1618,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                     // 3 s sin eco: en AUTO se prueba el siguiente
                     // método; en MANUAL se dice el error y se para,
                     // en vez de quedarse tieso en "Conectando".
-                    if (_ui.value.transportMode == TransportMode.AUTO) {
+                    // HID: el emparejado es manual (el usuario abre
+                    // los ajustes Bluetooth de la TV, busca el
+                    // teléfono y confirma) y tarda más de 3 s. No se
+                    // corta ni se cambia de método: la conexión HID
+                    // la marca el callback onHidConnectionChanged,
+                    // no el eco. Vale en AUTO y en MANUAL.
+                    if (_ui.value.attemptMethod == TransportMethod.BLUETOOTH_HID) {
+                        // Seguir esperando a que la TV conecte.
+                    } else if (_ui.value.transportMode == TransportMode.AUTO) {
                         tryNextTransport()
                     } else {
                         disconnect(silent = true)
