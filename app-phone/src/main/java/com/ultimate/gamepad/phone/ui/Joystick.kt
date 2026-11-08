@@ -122,7 +122,17 @@ fun Modifier.pressEffect(pressed: Boolean): Modifier {
  * cancela el toque.
  */
 @Composable
-fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick: (() -> Unit)? = null) {
+fun JoystickView(
+    onMove: (Float, Float) -> Unit,
+    onRelease: () -> Unit,
+    onClick: (() -> Unit)? = null,
+    /** En el panel de botones el stick se dibuja igual pero no se
+     * mueve ni pulsa L3/R3: el gesto es del editor (arrastrar el
+     * stick entero), no del juego. Sin esto, el arrastre del stick
+     * en el editor movería el pomo y se pelearía con el arrastre
+     * del elemento. */
+    interactive: Boolean = true,
+) {
     var knob by remember { mutableStateOf(Offset.Zero) }
     // P4 (auditoría): `radius` eran 80 PÍXELES, no dp, sobre una
     // base de 180 dp: en ~400 dpi el pomo daba deflexión máxima a
@@ -136,25 +146,30 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
     val radius = with(density) { 54.dp.toPx() }
     Box(
         modifier = Modifier.size(180.dp)
-            .pointerInput(Unit) { detectTapGestures(onTap = { onClick?.invoke() }) }
-            .pointerInput(Unit) {
-            detectDragGestures(
-                onDragEnd = { knob = Offset.Zero; onRelease() },
-                onDragCancel = { knob = Offset.Zero; onRelease() },
-            ) { change, dragAmount ->
-                change.consume()
-                val next = knob + dragAmount
-                val len = sqrt(next.x * next.x + next.y * next.y)
-                val clamped = if (len > radius) next * (radius / len) else next
-                knob = clamped
-                // Y: arriba en pantalla = -1 (adelante), como un
-                // mando real (AXIS_Y / ABS_Y: arriba es negativo).
-                // La versión anterior negaba el valor y mandaba
-                // +1 al subir: el personaje o el menú se movían
-                // al revés en el juego.
-                onMove(clamped.x / radius, clamped.y / radius)
-            }
-        },
+            .then(
+                if (interactive) {
+                    Modifier
+                        .pointerInput(Unit) { detectTapGestures(onTap = { onClick?.invoke() }) }
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragEnd = { knob = Offset.Zero; onRelease() },
+                                onDragCancel = { knob = Offset.Zero; onRelease() },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                val next = knob + dragAmount
+                                val len = sqrt(next.x * next.x + next.y * next.y)
+                                val clamped = if (len > radius) next * (radius / len) else next
+                                knob = clamped
+                                // Y: arriba en pantalla = -1 (adelante), como un
+                                // mando real (AXIS_Y / ABS_Y: arriba es negativo).
+                                // La versión anterior negaba el valor y mandaba
+                                // +1 al subir: el personaje o el menú se movían
+                                // al revés en el juego.
+                                onMove(clamped.x / radius, clamped.y / radius)
+                            }
+                        }
+                } else Modifier
+            ),
     ) {
         Canvas(modifier = Modifier.size(180.dp)) {
             val c = center
@@ -215,7 +230,7 @@ fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick:
  * las 4 teclas van sobre un disco oscuro con anillo tenue, en
  * vez de flotar sueltas. */
 @Composable
-fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit) {
+fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit, interactive: Boolean = true) {
     var up by remember { mutableStateOf(false) }
     var down by remember { mutableStateOf(false) }
     var left by remember { mutableStateOf(false) }
@@ -230,15 +245,15 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit) {
     ) {
         Column {
             Row {
-                Box(Modifier.size(56.dp)); DpadKey("▲") { p -> up = p; emit() }; Box(Modifier.size(56.dp))
+                Box(Modifier.size(56.dp)); DpadKey("▲", interactive = interactive) { p -> up = p; emit() }; Box(Modifier.size(56.dp))
             }
             Row {
-                DpadKey("◀") { p -> left = p; emit() }
+                DpadKey("◀", interactive = interactive) { p -> left = p; emit() }
                 Box(Modifier.size(56.dp))
-                DpadKey("▶") { p -> right = p; emit() }
+                DpadKey("▶", interactive = interactive) { p -> right = p; emit() }
             }
             Row {
-                Box(Modifier.size(56.dp)); DpadKey("▼") { p -> down = p; emit() }; Box(Modifier.size(56.dp))
+                Box(Modifier.size(56.dp)); DpadKey("▼", interactive = interactive) { p -> down = p; emit() }; Box(Modifier.size(56.dp))
             }
         }
     }
@@ -248,7 +263,7 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit) {
  * de Material con la flecha casi invisible; ahora es una tecla
  * oscura brillante con borde neón y flecha blanca grande. */
 @Composable
-fun DpadKey(label: String, onPress: (Boolean) -> Unit) {
+fun DpadKey(label: String, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(56.dp)
@@ -261,7 +276,7 @@ fun DpadKey(label: String, onPress: (Boolean) -> Unit) {
                 ),
             )
             .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-            .pointerPress { p -> pressed = p; onPress(p) },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
 }

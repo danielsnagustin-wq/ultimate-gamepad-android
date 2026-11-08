@@ -382,4 +382,147 @@ class LayoutGeometryTest {
         val spanCenter = (cols.left.top + cols.left.bottom) / 2f
         return availH / 2f + (dpadBottomInColumn - spanCenter) * fit
     }
+
+    private fun allRects(rects: LayoutGeometry.ElementRects): List<Pair<String, LayoutGeometry.ElementRect>> =
+        listOfNotNull(
+            rects.shouldersLeft?.let { "LT/LB" to it },
+            rects.shouldersRight?.let { "RB/RT" to it },
+            rects.leftStick?.let { "stick izquierdo" to it },
+            rects.dpad?.let { "cruceta" to it },
+            rects.abxy?.let { "ABXY" to it },
+            rects.rightStick?.let { "stick derecho" to it },
+            rects.view?.let { "VIEW" to it },
+            rects.xbox?.let { "Xbox" to it },
+            rects.menu?.let { "MENU" to it },
+            rects.share?.let { "SHARE" to it },
+            rects.l4?.let { "L4" to it },
+            rects.r4?.let { "R4" to it },
+        )
+
+    /**
+     * La vista previa del panel de botones usa la misma matemática
+     * que la pantalla real (LayoutGeometry.elementRects): lo que se
+     * ve en el editor es lo que se juega. Antes el editor dibujaba
+     * una miniatura de un panel ficticio de 800x300 dp con sus
+     * propias posiciones base y la cruceta se cortaba por el borde
+     * (foto del usuario 50220_0_fp5r.jpg); con la matemática real
+     * todo cabe en el área, incluso con la cruceta arrastrada al
+     * máximo que permitía el recorte viejo (+58 dp abajo).
+     */
+    @Test fun `la vista previa real no recorta nada en la ventana del usuario`() {
+        val windows = listOf(
+            "ventana del usuario 757x365" to (757f to 365f),
+            "pantalla 791x365" to (791f to 365f),
+            "pantalla 891x411" to (891f to 411f),
+            "pantalla 1280x800" to (1280f to 800f),
+        )
+        val layouts = listOf(
+            "por defecto" to LayoutGeometry.GeomLayout(),
+            "offsets guardados" to userOffsets(),
+            "escala 1.4" to scaled(1.4f),
+        )
+        for ((wName, wh) in windows) {
+            val (screenW, screenH) = wh
+            val aw = areaW(screenW)
+            val ah = areaH(screenH)
+            for ((lName, layout) in layouts) {
+                for ((name, r) in allRects(L.elementRects(layout, aw, ah))) {
+                    assertTrue("$wName $lName: $name se sale por la izquierda (${r.left})", r.left >= -0.5f)
+                    assertTrue("$wName $lName: $name se sale por arriba (${r.top})", r.top >= -0.5f)
+                    assertTrue("$wName $lName: $name se sale por la derecha (${r.right} > $aw)", r.right <= aw + 0.5f)
+                    assertTrue("$wName $lName: $name se sale por abajo (${r.bottom} > $ah)", r.bottom <= ah + 0.5f)
+                }
+            }
+        }
+        // La cruceta arrastrada +58 dp abajo (el máximo que dejaba
+        // el recorte viejo del panel): en la miniatura vieja se
+        // cortaba por el borde inferior de la vista previa; con la
+        // matemática real queda dentro del área.
+        val dragged = LayoutGeometry.GeomLayout(dpad = el(offsetYdp = 58))
+        val dpad = L.elementRects(dragged, areaW(757f), areaH(365f)).dpad!!
+        assertTrue("cruceta arrastrada +58 se sale (${dpad.bottom} > ${areaH(365f)})", dpad.bottom <= areaH(365f) + 0.5f)
+    }
+
+    /**
+     * Round-trip editor -> pantalla real: arrastrar un botón en la
+     * vista previa cambia su desplazamiento guardado y la pantalla
+     * real lo dibuja en el sitio que corresponde a ese
+     * desplazamiento, sin factores de escala de por medio. En X el
+     * centro se mueve exactamente dx * fit; en Y, lo mismo para un
+     * elemento que no está en el borde del span (VIEW: el Xbox, más
+     * alto, manda en la fila y el span no cambia). La miniatura
+     * vieja duplicaba el movimiento (dividía por miniScale lo que
+     * Compose ya había invertido): el botón volaba 1,7x.
+     */
+    @Test fun `arrastrar en el editor mueve el botón lo mismo en la pantalla real`() {
+        // Ventana del usuario en horizontal (área 733x341) y
+        // teléfono en vertical (área 366x820, ajuste 0,799).
+        val cases = listOf(
+            "ventana del usuario" to (733f to 341f),
+            "vertical 390" to (366f to 820f),
+        )
+        for ((name, wh) in cases) {
+            val (aw, ah) = wh
+            val layout = LayoutGeometry.GeomLayout()
+            val before = L.elementRects(layout, aw, ah)
+            val fit = if (aw > ah) {
+                val cols = L.landscapeColumns(layout)
+                L.fitFor(aw, ah - L.SHOULDER_ROW_H, cols.maxSpanH, cols.contentW)
+            } else {
+                L.portrait(layout, aw, ah).fitScale
+            }
+            // Arrastre en X de la cruceta (+20 dp): el centro se
+            // mueve exactamente 20 * fit (el ajuste no cambia: el
+            // ancho lo manda el alto en esta ventana y el ancho en
+            // vertical no depende de los desplazamientos).
+            val dragX = layout.copy(dpad = el(offsetXdp = 20))
+            val fitX = if (aw > ah) {
+                val cols = L.landscapeColumns(dragX)
+                L.fitFor(aw, ah - L.SHOULDER_ROW_H, cols.maxSpanH, cols.contentW)
+            } else {
+                L.portrait(dragX, aw, ah).fitScale
+            }
+            assertEquals("$name: el ajuste cambió al arrastrar en X", fit, fitX, 0.001f)
+            val afterX = L.elementRects(dragX, aw, ah)
+            assertEquals("$name: la cruceta no se movió dx * fit en X", 20f * fit, afterX.dpad!!.centerX - before.dpad!!.centerX, 0.01f)
+            assertEquals("$name: la cruceta se movió en Y al arrastrar solo en X", 0f, afterX.dpad!!.centerY - before.dpad!!.centerY, 0.01f)
+            // Arrastre en Y de VIEW (+10 dp): VIEW no manda en la
+            // fila (el Xbox es más alto), así que el span no cambia
+            // y el centro se mueve exactamente 10 * fit.
+            val dragY = layout.copy(view = el(offsetYdp = 10))
+            val afterY = L.elementRects(dragY, aw, ah)
+            assertEquals("$name: VIEW no se movió dy * fit en Y", 10f * fit, afterY.view!!.centerY - before.view!!.centerY, 0.01f)
+            assertEquals("$name: VIEW se movió en X al arrastrar solo en Y", 0f, afterY.view!!.centerX - before.view!!.centerX, 0.01f)
+        }
+    }
+
+    /**
+     * Anclas de la vista previa en la ventana del usuario: los
+     * centros que dibuja la matemática real, comprobados con una
+     * simulación independiente en Python con las mismas fórmulas.
+     * Si alguien vuelve a poner una miniatura con posiciones
+     * propias, estos números se rompen.
+     */
+    @Test fun `la vista previa pone cada botón donde lo pone la pantalla real`() {
+        // Horizontal, ventana del usuario (área 733x341), diseño
+        // por defecto: ajuste 0,7271.
+        val rects = L.elementRects(LayoutGeometry.GeomLayout(), 733f, 341f)
+        assertEquals(188.92f, rects.leftStick!!.centerX, 0.05f)
+        assertEquals(117.07f, rects.leftStick!!.centerY, 0.05f)
+        assertEquals(188.92f, rects.dpad!!.centerX, 0.05f)
+        assertEquals(268.29f, rects.dpad!!.centerY, 0.05f)
+        assertEquals(542.63f, rects.abxy!!.centerX, 0.05f)
+        assertEquals(112.71f, rects.abxy!!.centerY, 0.05f)
+        assertEquals(365.05f, rects.xbox!!.centerX, 0.05f)
+        assertEquals(150.51f, rects.xbox!!.centerY, 0.05f)
+        // Vertical, teléfono 390x844 (área 366x820): ajuste 0,799,
+        // la fila central queda justo dentro (L4 en 0, R4 en 366).
+        val layout = LayoutGeometry.GeomLayout()
+        assertEquals(0.7991f, L.portrait(layout, 366f, 820f).fitScale, 0.001f)
+        val portrait = L.elementRects(layout, 366f, 820f)
+        assertEquals(0f, portrait.l4!!.left, 0.05f)
+        assertEquals(366f, portrait.r4!!.right, 0.05f)
+        assertEquals(23.17f, portrait.l4!!.centerX, 0.05f)
+        assertEquals(342.83f, portrait.r4!!.centerX, 0.05f)
+    }
 }

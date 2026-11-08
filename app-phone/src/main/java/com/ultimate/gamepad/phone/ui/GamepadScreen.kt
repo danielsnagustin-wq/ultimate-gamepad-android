@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,6 +41,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -49,6 +53,7 @@ import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadExtraButtons
 import com.ultimate.gamepad.core.LayoutGeometry
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /**
  * Mando estilo Xbox Series, AMOLED (negro puro) con acentos neón.
@@ -69,6 +74,39 @@ import kotlinx.coroutines.delay
  * Personalizar botones o desde el panel visual de botones
  * (LayoutConfig); el ⚙ siempre queda visible para poder volver.
  */
+/** Cómo se interactúa con el cuerpo del mando. En juego, cada
+ * botón envía su entrada real; en edición (panel de botones),
+ * tocar un elemento abre su ajuste y arrastrarlo lo mueve: el
+ * botón en sí no envía nada. La vista previa del panel usa el
+ * MISMO cuerpo que la pantalla real (GamepadBody), así lo que se
+ * ve en el editor es lo que se juega: mismos tamaños, mismas
+ * posiciones, misma matemática (LayoutGeometry). */
+sealed interface GamepadInteraction {
+    class Game(val vm: GamepadViewModel, val ui: GamepadUiState) : GamepadInteraction
+    class Edit(
+        val onTapElement: (String) -> Unit,
+        val onDragElement: (String, Int, Int) -> Unit,
+        val onDragEnd: (String) -> Unit,
+        val selectedId: String?,
+    ) : GamepadInteraction
+}
+
+/** Un diseño guardado, como geometría pura de :core. */
+internal fun LayoutConfig.toGeomLayout(): LayoutGeometry.GeomLayout = LayoutGeometry.GeomLayout(
+    leftStick = element(LayoutConfig.LEFT_STICK).toGeom(),
+    dpad = element(LayoutConfig.DPAD).toGeom(),
+    abxy = element(LayoutConfig.ABXY).toGeom(),
+    rightStick = element(LayoutConfig.RIGHT_STICK).toGeom(),
+    view = element(LayoutConfig.VIEW).toGeom(),
+    xbox = element(LayoutConfig.XBOX).toGeom(),
+    menu = element(LayoutConfig.MENU).toGeom(),
+    share = element(LayoutConfig.SHARE).toGeom(),
+    shouldersLeft = element(LayoutConfig.SHOULDERS_LEFT).toGeom(),
+    shouldersRight = element(LayoutConfig.SHOULDERS_RIGHT).toGeom(),
+    l4 = element(LayoutConfig.L4).toGeom(),
+    r4 = element(LayoutConfig.R4).toGeom(),
+)
+
 @Composable
 fun GamepadScreen(vm: GamepadViewModel) {
     val ui by vm.ui.collectAsState()
@@ -111,6 +149,35 @@ fun GamepadScreen(vm: GamepadViewModel) {
             )
             .padding(12.dp),
     ) {
+        GamepadBody(vm, ui, layout, GamepadInteraction.Game(vm, ui), Modifier.fillMaxSize())
+        if (ui.showSettings) SettingsScreen(vm, ui)
+        if (ui.showLayoutEditor) LayoutEditorScreen(vm) { vm.closeLayoutEditor() }
+        if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeSettings() }, vibrationEnabled = vm.vibrationEnabled.collectAsState().value)
+        // Pantallas Fase 3 (se abren desde Ajustes, vuelven a Ajustes al cerrar).
+        if (ui.showControllerType) ControllerTypeScreen(vm, ui) { vm.closeControllerType() }
+        if (ui.showGameProfiles) GameProfilesScreen(vm) { vm.closeGameProfiles() }
+        if (ui.showControllerTest) ControllerTestScreen(vm, ui) { vm.closeControllerTest() }
+        if (ui.showPerformance) PerformanceScreen(vm, ui) { vm.closePerformance() }
+        // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
+        if (ui.showExtras) ExtrasScreen(vm, ui) { vm.closeExtras() }
+    }
+}
+
+/** Cuerpo del mando (hombros + controles), compartido por la
+ * pantalla real y por la vista previa del panel de botones: la
+ * misma matemática (LayoutGeometry) y los mismos composables, así
+ * lo que se ve en el editor es lo que se juega. En edición no se
+ * muestran los avisos (son transitorios) y ningún botón envía
+ * nada: tocar abre su ajuste y arrastrar lo mueve. */
+@Composable
+fun GamepadBody(
+    vm: GamepadViewModel,
+    ui: GamepadUiState,
+    layout: LayoutConfig,
+    interaction: GamepadInteraction,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier = modifier.background(Color.Black)) {
         val isLandscape = maxWidth > maxHeight
         // Tamaño real del mando con la escala y el desplazamiento
         // del usuario: antes se escalaba por un fijo (500 dp) y el
@@ -122,20 +189,7 @@ fun GamepadScreen(vm: GamepadViewModel) {
         // Toda la matemática del layout vive en LayoutGeometry
         // (:core, sin Compose) y se comprueba con tests en CI para
         // varios tamaños de pantalla; aquí solo se usa el resultado.
-        val geom = LayoutGeometry.GeomLayout(
-            leftStick = layout.element(LayoutConfig.LEFT_STICK).toGeom(),
-            dpad = layout.element(LayoutConfig.DPAD).toGeom(),
-            abxy = layout.element(LayoutConfig.ABXY).toGeom(),
-            rightStick = layout.element(LayoutConfig.RIGHT_STICK).toGeom(),
-            view = layout.element(LayoutConfig.VIEW).toGeom(),
-            xbox = layout.element(LayoutConfig.XBOX).toGeom(),
-            menu = layout.element(LayoutConfig.MENU).toGeom(),
-            share = layout.element(LayoutConfig.SHARE).toGeom(),
-            shouldersLeft = layout.element(LayoutConfig.SHOULDERS_LEFT).toGeom(),
-            shouldersRight = layout.element(LayoutConfig.SHOULDERS_RIGHT).toGeom(),
-            l4 = layout.element(LayoutConfig.L4).toGeom(),
-            r4 = layout.element(LayoutConfig.R4).toGeom(),
-        )
+        val geom = layout.toGeomLayout()
         val columns = LayoutGeometry.landscapeColumns(geom)
         // En vertical la escala tiene en cuenta el ancho real del
         // contenido (incluida la fila central con L4/R4, 458 dp):
@@ -150,27 +204,29 @@ fun GamepadScreen(vm: GamepadViewModel) {
         val shoulderRowWidth = maxWidth - 24.dp
         NeonBackground(Modifier.fillMaxSize())
         Column(modifier = Modifier.fillMaxSize()) {
-            ShoulderRow(vm, ui, layout, shoulderRowWidth)
-            if (ui.error != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(ui.error!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-            }
-            if (ui.info != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-            }
-            if (ui.status == ConnectionStatus.CONNECTED && !ui.tvResponding) {
-                Spacer(Modifier.height(6.dp))
-                Text("TV sin respuesta (sin eco de ping en 3 s). En modo Automático se probará el siguiente método.", color = Color(0xFFFFC107), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-            }
-            // La TV responde al ping pero no recibe paquetes de
-            // mando: el camino funciona pero la entrada no llega
-            // (red, IP vieja, receptor caído). Es distinto de "sin
-            // respuesta" y distinto de "recibe pero no inyecta"
-            // (eso es falta de Shizuku y lo dice la TV).
-            if (ui.status == ConnectionStatus.CONNECTED && ui.tvResponding && !ui.tvReceivingPackets) {
-                Spacer(Modifier.height(6.dp))
-                Text("La TV responde al ping pero no recibe paquetes de mando. Revisa la Wi-Fi o reconecta.", color = Color(0xFFFF5252), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+            ShoulderRow(vm, ui, layout, shoulderRowWidth, interaction)
+            if (interaction is GamepadInteraction.Game) {
+                if (ui.error != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(ui.error!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                if (ui.info != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                if (ui.status == ConnectionStatus.CONNECTED && !ui.tvResponding) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("TV sin respuesta (sin eco de ping en 3 s). En modo Automático se probará el siguiente método.", color = Color(0xFFFFC107), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                // La TV responde al ping pero no recibe paquetes de
+                // mando: el camino funciona pero la entrada no llega
+                // (red, IP vieja, receptor caído). Es distinto de "sin
+                // respuesta" y distinto de "recibe pero no inyecta"
+                // (eso es falta de Shizuku y lo dice la TV).
+                if (ui.status == ConnectionStatus.CONNECTED && ui.tvResponding && !ui.tvReceivingPackets) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("La TV responde al ping pero no recibe paquetes de mando. Revisa la Wi-Fi o reconecta.", color = Color(0xFFFF5252), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
             }
             if (isLandscape) {
                 // La fila mide lo que mide el contenido (no toda la
@@ -190,9 +246,9 @@ fun GamepadScreen(vm: GamepadViewModel) {
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        LeftControls(vm, layout, columns.left.shift)
-                        CenterControls(vm, layout, horizontal = false, yShift = columns.center.shift)
-                        RightControls(vm, layout, columns.right.shift)
+                        LeftControls(vm, layout, columns.left.shift, interaction)
+                        CenterControls(vm, layout, horizontal = false, yShift = columns.center.shift, interaction)
+                        RightControls(vm, layout, columns.right.shift, interaction)
                     }
                 }
             } else {
@@ -213,33 +269,23 @@ fun GamepadScreen(vm: GamepadViewModel) {
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            LayoutElement(layout, LayoutConfig.LEFT_STICK, 180f, 208f) { StickWithLabel(vm, left = true) }
-                            LayoutElement(layout, LayoutConfig.ABXY, 200f, 200f) { AbxyPad(vm) }
+                            LayoutElement(layout, LayoutConfig.LEFT_STICK, 180f, 208f, interaction) { StickWithLabel(vm, left = true, interaction) }
+                            LayoutElement(layout, LayoutConfig.ABXY, 200f, 200f, interaction) { AbxyPad(vm, interaction) }
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            LayoutElement(layout, LayoutConfig.DPAD, 196f, 196f) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }) }
-                            LayoutElement(layout, LayoutConfig.RIGHT_STICK, 180f, 208f) { StickWithLabel(vm, left = false) }
+                            LayoutElement(layout, LayoutConfig.DPAD, 196f, 196f, interaction) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }, interactive = interaction is GamepadInteraction.Game) }
+                            LayoutElement(layout, LayoutConfig.RIGHT_STICK, 180f, 208f, interaction) { StickWithLabel(vm, left = false, interaction) }
                         }
                         Spacer(Modifier.height(12.dp))
-                        CenterControls(vm, layout, horizontal = true)
+                        CenterControls(vm, layout, horizontal = true, interaction = interaction)
                     }
                 }
             }
         }
-        if (ui.showSettings) SettingsScreen(vm, ui)
-        if (ui.showLayoutEditor) LayoutEditorScreen(vm) { vm.closeLayoutEditor() }
-        if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeSettings() }, vibrationEnabled = vm.vibrationEnabled.collectAsState().value)
-        // Pantallas Fase 3 (se abren desde Ajustes, vuelven a Ajustes al cerrar).
-        if (ui.showControllerType) ControllerTypeScreen(vm, ui) { vm.closeControllerType() }
-        if (ui.showGameProfiles) GameProfilesScreen(vm) { vm.closeGameProfiles() }
-        if (ui.showControllerTest) ControllerTestScreen(vm, ui) { vm.closeControllerTest() }
-        if (ui.showPerformance) PerformanceScreen(vm, ui) { vm.closePerformance() }
-        // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
-        if (ui.showExtras) ExtrasScreen(vm, ui) { vm.closeExtras() }
     }
 }
 
@@ -300,14 +346,47 @@ private fun LayoutElement(
     id: String,
     widthDp: Float,
     heightDp: Float,
+    interaction: GamepadInteraction,
     content: @Composable () -> Unit,
 ) {
     val el = layout.element(id)
     if (!el.visible) return
+    val edit = interaction as? GamepadInteraction.Edit
+    val density = LocalDensity.current
     Box(
         modifier = Modifier
             .size((widthDp * el.scale).dp, (heightDp * el.scale).dp)
-            .offset(el.offsetXdp.dp, el.offsetYdp.dp),
+            .offset(el.offsetXdp.dp, el.offsetYdp.dp)
+            .then(
+                if (edit != null) {
+                    Modifier
+                        .pointerInput(id) {
+                            detectTapGestures(onTap = { edit.onTapElement(id) })
+                        }
+                        .pointerInput(id) {
+                            detectDragGestures(
+                                onDragEnd = { edit.onDragEnd(id) },
+                                onDragCancel = { edit.onDragEnd(id) },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                // El gesto llega en píxeles locales del
+                                // elemento (Compose invierte la escala
+                                // global del mando al entregarlo), así
+                                // que el desplazamiento es 1:1 en dp,
+                                // sin dividir por el ajuste: dividirlo
+                                // duplicaba el movimiento.
+                                val dx = with(density) { dragAmount.x.toDp().value }.roundToInt()
+                                val dy = with(density) { dragAmount.y.toDp().value }.roundToInt()
+                                edit.onDragElement(id, dx, dy)
+                            }
+                        }
+                } else Modifier
+            )
+            .then(
+                if (edit != null && edit.selectedId == id) {
+                    Modifier.border(2.dp, Color(0xFF9BF00B), RoundedCornerShape(12.dp))
+                } else Modifier
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -328,7 +407,7 @@ private fun LayoutElement(
  * guardado en Ajustes no cambia): cada grupo puede moverse hacia el centro todo lo que
  * quiera, pero nunca hacia la tuerca ni fuera de la pantalla. */
 @Composable
-private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState, layout: LayoutConfig, contentW: Dp) {
+private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState, layout: LayoutConfig, contentW: Dp, interaction: GamepadInteraction) {
     val contentWf = contentW.value
     val leftEl = layout.element(LayoutConfig.SHOULDERS_LEFT)
     val rightEl = layout.element(LayoutConfig.SHOULDERS_RIGHT)
@@ -344,28 +423,28 @@ private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState, layout: Layout
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        LayoutElement(layoutClamped, LayoutConfig.SHOULDERS_LEFT, 124f, 38f) {
+        LayoutElement(layoutClamped, LayoutConfig.SHOULDERS_LEFT, 124f, 38f, interaction) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ShoulderButton("LT") { pressed -> vm.setLeftTrigger(if (pressed) 1f else 0f) }
-                ShoulderButton("LB") { pressed -> vm.setButton(GamepadButtons.LB, pressed) }
+                ShoulderButton("LT", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setLeftTrigger(if (pressed) 1f else 0f) }
+                ShoulderButton("LB", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.LB, pressed) }
             }
         }
-        StatusPill(vm, ui)
+        StatusPill(vm, ui, interaction)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            LayoutElement(layoutClamped, LayoutConfig.SHOULDERS_RIGHT, 124f, 38f) {
+            LayoutElement(layoutClamped, LayoutConfig.SHOULDERS_RIGHT, 124f, 38f, interaction) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ShoulderButton("RB") { pressed -> vm.setButton(GamepadButtons.RB, pressed) }
-                    ShoulderButton("RT") { pressed -> vm.setRightTrigger(if (pressed) 1f else 0f) }
+                    ShoulderButton("RB", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.RB, pressed) }
+                    ShoulderButton("RT", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setRightTrigger(if (pressed) 1f else 0f) }
                 }
             }
-            GearButton { vm.openSettings() }
+            GearButton({ vm.openSettings() }, interaction is GamepadInteraction.Game)
         }
     }
 }
 
 /** Píldora de estado con borde neón (tocarla abre Ajustes). */
 @Composable
-private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
+private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState, interaction: GamepadInteraction) {
     val (dot, text) = when (ui.status) {
         ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) to "Conectado${ui.pingMs?.let { " · $it ms" } ?: ""}"
         ConnectionStatus.CONNECTING -> Color(0xFFFFC107) to "Conectando por ${ui.attemptMethod.label}…"
@@ -377,7 +456,7 @@ private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
             .clip(RoundedCornerShape(20.dp))
             .background(Color.Black.copy(alpha = 0.92f))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), RoundedCornerShape(20.dp))
-            .clickable { vm.openSettings() }
+            .then(if (interaction is GamepadInteraction.Game) Modifier.clickable { vm.openSettings() } else Modifier)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -389,7 +468,7 @@ private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState) {
 
 /** Botón redondo ⚙ que abre Ajustes y conexión. Siempre visible. */
 @Composable
-private fun GearButton(onClick: () -> Unit) {
+private fun GearButton(onClick: () -> Unit, interactive: Boolean = true) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(40.dp)
@@ -397,46 +476,47 @@ private fun GearButton(onClick: () -> Unit) {
             .clip(CircleShape)
             .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), CircleShape)
-            .pointerPress { p -> pressed = p; if (p) onClick() },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; if (p) onClick() } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text("⚙", color = Color.White, fontSize = 20.sp) }
 }
 
 /** Izquierda, como el mando Xbox: stick arriba, cruceta abajo (asimétrico). */
 @Composable
-private fun LeftControls(vm: GamepadViewModel, layout: LayoutConfig, yShift: Float = 0f) {
+private fun LeftControls(vm: GamepadViewModel, layout: LayoutConfig, yShift: Float = 0f, interaction: GamepadInteraction) {
     Column(
         modifier = Modifier.offset(0.dp, yShift.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        LayoutElement(layout, LayoutConfig.LEFT_STICK, 180f, 208f) { StickWithLabel(vm, left = true) }
-        LayoutElement(layout, LayoutConfig.DPAD, 196f, 196f) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }) }
+        LayoutElement(layout, LayoutConfig.LEFT_STICK, 180f, 208f, interaction) { StickWithLabel(vm, left = true, interaction) }
+        LayoutElement(layout, LayoutConfig.DPAD, 196f, 196f, interaction) { DpadView(onChange = { up, down, left, right -> vm.setDpad(up, down, left, right) }, interactive = interaction is GamepadInteraction.Game) }
     }
 }
 
 /** Derecha, como el mando Xbox: A/B/X/Y arriba, stick abajo (asimétrico). */
 @Composable
-private fun RightControls(vm: GamepadViewModel, layout: LayoutConfig, yShift: Float = 0f) {
+private fun RightControls(vm: GamepadViewModel, layout: LayoutConfig, yShift: Float = 0f, interaction: GamepadInteraction) {
     Column(
         modifier = Modifier.offset(0.dp, yShift.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        LayoutElement(layout, LayoutConfig.ABXY, 200f, 200f) { AbxyPad(vm) }
-        LayoutElement(layout, LayoutConfig.RIGHT_STICK, 180f, 208f) { StickWithLabel(vm, left = false) }
+        LayoutElement(layout, LayoutConfig.ABXY, 200f, 200f, interaction) { AbxyPad(vm, interaction) }
+        LayoutElement(layout, LayoutConfig.RIGHT_STICK, 180f, 208f, interaction) { StickWithLabel(vm, left = false, interaction) }
     }
 }
 
 /** Stick con su etiqueta L3/R3 (tocar el stick = pulsar L3/R3, como en un mando real). */
 @Composable
-private fun StickWithLabel(vm: GamepadViewModel, left: Boolean) {
+private fun StickWithLabel(vm: GamepadViewModel, left: Boolean, interaction: GamepadInteraction) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (left) {
             JoystickView(
                 onMove = { x, y -> vm.setLeftStick(x, y) },
                 onRelease = { vm.setLeftStick(0f, 0f) },
                 onClick = { vm.pulseButton(GamepadButtons.L3) },
+                interactive = interaction is GamepadInteraction.Game,
             )
             StickLabel("L3")
         } else {
@@ -444,6 +524,7 @@ private fun StickWithLabel(vm: GamepadViewModel, left: Boolean) {
                 onMove = { x, y -> vm.setRightStick(x, y) },
                 onRelease = { vm.setRightStick(0f, 0f) },
                 onClick = { vm.pulseButton(GamepadButtons.R3) },
+                interactive = interaction is GamepadInteraction.Game,
             )
             StickLabel("R3")
         }
@@ -468,7 +549,7 @@ private fun StickLabel(label: String) {
 /** Centro, como el mando Xbox Series: VIEW a la izquierda del
  * botón Xbox, MENU a la derecha y Compartir debajo, centrado. */
 @Composable
-private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizontal: Boolean, yShift: Float = 0f) {
+private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizontal: Boolean, yShift: Float = 0f, interaction: GamepadInteraction) {
     if (horizontal) {
         Row(
             // Centrada, no anclada a la izquierda: si la fila
@@ -481,12 +562,12 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
             modifier = Modifier.fillMaxWidth(),
         ) {
             Spacer(Modifier.weight(1f))
-            LayoutElement(layout, LayoutConfig.L4, 58f, 38f) { ShoulderButton("L4") { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
-            LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
-            LayoutElement(layout, LayoutConfig.XBOX, 64f, 64f) { XboxButton(vm, sizeDp = 64) }
-            LayoutElement(layout, LayoutConfig.MENU, 76f, 48f) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
-            LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
-            LayoutElement(layout, LayoutConfig.R4, 58f, 38f) { ShoulderButton("R4") { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
+            LayoutElement(layout, LayoutConfig.L4, 58f, 38f, interaction) { ShoulderButton("L4", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
+            LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f, interaction) { SmallButton("VIEW", { ViewIcon() }, interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
+            LayoutElement(layout, LayoutConfig.XBOX, 64f, 64f, interaction) { XboxButton(vm, sizeDp = 64, interactive = interaction is GamepadInteraction.Game) }
+            LayoutElement(layout, LayoutConfig.MENU, 76f, 48f, interaction) { SmallButton("MENU", { MenuIcon() }, interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
+            LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f, interaction) { PulsePill("SHARE", { ShareIcon() }, interactive = interaction is GamepadInteraction.Game) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+            LayoutElement(layout, LayoutConfig.R4, 58f, 38f, interaction) { ShoulderButton("R4", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
             Spacer(Modifier.weight(1f))
         }
     } else {
@@ -496,18 +577,18 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f) { SmallButton("VIEW", { ViewIcon() }) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
-                LayoutElement(layout, LayoutConfig.XBOX, 72f, 72f) { XboxButton(vm, sizeDp = 72) }
-                LayoutElement(layout, LayoutConfig.MENU, 76f, 48f) { SmallButton("MENU", { MenuIcon() }) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
+                LayoutElement(layout, LayoutConfig.VIEW, 76f, 48f, interaction) { SmallButton("VIEW", { ViewIcon() }, interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.SELECT, pressed) } }
+                LayoutElement(layout, LayoutConfig.XBOX, 72f, 72f, interaction) { XboxButton(vm, sizeDp = 72, interactive = interaction is GamepadInteraction.Game) }
+                LayoutElement(layout, LayoutConfig.MENU, 76f, 48f, interaction) { SmallButton("MENU", { MenuIcon() }, interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setButton(GamepadButtons.START, pressed) } }
             }
-            LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f) { PulsePill("SHARE", { ShareIcon() }) { vm.pulseButton(GamepadButtons.CAPTURE) } }
+            LayoutElement(layout, LayoutConfig.SHARE, 76f, 48f, interaction) { PulsePill("SHARE", { ShareIcon() }, interactive = interaction is GamepadInteraction.Game) { vm.pulseButton(GamepadButtons.CAPTURE) } }
             // Paletas traseras L4/R4 (Fase 4): píldoras como los
             // hombros, con su propio elemento de diseño (se pueden
             // mover, hacer transparentes o quitar desde el panel
             // de botones, como los demás).
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                LayoutElement(layout, LayoutConfig.L4, 58f, 38f) { ShoulderButton("L4") { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
-                LayoutElement(layout, LayoutConfig.R4, 58f, 38f) { ShoulderButton("R4") { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
+                LayoutElement(layout, LayoutConfig.L4, 58f, 38f, interaction) { ShoulderButton("L4", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setExtraButton(GamepadExtraButtons.L4, pressed) } }
+                LayoutElement(layout, LayoutConfig.R4, 58f, 38f, interaction) { ShoulderButton("R4", interactive = interaction is GamepadInteraction.Game) { pressed -> vm.setExtraButton(GamepadExtraButtons.R4, pressed) } }
             }
         }
     }
@@ -517,7 +598,7 @@ private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizonta
  * logo dibujado (dos trazos cruzados, como el mando real), con
  * anillo verde luminoso. Un toque = pulso HOME. */
 @Composable
-private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
+private fun XboxButton(vm: GamepadViewModel, sizeDp: Int, interactive: Boolean = true) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(sizeDp.dp)
@@ -526,7 +607,7 @@ private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
             .clip(CircleShape)
             .background(Brush.radialGradient(listOf(Color(0xFF1E2A1E), Color.Black)))
             .border(2.5.dp, Brush.sweepGradient(listOf(Color(0xFF9BF00B), Color(0xFF107C10), Color(0xFF52D273), Color(0xFF107C10), Color(0xFF9BF00B))), CircleShape)
-            .pointerPress { p -> pressed = p; if (p) vm.pulseButton(GamepadButtons.HOME) },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; if (p) vm.pulseButton(GamepadButtons.HOME) } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size((sizeDp * 0.52f).dp)) {
@@ -543,17 +624,17 @@ private fun XboxButton(vm: GamepadViewModel, sizeDp: Int) {
 /** A/B/X/Y en rombo con los colores oficiales de Xbox:
  * A verde #107C10, B rojo #E81123, X azul #0078D7, Y amarillo #FFB900. */
 @Composable
-private fun AbxyPad(vm: GamepadViewModel) {
+private fun AbxyPad(vm: GamepadViewModel, interaction: GamepadInteraction) {
     Box(modifier = Modifier.size(200.dp)) {
-        GamepadButton("Y", Color(0xFFFFB900), Modifier.align(Alignment.TopCenter)) { p -> vm.setButton(GamepadButtons.Y, p) }
-        GamepadButton("X", Color(0xFF0078D7), Modifier.align(Alignment.CenterStart)) { p -> vm.setButton(GamepadButtons.X, p) }
-        GamepadButton("B", Color(0xFFE81123), Modifier.align(Alignment.CenterEnd)) { p -> vm.setButton(GamepadButtons.B, p) }
-        GamepadButton("A", Color(0xFF107C10), Modifier.align(Alignment.BottomCenter)) { p -> vm.setButton(GamepadButtons.A, p) }
+        GamepadButton("Y", Color(0xFFFFB900), Modifier.align(Alignment.TopCenter), interactive = interaction is GamepadInteraction.Game) { p -> vm.setButton(GamepadButtons.Y, p) }
+        GamepadButton("X", Color(0xFF0078D7), Modifier.align(Alignment.CenterStart), interactive = interaction is GamepadInteraction.Game) { p -> vm.setButton(GamepadButtons.X, p) }
+        GamepadButton("B", Color(0xFFE81123), Modifier.align(Alignment.CenterEnd), interactive = interaction is GamepadInteraction.Game) { p -> vm.setButton(GamepadButtons.B, p) }
+        GamepadButton("A", Color(0xFF107C10), Modifier.align(Alignment.BottomCenter), interactive = interaction is GamepadInteraction.Game) { p -> vm.setButton(GamepadButtons.A, p) }
     }
 }
 
 @Composable
-fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, onPress: (Boolean) -> Unit) {
+fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(modifier = modifier.size(78.dp), contentAlignment = Alignment.Center) {
         // Halo neón del color del botón.
@@ -571,7 +652,7 @@ fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, on
                     else Brush.verticalGradient(listOf(Color(0xFF1E2026), Color(0xFF000000))),
                 )
                 .border(2.dp, color, CircleShape)
-                .pointerPress { p -> pressed = p; onPress(p) },
+                .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
             contentAlignment = Alignment.Center,
         ) { Text(label, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
     }
@@ -579,7 +660,7 @@ fun GamepadButton(label: String, color: Color, modifier: Modifier = Modifier, on
 
 /** Botón de hombro (LB/RB) o gatillo (LT/RT): píldora brillante con borde neón. */
 @Composable
-private fun ShoulderButton(label: String, onPress: (Boolean) -> Unit) {
+private fun ShoulderButton(label: String, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 58.dp, height = 38.dp)
@@ -592,14 +673,14 @@ private fun ShoulderButton(label: String, onPress: (Boolean) -> Unit) {
                 ),
             )
             .border(1.dp, Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))), RoundedCornerShape(19.dp))
-            .pointerPress { p -> pressed = p; onPress(p) },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
 }
 
 /** Píldora con icono arriba y texto abajo (VIEW / MENU). */
 @Composable
-fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) -> Unit) {
+fun SmallButton(label: String, icon: @Composable () -> Unit, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 76.dp, height = 48.dp)
@@ -612,7 +693,7 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) 
                 ),
             )
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .pointerPress { p -> pressed = p; onPress(p) },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -624,7 +705,7 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, onPress: (Boolean) 
 
 /** Píldora de un toque con icono (SHARE): pulso corto, no mantener. */
 @Composable
-private fun PulsePill(label: String, icon: @Composable () -> Unit, onTap: () -> Unit) {
+private fun PulsePill(label: String, icon: @Composable () -> Unit, interactive: Boolean = true, onTap: () -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(width = 76.dp, height = 48.dp)
@@ -632,7 +713,7 @@ private fun PulsePill(label: String, icon: @Composable () -> Unit, onTap: () -> 
             .clip(RoundedCornerShape(14.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
             .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-            .pointerPress { p -> pressed = p; if (p) onTap() },
+            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; if (p) onTap() } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
