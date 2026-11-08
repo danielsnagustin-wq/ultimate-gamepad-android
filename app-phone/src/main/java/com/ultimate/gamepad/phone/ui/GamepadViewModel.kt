@@ -897,6 +897,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         appForegrounded = false
         stopGyroSensor()
         releaseAllInputs()
+        // A2 (resto, lo demás ya estaba en HEAD): la reproducción
+        // de una macro seguía viva en segundo plano y su bucle
+        // volvía a pulsar botones DESPUÉS del estado cero de
+        // releaseAllInputs(), dejando botones atascados en el
+        // juego; y la espera de connectHid (hidCheckJob) podía
+        // registrar el HID con la app dormida. Ambas se paran
+        // aquí; al volver, el usuario reanuda a mano.
+        stopMacroPlayback()
+        hidCheckJob?.cancel(); hidCheckJob = null
     }
 
     /** Vuelta a primer plano: el giroscopio vuelve solo si estaba activado. */
