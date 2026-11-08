@@ -2,6 +2,7 @@ package com.ultimate.gamepad.phone.ui
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
 /**
  * PANTALLAS PENDIENTES, NO FUNCIONES FALSAS.
