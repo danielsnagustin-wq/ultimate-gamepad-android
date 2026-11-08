@@ -99,9 +99,9 @@ data class GamepadUiState(
     val showPerformance: Boolean = false,
     // Pantalla Fase 4 (Extras: turbo, macros, vibración, giroscopio, teclado, ratón).
     val showExtras: Boolean = false,
-    /** Teclado virtual activado en la TV (dispositivo uinput aparte). */
+    /** Teclado virtual pedido a la TV (dispositivo uinput aparte). P8: es "enviado, sin confirmar": la TV no devuelve acuse de los extras (ver setKeyboardEnabled). */
     val keyboardEnabled: Boolean = false,
-    /** Modo ratón activado en la TV (dispositivo uinput aparte). */
+    /** Modo ratón pedido a la TV (dispositivo uinput aparte). P8: "enviado, sin confirmar" (ver setMouseEnabled). */
     val mouseEnabled: Boolean = false,
     /** Perfil de emulación activo (visual + emulación a la vez). */
     val activeProfileId: Int = GamepadProfiles.XBOX_360_ID,
@@ -732,26 +732,33 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         return extrasSender.send(packet, host, _ui.value.port)
     }
 
-    /** Activa o desactiva el teclado virtual en la TV (dispositivo uinput aparte, nunca parte del mando). */
+    /** Activa o desactiva el teclado virtual en la TV (dispositivo uinput aparte, nunca parte del mando).
+     * P8: send() es UDP fire-and-forget y la TV NO devuelve eco
+     * ni acuse de los paquetes de extras (UdpReceiverService los
+     * procesa y sigue, sin contador ni respuesta): el estado es
+     * "enviado (sin confirmar)", nunca "activado en la TV". Un
+     * ACK real exigiría eco en la TV + escucha en ExtrasSender
+     * (ver manifiesto W3, parche TV). */
     fun setKeyboardEnabled(enabled: Boolean) {
         val action = if (enabled) ExtrasProtocol.ACTION_CREATE else ExtrasProtocol.ACTION_DESTROY
         if (!sendExtras(ExtrasProtocol.encodeKeyboard(0, action))) return
         _ui.update {
             it.copy(
                 keyboardEnabled = enabled,
-                info = if (enabled) "Teclado virtual activado en la TV (dispositivo aparte, no es parte del mando)." else "Teclado virtual desactivado en la TV.",
+                info = if (enabled) "Teclado virtual: petición enviada a la TV (sin confirmar: la TV no devuelve acuse de los extras; si está apagada o sin receptor, no se habrá creado)." else "Petición de desactivar el teclado enviada a la TV (sin confirmar).",
             )
         }
     }
 
-    /** Activa o desactiva el modo ratón en la TV (dispositivo uinput aparte, nunca parte del mando). */
+    /** Activa o desactiva el modo ratón en la TV (dispositivo uinput aparte, nunca parte del mando).
+     * P8: como el teclado, "enviado (sin confirmar)" — no hay ACK de extras desde la TV. */
     fun setMouseEnabled(enabled: Boolean) {
         val action = if (enabled) ExtrasProtocol.ACTION_CREATE else ExtrasProtocol.ACTION_DESTROY
         if (!sendExtras(ExtrasProtocol.encodeMouse(0, 0, 0, action))) return
         _ui.update {
             it.copy(
                 mouseEnabled = enabled,
-                info = if (enabled) "Modo ratón activado en la TV (dispositivo aparte). Arrastra en el panel para mover el cursor." else "Modo ratón desactivado en la TV.",
+                info = if (enabled) "Modo ratón: petición enviada a la TV (sin confirmar: la TV no devuelve acuse de los extras). Arrastra en el panel para mover el cursor." else "Petición de desactivar el modo ratón enviada a la TV (sin confirmar).",
             )
         }
     }
@@ -1414,6 +1421,19 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // macro a medias.
         stopMacroPlayback()
         turboJob?.cancel(); turboJob = null; turboPhaseOn = true
+        // P8: al desconectar se resetean teclado, ratón y
+        // giroscopio: si no, la UI los seguía mostrando en SÍ
+        // con la TV apagada o sin conexión. El reseteo de los
+        // flags es SIEMPRE (también en silent: tryNextTransport
+        // desconecta antes de reconectar por otro método y el
+        // connect() siguiente no toca estos flags, así que sin
+        // esto quedarían en SÍ tras el cambio de método). El
+        // giroscopio se apaga con setGyroEnabled(false), que
+        // para el sensor Y guarda el apagado; los botones del
+        // ratón mantenidos también se sueltan.
+        mouseButtons = 0
+        if (_gyroEnabled.value) setGyroEnabled(false) else stopGyroSensor()
+        _ui.update { it.copy(keyboardEnabled = false, mouseEnabled = false) }
         GamepadSenderService.resetHealth()
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
         // Parar es mejor esfuerzo: en segundo plano el sistema puede rechazarlo y el
