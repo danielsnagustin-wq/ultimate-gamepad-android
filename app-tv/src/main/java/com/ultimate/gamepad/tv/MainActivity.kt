@@ -511,8 +511,8 @@ class MainActivity : Activity() {
         val agoSec = if (UdpReceiverService.lastPacketAtMs > 0) (System.currentTimeMillis() - UdpReceiverService.lastPacketAtMs) / 1000 else -1
         val stage1 = if (connected) "1. Teléfono envía: SÍ — ${UdpReceiverService.packetsReceived} paquetes, último hace $agoSec s."
         else "1. Teléfono envía: NO — sin paquetes recientes."
-        val stage2 = if (UdpReceiverService.packetsReceived > 0) "2. Receptor recibe: SÍ — último paquete decodificado hace ${if (agoSec < 0) "nunca" else "$agoSec s"}."
-        else "2. Receptor recibe: NO — sin paquetes todavía."
+        val stage2 = if (connected) "2. Receptor recibe: SÍ — último paquete decodificado hace ${if (agoSec < 0) "nunca" else "$agoSec s"}."
+        else "2. Receptor recibe: NO — sin paquetes recientes (último hace ${if (agoSec < 0) "nunca" else "$agoSec s"})."
         val stage3 = if (Diagnostics.anyRealGamepad()) "3. Android registra: SÍ — ${reports.firstOrNull { it.looksLikeRealGamepad }?.name}."
         else "3. Android registra: NO — ningún dispositivo parece un mando real del perfil ${profile.name}."
         val confirmedAt = TvTestPrefs.getOpenNowConfirmedAtMs(this)
@@ -522,7 +522,7 @@ class MainActivity : Activity() {
         } else {
             "4. OpenNOW recibe: PENDIENTE — solo se marca tras probar un juego. Nada en la app puede comprobarlo desde dentro."
         }
-        testStagesView.text = "Las 4 etapas\n$stage1\n$stage2\n(Las etapas 1 y 2 comparten el mismo contador: si la TV ve paquetes decodificados, el teléfono envía y el receptor recibe.)\n$stage3\n$stage4"
+        testStagesView.text = "Las 4 etapas\n$stage1\n$stage2\n(Las etapas 1 y 2 miran lo mismo: paquetes recientes, no el contador acumulado. Si hace más de 2 s que no llega nada, las dos pasan a NO.)\n$stage3\n$stage4"
         testConfirmBtn.text = if (confirmedAt > 0) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego"
     }
 
