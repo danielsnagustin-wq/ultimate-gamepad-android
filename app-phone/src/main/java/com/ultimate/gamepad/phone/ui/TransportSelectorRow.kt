@@ -1,7 +1,9 @@
 package com.ultimate.gamepad.phone.ui
 
 import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -142,6 +144,22 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Spacer(Modifier.height(4.dp))
             Button(onClick = { tick(); permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
                 Text("Dar permiso de Bluetooth", color = Color.White)
+            }
+            // Arreglo 11: si el permiso ya se negó, Android no
+            // vuelve a preguntar y el botón de arriba no hace nada.
+            // Este botón abre Ajustes de la app, donde el permiso
+            // sí se puede dar a mano.
+            Spacer(Modifier.height(4.dp))
+            Text("Si ya negaste el permiso, Android no vuelve a preguntar: dalo a mano en Ajustes de la app.", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = {
+                tick()
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", hapticContext.packageName, null)
+                }
+                hapticContext.startActivity(intent)
+            }) {
+                Text("Abrir ajustes de la app")
             }
         }
     }

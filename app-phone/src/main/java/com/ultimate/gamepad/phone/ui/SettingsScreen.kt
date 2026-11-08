@@ -3,6 +3,7 @@ package com.ultimate.gamepad.phone.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -324,6 +325,19 @@ fun QrScannerScreen(
             Text("Se necesita la cámara para escanear el QR de la TV.", color = Color.White)
             Spacer(Modifier.height(12.dp))
             Button(onClick = { tick(); launcher.launch(Manifest.permission.CAMERA) }) { Text("Dar permiso de cámara") }
+            Spacer(Modifier.height(8.dp))
+            // Arreglo 11: si la cámara ya se negó, Android no vuelve
+            // a preguntar y el botón de arriba no hace nada. Este
+            // botón abre Ajustes de la app para darlo a mano.
+            Text("Si ya negaste el permiso, Android no vuelve a preguntar: dalo a mano en Ajustes de la app.", color = Color.White, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = {
+                tick()
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+                context.startActivity(intent)
+            }) { Text("Abrir ajustes de la app") }
             Spacer(Modifier.height(8.dp))
             Button(onClick = { tick(); onClose() }) { Text("Volver a IP / PIN") }
             return@Column
