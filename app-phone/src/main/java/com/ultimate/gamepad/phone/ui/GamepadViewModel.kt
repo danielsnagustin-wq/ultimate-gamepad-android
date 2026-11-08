@@ -1483,8 +1483,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // el fallback. El latido HID lo arranca el callback al
         // conectar de verdad (onHidConnectionChanged).
         GamepadSenderService.resetHealth()
+        // H-B: sin visibilidad, la TV no puede descubrir el
+        // teléfono para emparejarlo. Se pide al registrar (solo
+        // aquí, nunca en el reintento en segundo plano).
+        val deviceName = GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName
+        val discoverable = hidService.requestDiscoverable()
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "HID registrado como '${GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName}'. Empareja ese nombre en la TV (Ajustes > Bluetooth). Esperando a que la TV conecte…")
+            it.copy(
+                status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, error = null,
+                info = if (discoverable) "HID registrado como '$deviceName'. El teléfono está visible 5 min: empareja ese nombre en la TV (Ajustes > Bluetooth). Esperando a que la TV conecte…" else "HID registrado como '$deviceName'. Haz visible el teléfono (Ajustes > Bluetooth) y empareja ese nombre en la TV. Esperando a que la TV conecte…",
+            )
         }
     }
 

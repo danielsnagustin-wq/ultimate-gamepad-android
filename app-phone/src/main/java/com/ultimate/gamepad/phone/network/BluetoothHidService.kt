@@ -9,6 +9,7 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -257,6 +258,32 @@ class BluetoothHidService(private val context: Context) {
         return runCatching { hid.registerApp(sdp, qos, null, null, callback) }
             .getOrDefault(false)
             .also { appRegistered = it }
+    }
+
+    /**
+     * H-B: hace visible el teléfono por Bluetooth (300 s) para que
+     * la TV pueda descubrirlo y emparejar el mando ("Xbox 360
+     * Controller" o el nombre del perfil activo). Sin esto, la TV
+     * no ve el teléfono salvo que el usuario tenga abierta la
+     * pantalla de ajustes Bluetooth, o que ya estuvieran
+     * emparejados: el HID "no conecta para nada" aunque el
+     * registro fuera bien. Es un intent del sistema
+     * (ACTION_REQUEST_DISCOVERABLE): no necesita ningún permiso
+     * nuevo en tiempo de ejecución (BLUETOOTH_ADVERTISE está
+     * declarado pero nunca se pide, así que setScanMode no es
+     * opción: lanzaría SecurityException). Se llama SOLO al
+     * registrar el HID a mano o por fallback AUTO, nunca desde el
+     * reintento en segundo plano (reRegister): no se puede abrir
+     * un diálogo del sistema cada 15 s. Devuelve false si no se
+     * pudo lanzar (p. ej. app en segundo plano): la UI dice
+     * entonces que se haga visible a mano.
+     */
+    fun requestDiscoverable(durationSec: Int = 300): Boolean {
+        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+            putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, durationSec)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { context.startActivity(intent); true }.getOrDefault(false)
     }
 
     /** Envía un reporte HID. Solo tiene efecto si hay un dispositivo conectado; si no, devuelve false. */
