@@ -1,6 +1,7 @@
 package com.ultimate.gamepad.phone.ui
 
 import androidx.compose.foundation.background
+import java.util.Locale
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -236,7 +237,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             Text(if (gyroOn) "Giroscopio: SÍ (toca para apagar)" else "Giroscopio: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Sensibilidad: ${"%.1f".format(gyroSens)}x (1.0 = 45° recorre todo el stick)", fontSize = 12.sp, color = Color.White)
+        Text("Sensibilidad: ${String.format(Locale.US, "%.1f", gyroSens)}x (1.0 = 45° recorre todo el stick)", fontSize = 12.sp, color = Color.White)
         Slider(
             value = gyroSens,
             onValueChange = { vm.setGyroSensitivity(it) },

@@ -1,6 +1,7 @@
 package com.ultimate.gamepad.phone.ui
 
 import androidx.compose.foundation.background
+import java.util.Locale
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -104,9 +105,9 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "En vivo — Stick izq: (${"%.2f".format(state.leftX)}, ${"%.2f".format(state.leftY)})  " +
-                "Stick der: (${"%.2f".format(state.rightX)}, ${"%.2f".format(state.rightY)})  " +
-                "LT: ${"%.2f".format(state.leftTrigger)} RT: ${"%.2f".format(state.rightTrigger)}",
+            "En vivo — Stick izq: (${String.format(Locale.US, "%.2f", state.leftX)}, ${String.format(Locale.US, "%.2f", state.leftY)})  " +
+                "Stick der: (${String.format(Locale.US, "%.2f", state.rightX)}, ${String.format(Locale.US, "%.2f", state.rightY)})  " +
+                "LT: ${String.format(Locale.US, "%.2f", state.leftTrigger)} RT: ${String.format(Locale.US, "%.2f", state.rightTrigger)}",
             fontSize = 14.sp,
             color = Color.White,
         )

@@ -139,7 +139,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 color = Color.White, fontSize = 12.sp,
             )
         }
-        if (ui.hidAvailability.name == "PERMISSION_DENIED") {
+        if (ui.hidAvailability == HidAvailability.PERMISSION_DENIED) {
             Spacer(Modifier.height(4.dp))
             Text("Bluetooth HID: falta el permiso de Bluetooth (Android 12+). Sin él, el teléfono no puede exponerse como mando.", color = Color(0xFFFFC107), fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))

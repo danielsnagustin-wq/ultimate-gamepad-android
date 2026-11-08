@@ -1,6 +1,7 @@
 package com.ultimate.gamepad.phone.ui
 
 import androidx.compose.foundation.background
+import java.util.Locale
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -134,7 +135,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                         if (p.name == activeName) Text("● ACTIVO", color = Color(0xFF9BF00B), fontSize = 12.sp)
                     }
                     Text(
-                        "${GamepadProfiles.fromId(p.profileId).name} · zona muerta ${(p.deadZone * 100).toInt()}% · curva ${"%.2f".format(p.curve)} · gatillos x${"%.2f".format(p.triggerScale)}" +
+                        "${GamepadProfiles.fromId(p.profileId).name} · zona muerta ${(p.deadZone * 100).toInt()}% · curva ${String.format(Locale.US, "%.2f", p.curve)} · gatillos x${String.format(Locale.US, "%.2f", p.triggerScale)}" +
                             (if (p.remap.isNotEmpty()) " · remap ${p.remap.entries.joinToString(", ") { "${GameProfilePrefs.buttonLabel(it.key)}→${GameProfilePrefs.buttonLabel(it.value)}" }}" else "") +
                             (if (p.layoutJson != null) " · con diseño de botones" else ""),
                         color = Color.White, fontSize = 12.sp,
@@ -265,9 +266,9 @@ private fun GameProfileEditor(
         Spacer(Modifier.height(8.dp))
         Text("Zona muerta de sticks: ${(draft.deadZone * 100).toInt()}%", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.deadZone, onValueChange = { onDraftChange(draft.copy(deadZone = it)) }, valueRange = 0f..0.15f)
-        Text("Curva de respuesta: ${"%.2f".format(draft.curve)} (1.00 = lineal, menos = más vivo en el centro)", fontSize = 15.sp, color = Color.White)
+        Text("Curva de respuesta: ${String.format(Locale.US, "%.2f", draft.curve)} (1.00 = lineal, menos = más vivo en el centro)", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.curve, onValueChange = { onDraftChange(draft.copy(curve = it)) }, valueRange = 0.5f..1.5f)
-        Text("Sensibilidad de gatillos: x${"%.2f".format(draft.triggerScale)}", fontSize = 15.sp, color = Color.White)
+        Text("Sensibilidad de gatillos: x${String.format(Locale.US, "%.2f", draft.triggerScale)}", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.triggerScale, onValueChange = { onDraftChange(draft.copy(triggerScale = it)) }, valueRange = 0.5f..1.5f)
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
