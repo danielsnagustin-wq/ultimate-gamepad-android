@@ -143,7 +143,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private var hidRetryJob: Job? = null
 
     /**
-     * Espera de 2,5 s de connectHid() (comprobación HID en curso).
+     * Espera de 3 s de connectHid() (comprobación HID en curso,
+     * A6: igual al timeout de refreshHidStatus, para que un
+     * firmware que responde entre 2,5-3 s no se vea como ERROR
+     * aunque el HID esté disponible).
      * Sin guardar el Job, desconectar o cambiar de método no la
      * cancelaba y disparaba registerHid() o ERROR después de que
      * el intento ya había terminado: CONECTADO fantasma o ERROR
@@ -1284,9 +1287,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             // sin comprobar (el usuario nunca abrió la pantalla de
             // conexión) y fallaba al instante con "no disponible"
             // sin haberlo intentado. Ahora se comprueba de verdad
-            // (2,5 s, dentro del plazo de 3 s del refreshPing para
-            // que AUTO no dispare otro cambio mientras tanto) y
-            // luego se registra o se da el error real.
+            // (3 s, el mismo plazo que el timeout de
+            // refreshHidStatus — A6 — para que AUTO no dispare
+            // otro cambio mientras tanto) y luego se registra o
+            // se da el error real.
             // La espera va guardada en hidCheckJob: si el usuario
             // desconecta o AUTO cambia de método antes, se cancela
             // y no resucita la conexión después (antes la espera
@@ -1301,7 +1305,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             }
             refreshHidStatus(force = true)
             hidCheckJob = viewModelScope.launch {
-                delay(2500)
+                delay(3000)
                 if (hidService.availability == HidAvailability.AVAILABLE) {
                     registerHid()
                 } else {
@@ -1388,7 +1392,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         val order = TransportSelector.AUTO_ORDER
         val next = order.dropWhile { it != current }.drop(1).firstOrNull { it != TransportMethod.BLUETOOTH_DATA }
         if (next == null) {
-            _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Sin respuesta de la TV por ningún método Wi-Fi. Revisa la red o prueba Hotspot / HID.") }
+            // A7: nombrar el método real del último fallo, no
+            // "ningún método Wi-Fi": si se llegó aquí por HID, el
+            // fallo fue del HID y decir Wi-Fi confunde.
+            _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Sin respuesta de la TV por $current (último método probado). Revisa la red o prueba Hotspot / HID.") }
             return
         }
         val info = PairingInfo(_ui.value.host, _ui.value.port, _ui.value.pin)
