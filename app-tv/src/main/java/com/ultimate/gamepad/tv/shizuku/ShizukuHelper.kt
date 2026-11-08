@@ -32,7 +32,11 @@ import java.net.InetAddress
  * muestra esa verdad; nunca se finge un mando.
  */
 object ShizukuHelper {
-    data class Status(val ready: Boolean, val label: String, val guidance: String)
+    // T11: motivo del estado, para decidir por estado y no por
+    // texto (antes shizukuNextStep hacía label.contains(...)).
+    enum class ShizukuState { READY, NOT_INSTALLED, NOT_RUNNING, NO_PERMISSION }
+
+    data class Status(val ready: Boolean, val label: String, val guidance: String, val state: ShizukuState)
 
     // T3: freno al permiso de Shizuku. Antes, sendToGamepad()
     // llamaba a Shizuku.requestPermission(0) por paquete (~120 Hz)
@@ -70,16 +74,19 @@ object ShizukuHelper {
         if (!installed) return Status(
             false, "NO INSTALADO",
             "Instala Shizuku (moe.shizuku.privileged.api) en la TV desde Play Store / APKMirror, y arráncalo por ADB por red :5555 con Bugjaeger desde el teléfono. Ver docs/SETUP-SIN-PC.md.",
+            ShizukuState.NOT_INSTALLED,
         )
         if (!Shizuku.pingBinder()) return Status(
             false, "INSTALADO PERO NO ACTIVO",
             "Shizuku está instalado pero su servicio no corre. Ejecuta desde Bugjaeger: sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh contra <IP-TV>:5555, y vuelve a abrir esta app.",
+            ShizukuState.NOT_RUNNING,
         )
         if (!Shizuku.isPreV11() && Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return Status(
             false, "SIN PERMISO",
             "Shizuku corre, pero no concediste permiso a Ultimate Gamepad TV. Abre Shizuku > Ultimate Gamepad TV > Permitir.",
+            ShizukuState.NO_PERMISSION,
         )
-        return Status(true, "ACTIVO", "Shizuku listo. El mando virtual puede intentarse.")
+        return Status(true, "ACTIVO", "Shizuku listo. El mando virtual puede intentarse.", ShizukuState.READY)
     }
 
     /**

@@ -134,6 +134,14 @@ interface IGamepadInputService : IInterface {
             return super.onTransact(code, data, reply, flags)
         }
 
+        // T12: las llamadas transact() de este Proxy NO llevan
+        // timeout: la API de Binder no ofrece ninguno (transact
+        // bloquea hasta la respuesta) y envolverlo en un hilo con
+        // Future cambiaría el contrato IPC. El llamador
+        // (UdpReceiverService.deliver y el watchdog, en
+        // Dispatchers.IO) nunca corre en el hilo principal, así
+        // que un binder colgado solo retrasa el receptor, no la
+        // UI. Se deja como está a propósito.
         private class Proxy(private val remote: IBinder) : IGamepadInputService {
             override fun asBinder(): IBinder = remote
 

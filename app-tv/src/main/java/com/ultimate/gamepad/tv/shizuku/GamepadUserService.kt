@@ -143,7 +143,9 @@ class GamepadUserService : IGamepadInputService.Stub() {
         }.getOrDefault(false)
     }
 
-    /** InputManager.injectInputEvent es API oculta: se llama por reflexión, como hacen los proyectos que usan Shizuku. */
+    /** InputManager.injectInputEvent es API oculta: se llama por reflexión, como hacen los proyectos que usan Shizuku.
+     * T12: no hay alternativa pública (injectInputEvent no es API pública y el proceso shell no puede usar el
+     * InputManager público para inyectar); la reflexión ya está cacheada (lazy) y se deja como está. */
     // Reflexión cacheada: antes inject() hacía Class.forName +
     // getDeclaredMethod en CADA evento (hasta ~17 por paquete a
     // 120 Hz, unas 2000 búsquedas por segundo). Ahora se resuelve

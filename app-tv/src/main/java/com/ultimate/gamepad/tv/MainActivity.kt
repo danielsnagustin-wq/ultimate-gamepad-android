@@ -464,7 +464,7 @@ class MainActivity : Activity() {
         testLiveView = TextView(this).apply { textSize = 20f; setTextColor(Color.WHITE) }
         testChecklistView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
         testStagesView = TextView(this).apply { textSize = 18f; setTextColor(Color.WHITE) }
-        testConfirmBtn = bigButton("Confirmo que funciona en un juego", purpleDark) {
+        testConfirmBtn = bigButton("Confirmo que funciona en un juego (marca la etapa 4)", purpleDark) {
             if (TvTestPrefs.getOpenNowConfirmedAtMs(this@MainActivity) > 0) {
                 TvTestPrefs.clearOpenNowConfirmation(this@MainActivity)
             } else {
@@ -531,7 +531,9 @@ class MainActivity : Activity() {
             "4. OpenNOW recibe: PENDIENTE — solo se marca tras probar un juego. Nada en la app puede comprobarlo desde dentro."
         }
         testStagesView.text = "Las 4 etapas\n$stage1\n$stage2\n(Las etapas 1 y 2 miran lo mismo: paquetes recientes, no el contador acumulado. Si hace más de 2 s que no llega nada, las dos pasan a NO.)\n$stage3\n$stage4"
-        testConfirmBtn.text = if (confirmedAt > 0) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego"
+        // T11: el botón confirma Y quita: el texto lo dice claro
+        // en los dos estados, no solo lo insinúa el sufijo.
+        testConfirmBtn.text = if (confirmedAt > 0) "✓ Confirmado en un juego — tocar para quitar la confirmación" else "Confirmo que funciona en un juego (marca la etapa 4)"
     }
 
     private fun pressedNames(state: com.ultimate.gamepad.core.GamepadState): String {
@@ -575,13 +577,12 @@ class MainActivity : Activity() {
         return fresh
     }
 
-    /** El paso siguiente con Shizuku, en UNA frase clara. */
-    private fun shizukuNextStep(status: ShizukuHelper.Status): String = when {
-        status.ready -> "Listo: el mando virtual ya se puede crear. No tienes que hacer nada más aquí."
-        status.label.contains("NO INSTALADO") -> "Siguiente paso: instala la app Shizuku (gratis) en la TV y arráncala una vez con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
-        status.label.contains("NO ACTIVO") -> "Siguiente paso: arranca Shizuku con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
-        status.label.contains("SIN PERMISO") -> "Siguiente paso: abre Shizuku en la TV y permite Ultimate Gamepad TV."
-        else -> status.guidance
+    /** El paso siguiente con Shizuku, en UNA frase clara. Decide por estado (T11), no por texto. */
+    private fun shizukuNextStep(status: ShizukuHelper.Status): String = when (status.state) {
+        ShizukuHelper.ShizukuState.READY -> "Listo: el mando virtual ya se puede crear. No tienes que hacer nada más aquí."
+        ShizukuHelper.ShizukuState.NOT_INSTALLED -> "Siguiente paso: instala la app Shizuku (gratis) en la TV y arráncala una vez con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
+        ShizukuHelper.ShizukuState.NOT_RUNNING -> "Siguiente paso: arranca Shizuku con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
+        ShizukuHelper.ShizukuState.NO_PERMISSION -> "Siguiente paso: abre Shizuku en la TV y permite Ultimate Gamepad TV."
     }
 
     /** QR real (ZXing) del payload UGP1|ip|puerto|pin; null si no se puede generar. */
