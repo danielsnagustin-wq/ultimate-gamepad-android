@@ -135,6 +135,35 @@ object Discovery {
         }
         return false
     }
+
+    /**
+     * Todas las IPv4 locales útiles de este dispositivo (Wi-Fi,
+     * Ethernet, hotspot…), no solo la de Wi-Fi. A8: la TV no
+     * respondía al descubrimiento si `localIpFromWifi` era null
+     * (p. ej. TV por Ethernet, sin Wi-Fi): el receptor de la TV
+     * debe usar la primera de esta lista como IP de respuesta,
+     * con la de Wi-Fi solo como respaldo. Se recorren TODAS las
+     * interfaces activas, no solo wlan0: una TV por cable (eth0)
+     * tiene aquí su IP aunque no tenga Wi-Fi. Solo privadas
+     * (RFC 1918) y sin loopback, como localBroadcastAddresses().
+     */
+    fun localIpv4Addresses(): List<InetAddress> {
+        val out = ArrayList<InetAddress>()
+        try {
+            val ifaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            for (iface in ifaces) {
+                if (!iface.isUp || iface.isLoopback) continue
+                for (ia in iface.interfaceAddresses) {
+                    val addr = ia.address
+                    if (addr.isLoopbackAddress || !isPrivateIpv4(addr)) continue
+                    if (addr !in out) out += addr
+                }
+            }
+        } catch (_: Exception) {
+            // Sin acceso a las interfaces: lista vacía, sin crashear.
+        }
+        return out
+    }
 }
 
 /** Una TV encontrada en la red local, lista para conectar con un toque. */

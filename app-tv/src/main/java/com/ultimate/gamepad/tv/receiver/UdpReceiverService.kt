@@ -273,7 +273,12 @@ class UdpReceiverService : Service() {
                         // juego de 32 bytes ni un ping.
                         if (String(data, Charsets.UTF_8) == Discovery.MAGIC_REQUEST) {
                             val wifi = getSystemService(Context.WIFI_SERVICE) as WifiManager
-                            val ip = ShizukuHelper.localIpFromWifi(wifi)
+                            // A8: la IP de respuesta ya no es solo la de Wi-Fi:
+                            // por Ethernet localIpFromWifi es null y la TV
+                            // no respondía nunca. Primera IPv4 local de
+                            // cualquier interfaz; Wi-Fi solo como respaldo.
+                            val ip = Discovery.localIpv4Addresses().firstOrNull()?.hostAddress
+                                ?: ShizukuHelper.localIpFromWifi(wifi)
                             if (ip != null) {
                                 val response = Discovery.buildResponse(
                                     // Nombre genérico, sin modelo del
