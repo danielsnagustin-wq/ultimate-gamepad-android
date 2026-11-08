@@ -123,8 +123,11 @@ data class GamepadUiState(
     val selectedMethod: TransportMethod = TransportMethod.WIFI_UDP,
     val hotspotMode: Boolean = false,
     val transportStatus: Map<TransportMethod, TransportStatus> = mapOf(
-        TransportMethod.WIFI_UDP to TransportStatus.AVAILABLE,
-        TransportMethod.WIFI_TCP to TransportStatus.AVAILABLE,
+        // P-B: Wi-Fi nace SIN COMPROBAR (antes AVAILABLE sin
+        // comprobar nada): refreshWifiState() lo resuelve a
+        // AVAILABLE con Wi-Fi/hotspot o UNAVAILABLE sin red.
+        TransportMethod.WIFI_UDP to TransportStatus.UNAVAILABLE,
+        TransportMethod.WIFI_TCP to TransportStatus.UNAVAILABLE,
         TransportMethod.BLUETOOTH_DATA to TransportStatus.PENDING_STAGE2,
         TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE,
     ),
@@ -1111,7 +1114,24 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // en Wi-Fi". Con una interfaz 192.168.43.x activa, hay red
         // local aunque no haya Wi-Fi como cliente.
         val hotspot = Discovery.hasHotspotInterface()
-        _ui.update { it.copy(wifiConnected = wifi || hotspot) }
+        val wifiUp = wifi || hotspot
+        _ui.update { current ->
+            // P-B: resolver el estado Wi-Fi verificado. Solo se
+            // tocan UNAVAILABLE (sin comprobar) y AVAILABLE: un
+            // CONNECTED/CONNECTING/FAILED lo manda el eco o el
+            // intento, no este sondeo.
+            fun resolved(old: TransportStatus): TransportStatus = when (old) {
+                TransportStatus.UNAVAILABLE, TransportStatus.AVAILABLE ->
+                    if (wifiUp) TransportStatus.AVAILABLE else TransportStatus.UNAVAILABLE
+                else -> old
+            }
+            current.copy(
+                wifiConnected = wifiUp,
+                transportStatus = current.transportStatus +
+                    (TransportMethod.WIFI_UDP to resolved(current.transportStatus[TransportMethod.WIFI_UDP] ?: TransportStatus.UNAVAILABLE)) +
+                    (TransportMethod.WIFI_TCP to resolved(current.transportStatus[TransportMethod.WIFI_TCP] ?: TransportStatus.UNAVAILABLE)),
+            )
+        }
     }
 
     /**

@@ -68,15 +68,29 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 // chip lo dice ("Comprobando…") en vez del "No
                 // disponible" inicial, que fingía un veredicto
                 // antes de comprobar nada.
+                // P6: "Disponible" sin comprobar nada mentía (el
+                // mapa inicial marca Wi-Fi como AVAILABLE aunque
+                // el Wi-Fi esté apagado). "Disponible" solo cuando
+                // hay estado real verificado: conectado por ese
+                // método, o la TV responde por él. Si no, el chip
+                // dice "Sin comprobar" (o "Sin Wi-Fi", que sí está
+                // verificado). El parche del ViewModel (manifiesto)
+                // debe dejar de inicializar Wi-Fi como AVAILABLE.
+                val isWifi = method == TransportMethod.WIFI_UDP || method == TransportMethod.WIFI_TCP
+                val verifiedAvailable = status == TransportStatus.CONNECTED ||
+                    (status == TransportStatus.AVAILABLE && ui.status == ConnectionStatus.CONNECTED && ui.attemptMethod == method)
                 val label = if (method == TransportMethod.BLUETOOTH_HID && ui.hidAvailability == HidAvailability.UNKNOWN) {
                     "Bluetooth HID · Comprobando…"
+                } else if (status == TransportStatus.AVAILABLE && !verifiedAvailable) {
+                    if (isWifi && !ui.wifiConnected) "${method.label} · Sin Wi-Fi" else "${method.label} · Sin comprobar"
                 } else {
                     "${method.label} · ${statusText(status)}"
                 }
+                val dot = if (status == TransportStatus.AVAILABLE && !verifiedAvailable) Color(0xFF9AA0B0) else statusColor(status)
                 Chip(
                     label = label,
                     selected = ui.selectedMethod == method,
-                    dotColor = statusColor(status),
+                    dotColor = dot,
                 ) { vm.selectMethod(method) }
             }
         }
