@@ -118,23 +118,28 @@ class GamepadUserService : IGamepadInputService.Stub() {
     private fun injectState(state: GamepadState): Boolean {
         return runCatching {
             val now = android.os.SystemClock.uptimeMillis()
+            var ok = true
             // Botones: solo los que cambiaron, para no reenviar todo.
             for (button in InputMapper.allButtons()) {
                 InputMapper.keyEventFor(state, previousState, button, now)?.let { ev ->
-                    inject(ev)
+                    if (!inject(ev)) ok = false
                 }
             }
             // T8: gatillos digitales (L2/R2) al cruzar 0,5, como
             // BTN_TL2/TR2 en la vía A (uinput).
             InputMapper.triggerKeyEventFor(state, previousState, true, now)?.let { ev ->
-                inject(ev)
+                if (!inject(ev)) ok = false
             }
             InputMapper.triggerKeyEventFor(state, previousState, false, now)?.let { ev ->
-                inject(ev)
+                if (!inject(ev)) ok = false
             }
-            inject(InputMapper.motionEventFor(state, now))
-            previousState = state
-            true
+            if (!inject(InputMapper.motionEventFor(state, now))) ok = false
+            // T9: no actualizar previousState si algún inject()
+            // falló: con el estado viejo, el siguiente paquete
+            // reenvía los cambios que se perdieron en vez de
+            // dejar un botón atascado sin resincronizar.
+            if (ok) previousState = state
+            ok
         }.getOrDefault(false)
     }
 
@@ -161,10 +166,18 @@ class GamepadUserService : IGamepadInputService.Stub() {
         }.getOrNull()
     }
 
-    private fun inject(event: android.view.InputEvent) {
-        val instance = inputManagerGlobal ?: return
-        val method = injectMethod ?: return
+    /**
+     * T9: devuelve false si no se pudo inyectar (sin instancia,
+     * sin método, o la reflexión lanzó). Antes devolvía Unit y se
+     * tragaba el fallo: injectState actualizaba previousState
+     * igual y el cambio perdido no se reenviaba nunca. Nota: el
+     * modo es ASYNC, así que "true" significa que la llamada se
+     * aceptó, no que el juego la haya procesado.
+     */
+    private fun inject(event: android.view.InputEvent): Boolean {
+        val instance = inputManagerGlobal ?: return false
+        val method = injectMethod ?: return false
         // 0 = INJECT_INPUT_EVENT_MODE_ASYNC (no bloquea el hilo shell).
-        runCatching { method.invoke(instance, event, 0) }
+        return runCatching { method.invoke(instance, event, 0); true }.getOrDefault(false)
     }
 }
