@@ -47,6 +47,7 @@ import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import com.ultimate.gamepad.core.PairingInfo
 
 /**
  * Ajustes y conexión (⚙). La pantalla del mando es solo el
@@ -277,6 +278,14 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     var handled by remember { mutableStateOf(false) }
+    // P1 (auditoría): antes `handled` era one-shot y el error de
+    // QR inválido iba a ui.error, que el escáner nunca pinta: un
+    // QR no-UGP1 dejaba el escáner mudo y ningún QR posterior se
+    // aceptaba. Ahora el QR se valida AQUÍ (mismo parser que el
+    // ViewModel): si no es válido se muestra el error DENTRO del
+    // escáner y `handled` NO se marca, así el siguiente QR sí se
+    // lee. Solo un QR válido marca `handled` y entrega el resultado.
+    var qrError by remember { mutableStateOf<String?>(null) }
     // La cámara se ligaba al ciclo de vida de la actividad y nunca
     // se soltaba al cerrar el escáner: seguía corriendo (y gastando
     // batería) detrás del mando. Se guarda el proveedor y el escáner
@@ -323,7 +332,16 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
                         scanner.process(input)
                             .addOnSuccessListener { barcodes ->
                                 barcodes.firstOrNull()?.rawValue?.let {
-                                    if (!handled) { handled = true; onResult(it) }
+                                    if (handled) return@let
+                                    if (PairingInfo.parseQrPayload(it) == null) {
+                                        // QR inválido: avisar aquí dentro y
+                                        // seguir escaneando (handled sigue false).
+                                        qrError = "QR no válido: debe ser el QR de Ultimate Gamepad de la TV (UGP1). Apunta a otro QR."
+                                    } else {
+                                        handled = true
+                                        qrError = null
+                                        onResult(it)
+                                    }
                                 }
                             }
                             .addOnCompleteListener { imageProxy.close() }
@@ -339,6 +357,14 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
             barcodeScanner = null
         }, modifier = Modifier.fillMaxWidth().height(320.dp))
         Spacer(Modifier.height(12.dp))
+        // Error de QR visible dentro del escáner (P1): antes iba a
+        // ui.error y aquí nunca se pintaba.
+        if (qrError != null) {
+            Text(qrError!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { qrError = null }) { Text("Entendido, seguir escaneando") }
+            Spacer(Modifier.height(12.dp))
+        }
         Button(onClick = onClose) { Text("Cancelar escaneo") }
     }
 }
