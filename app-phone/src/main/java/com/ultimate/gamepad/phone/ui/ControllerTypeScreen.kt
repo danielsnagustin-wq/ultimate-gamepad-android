@@ -60,6 +60,16 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             "Cambiar el tipo cambia el mando que se dibuja Y el mando virtual que crea la TV (nombre y VID/PID). Al elegir, la TV recrea el dispositivo con ese perfil.",
             color = Color.White, fontSize = 13.sp,
         )
+        // P7: ui.error/ui.info no se mostraban en esta pantalla.
+        // Mismo patrón que PerformanceScreen.
+        if (ui.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text("Último error: ${ui.error}", color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        if (ui.info != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp)
+        }
         Spacer(Modifier.height(12.dp))
         Text(
             "Activo: ${GamepadProfiles.fromId(ui.activeProfileId).name} (${GamepadProfiles.fromId(ui.activeProfileId).deviceName})",

@@ -87,6 +87,17 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             color = Color.White,
             fontSize = 12.sp,
         )
+        // P7: antes ui.error/ui.info tenían 0 ocurrencias aquí:
+        // los avisos de macros, teclado y ratón se perdían. Mismo
+        // patrón que PerformanceScreen (error en rojo, info en verde).
+        if (ui.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text("Último error: ${ui.error}", color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        if (ui.info != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp)
+        }
 
         // --- Turbo ---
         Spacer(Modifier.height(16.dp))

@@ -17,6 +17,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +50,10 @@ import com.ultimate.gamepad.core.GamepadProfiles
 @Composable
 fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
+    // P7: esta pantalla no recibía ui y nunca mostraba ui.error /
+    // ui.info. Se lee el estado del ViewModel (sin tocar la
+    // firma, que la usa GamepadScreen.kt).
+    val ui by vm.ui.collectAsState()
     var profiles by remember { mutableStateOf(GameProfilePrefs.loadAll(context)) }
     var editing by remember { mutableStateOf<GameProfile?>(null) }
     // Nombre del perfil que se abrió en el editor (null = perfil
@@ -101,6 +106,15 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             "Un perfil por juego, elegido a mano (sin detección automática: en GeForce NOW el juego corre en la nube). \"Aplicar\" cambia el mando, la sensibilidad, el remapeo y el diseño a la vez.",
             color = Color.White, fontSize = 13.sp,
         )
+        // P7: error/info visibles, mismo patrón que PerformanceScreen.
+        if (ui.error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text("Último error: ${ui.error}", color = Color(0xFFFF5252), fontSize = 13.sp)
+        }
+        if (ui.info != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp)
+        }
         Spacer(Modifier.height(12.dp))
         val draft = editing
         if (draft == null) {
