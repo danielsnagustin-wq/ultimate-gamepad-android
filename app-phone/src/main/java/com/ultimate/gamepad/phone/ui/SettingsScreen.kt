@@ -35,12 +35,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -62,8 +65,9 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     val vibration by vm.vibrationEnabled.collectAsState()
     val hapticContext = LocalContext.current
     fun tick() = vibrateTick(hapticContext, vibration)
-    var host by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("") }
+    // Arreglo 12: IP/PIN sobreviven a la rotación.
+    var host by rememberSaveable { mutableStateOf("") }
+    var pin by rememberSaveable { mutableStateOf("") }
     // Pantalla completa OPACA con scroll: el fondo opaco tapa el
     // mando y el clickable vacío se traga los toques para que no
     // lleguen al joystick de detrás.
@@ -162,7 +166,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("IP de la TV, ej. 192.168.1.20", color = Color.White) }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos", color = Color.White) }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = pin, onValueChange = { pin = it.filter { c -> c.isDigit() }.take(4) }, label = { Text("PIN de 4 dígitos", color = Color.White) }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         Spacer(Modifier.height(12.dp))
         Button(onClick = { tick(); vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
         Spacer(Modifier.height(16.dp))
@@ -228,13 +232,13 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Text("Android 13+ las bloquea hasta que las actives. El mando funciona igual sin ellas, pero sin el permiso no verás avisos de conexión.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         val notifContext = LocalContext.current
-        var notificationsGranted by remember {
+        var notificationsGranted by rememberSaveable {
             mutableStateOf(
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                     ContextCompat.checkSelfPermission(notifContext, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
             )
         }
-        var notificationsAsked by remember { mutableStateOf(false) }
+        var notificationsAsked by rememberSaveable { mutableStateOf(false) }
         val notificationsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             notificationsGranted = granted
             notificationsAsked = true
@@ -291,7 +295,7 @@ fun QrScannerScreen(
     var hasPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
-    var handled by remember { mutableStateOf(false) }
+    var handled by rememberSaveable { mutableStateOf(false) }
     // P1 (auditoría): antes `handled` era one-shot y el error de
     // QR inválido iba a ui.error, que el escáner nunca pinta: un
     // QR no-UGP1 dejaba el escáner mudo y ningún QR posterior se
@@ -299,7 +303,7 @@ fun QrScannerScreen(
     // ViewModel): si no es válido se muestra el error DENTRO del
     // escáner y `handled` NO se marca, así el siguiente QR sí se
     // lee. Solo un QR válido marca `handled` y entrega el resultado.
-    var qrError by remember { mutableStateOf<String?>(null) }
+    var qrError by rememberSaveable { mutableStateOf<String?>(null) }
     // La cámara se ligaba al ciclo de vida de la actividad y nunca
     // se soltaba al cerrar el escáner: seguía corriendo (y gastando
     // batería) detrás del mando. Se guarda el proveedor y el escáner

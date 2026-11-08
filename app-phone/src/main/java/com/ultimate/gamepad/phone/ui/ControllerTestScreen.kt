@@ -19,6 +19,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,7 +58,7 @@ import kotlinx.coroutines.delay
 fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) {
     val checklist = remember { ControllerTestChecklist() }
     var state by remember { mutableStateOf(GamepadSender.currentState) }
-    var openNowConfirmed by remember { mutableStateOf(false) }
+    var openNowConfirmed by rememberSaveable { mutableStateOf(false) }
     val profile = GamepadProfiles.fromId(ui.activeProfileId)
     val vibration by vm.vibrationEnabled.collectAsState()
     val hapticContext = LocalContext.current

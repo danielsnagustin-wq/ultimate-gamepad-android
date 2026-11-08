@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,8 +71,8 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
     val playing by vm.playingMacro.collectAsState()
     val hapticContext = LocalContext.current
     fun tick() = vibrateTick(hapticContext, vibration)
-    var macroName by remember { mutableStateOf("") }
-    var keyboardText by remember { mutableStateOf("") }
+    var macroName by rememberSaveable { mutableStateOf("") }
+    var keyboardText by rememberSaveable { mutableStateOf("") }
 
     Column(
         modifier = Modifier

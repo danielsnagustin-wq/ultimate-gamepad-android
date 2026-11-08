@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,17 +64,17 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     // Nombre del perfil que se abrió en el editor (null = perfil
     // nuevo): para distinguir "editar sin renombrar" de
     // "renombrar a un nombre que ya existe" (P3).
-    var editingOriginalName by remember { mutableStateOf<String?>(null) }
+    var editingOriginalName by rememberSaveable { mutableStateOf<String?>(null) }
     // P2: antes `activeName` era `remember` de la carga inicial y
     // "Aplicar" guardaba en prefs sin actualizarlo: la insignia
     // "● ACTIVO" no se movía hasta reabrir la pantalla. Ahora es
     // estado mutable y se actualiza en cada "Aplicar".
-    var activeName by remember { mutableStateOf(GameProfilePrefs.loadActiveName(context)) }
+    var activeName by rememberSaveable { mutableStateOf(GameProfilePrefs.loadActiveName(context)) }
     // P3: renombrar a un nombre existente borraba el otro perfil
     // en silencio (filter + clean). Ahora se pide confirmación
     // explícita y nunca se sobrescribe sin aviso.
     var pendingOverwrite by remember { mutableStateOf<GameProfile?>(null) }
-    var pendingOverwriteApply by remember { mutableStateOf(false) }
+    var pendingOverwriteApply by rememberSaveable { mutableStateOf(false) }
 
     fun persist(next: List<GameProfile>) {
         profiles = next
@@ -233,7 +234,7 @@ private fun GameProfileEditor(
     // Arreglo 09: los botones del editor también vibran.
     val hapticContext = LocalContext.current
     fun tick() = vibrateTick(hapticContext, vibrationEnabled)
-    var name by remember(draft) { mutableStateOf(draft.name) }
+    var name by rememberSaveable(draft) { mutableStateOf(draft.name) }
     Column {
         OutlinedTextField(
             value = name,
