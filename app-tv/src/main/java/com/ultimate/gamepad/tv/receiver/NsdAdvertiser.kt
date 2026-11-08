@@ -97,7 +97,7 @@ object NsdAdvertiser {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val retryRunnable = Runnable { retryRegister() }
 
-    private val registrationListener = object : NsdManager.RegistrationListener {
+    private val registrationListener: NsdManager.RegistrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
             if (stopPending) {
                 // Se paró mientras se registraba: quitar el anuncio
@@ -107,7 +107,7 @@ object NsdAdvertiser {
                 // era null).
                 stopPending = false
                 registering = false
-                runCatching { nsdManager?.unregisterService(registrationListener) }
+                runCatching { nsdManager?.unregisterService(this) }
                 nsdManager = null
                 appContext = null
                 isRegistered = false
