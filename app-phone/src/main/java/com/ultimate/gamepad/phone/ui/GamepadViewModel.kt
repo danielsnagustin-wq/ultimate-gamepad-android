@@ -46,6 +46,7 @@ import com.ultimate.gamepad.phone.network.ExtrasSender
 import com.ultimate.gamepad.phone.network.GamepadProfilePrefs
 import com.ultimate.gamepad.phone.network.GamepadSender
 import com.ultimate.gamepad.phone.network.GamepadSenderService
+import com.ultimate.gamepad.phone.network.LastConnectionPrefs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -237,6 +238,23 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Giroscopio (Fase 4): si quedó activado al cerrar la app,
         // el sensor vuelve a arrancar solo; si no, queda apagado.
         if (_gyroEnabled.value) startGyroSensor()
+        // A3: si el proceso murió con el servicio enviando (START_STICKY
+        // lo rearrancó y reanudó solo), la UI nace DESCONECTADO aunque la
+        // TV sigue recibiendo. Restaurar CONECTANDO con lo guardado: el
+        // bucle de ping verificará en segundos si la TV responde de
+        // verdad (y lo resolverá a CONECTADO o a ERROR).
+        if (LastConnectionPrefs.isRunning(getApplication())) {
+            LastConnectionPrefs.load(getApplication())?.let { saved ->
+                _ui.update {
+                    it.copy(
+                        status = ConnectionStatus.CONNECTING,
+                        host = saved.host, port = saved.port, pin = saved.pin,
+                        connectingSinceMs = System.currentTimeMillis(),
+                        attemptMethod = saved.method,
+                    )
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -1154,6 +1172,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (method == TransportMethod.BLUETOOTH_DATA) {
             _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): no implementado todavía (Fase 5 del plan).") }; return
         }
+        // A3: persistir la última conexión para que el servicio pueda
+        // reanudar solo tras la muerte del proceso (intent nulo).
+        LastConnectionPrefs.save(getApplication(), info.host, info.port, info.pin, method)
         // CONECTANDO hasta que la TV devuelva el primer eco de ping:
         // antes se marcaba CONECTADO al instante aunque la TV no
         // respondiera, y la app se quedaba "tieso" en Conectado con

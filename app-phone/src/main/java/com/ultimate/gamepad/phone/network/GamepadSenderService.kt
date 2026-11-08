@@ -199,9 +199,20 @@ class GamepadSenderService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // START_STICKY: si el sistema mata el servicio en mitad de
-        // una partida, lo rearranca con el último intent y el mando
-        // vuelve solo, sin que el usuario tenga que reconectar.
-        val action = intent?.action ?: return START_STICKY
+        // una partida, lo rearranca con intent nulo (sin action). Antes
+        // se devolvía START_STICKY sin hacer nada: el servicio quedaba
+        // parado, sin startForeground y sin enviar, y el mando no volvía
+        // solo aunque el comentario lo prometiera. Ahora se restaura la
+        // última conexión guardada (A3) y se reanuda el envío; si no hay
+        // nada guardado, se para (no tiene sentido un servicio parado).
+        val action = intent?.action
+        if (action == null) {
+            val saved = LastConnectionPrefs.load(this)
+            if (saved == null) { stopSelf(); return START_NOT_STICKY }
+            activeMethod = saved.method
+            startSending(saved.host, saved.port, saved.method)
+            return START_STICKY
+        }
         when (action) {
             ACTION_STOP -> { stopSending(); stopSelf(); return START_NOT_STICKY }
             ACTION_START -> {
@@ -219,6 +230,9 @@ class GamepadSenderService : Service() {
 
     private fun startSending(host: String, port: Int, method: TransportMethod) {
         startForeground(1, notification("Enviando por $method a $host:$port…"))
+        // A3: el servicio está enviando (la UI lo usa al reabrir la app
+        // tras la muerte del proceso para no decir DESCONECTADO).
+        LastConnectionPrefs.setRunning(this, true)
         // Perfil activo guardado (Fase 2): el servicio lo lee al
         // arrancar para que sobreviva a la muerte del proceso; cada
         // paquete lleva el profileId en el byte 28.
@@ -377,6 +391,8 @@ class GamepadSenderService : Service() {
     private fun stopSending() {
         job?.cancel(); job = null
         wifiLock.release()
+        // A3: ya no está enviando.
+        LastConnectionPrefs.setRunning(this, false)
     }
 
     override fun onDestroy() { stopSending(); scope.cancel(); super.onDestroy() }
