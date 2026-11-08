@@ -1,5 +1,6 @@
 package com.ultimate.gamepad.tv
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -7,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +27,7 @@ import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.tv.receiver.Diagnostics
 import com.ultimate.gamepad.tv.receiver.ReceiverConfig
+import com.ultimate.gamepad.tv.receiver.BluetoothDataReceiverService
 import com.ultimate.gamepad.tv.receiver.TcpReceiverService
 import com.ultimate.gamepad.tv.receiver.TvTestPrefs
 import com.ultimate.gamepad.tv.receiver.UdpReceiverService
@@ -205,6 +208,15 @@ class MainActivity : Activity() {
         // A4: el canal de notificación existe desde el primer arranque
         // (ver GamepadSenderService en el teléfono).
         UdpReceiverService.createNotificationChannel(this)
+        // Fase 5 (Bluetooth datos SPP/RFCOMM): sin BLUETOOTH_CONNECT
+        // + BLUETOOTH_ADVERTISE el receptor queda en UNAVAILABLE con
+        // el motivo y no crashea; se piden aquí en API 31+.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestPermissions(
+                arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE),
+                1,
+            )
+        }
         pin = TvPairing.getOrCreatePin(this)
 
         val layout = LinearLayout(this).apply {
@@ -377,6 +389,7 @@ class MainActivity : Activity() {
             UdpReceiverService.stopAndRelease(this@MainActivity)
             stopService(Intent(this@MainActivity, UdpReceiverService::class.java))
             stopService(Intent(this@MainActivity, TcpReceiverService::class.java))
+            stopService(Intent(this@MainActivity, BluetoothDataReceiverService::class.java))
             refresh()
         }
         val testBtn = bigButton("🧪  Prueba de mando", purpleDark) { showTest() }
@@ -419,6 +432,7 @@ class MainActivity : Activity() {
         // T1: pulsar "Iniciar receptor" borra el "detenido".
         UdpReceiverService.setReceiverStopped(this, false)
         startForegroundService(Intent(this, UdpReceiverService::class.java))
+        startForegroundService(Intent(this, BluetoothDataReceiverService::class.java))
         refresh()
     }
 
@@ -617,7 +631,8 @@ class MainActivity : Activity() {
         statusSubView.text = "${UdpReceiverService.activeTransport.label}  ·  " +
             "Último paquete: ${if (agoSec < 0) "nunca" else "hace $agoSec s"}  ·  " +
             "${UdpReceiverService.packetsReceived} paquetes  ·  ${UdpReceiverService.packetsPerSecond}/s\n" +
-            "Perfil: ${profile.name} (${profile.deviceName})"
+            "Perfil: ${profile.name} (${profile.deviceName})\n" +
+            "Bluetooth: ${BluetoothDataReceiverService.btStatusDetail} · ${BluetoothDataReceiverService.btPacketsReceived} paquetes"
 
         // ——— Conectar: IP, PIN y QR real ———
         connectIpView.text = "IP  $ip"

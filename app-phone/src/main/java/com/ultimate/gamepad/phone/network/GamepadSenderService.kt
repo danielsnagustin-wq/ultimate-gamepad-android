@@ -31,9 +31,10 @@ import java.net.InetAddress
 
 /**
  * Servicio en primer plano que envía el estado del mando.
- * Transportes de envío (Fase 1): Wi-Fi UDP (principal) y Wi-Fi TCP
- * (respaldo). Bluetooth HID tiene su propio servicio
- * (BluetoothHidService) y Bluetooth-datos queda para Etapa 2.
+ * Transportes de envío (Fase 1 + Fase 5): Wi-Fi UDP (principal),
+ * Wi-Fi TCP (respaldo) y Bluetooth datos SPP/RFCOMM (respaldo si
+ * falla todo el Wi-Fi). Bluetooth HID tiene su propio servicio
+ * (BluetoothHidService).
  *
  * Reconexión automática: si el envío falla, no se cierra el
  * servicio: se espera 1 s y se reintenta con el mismo método; si
@@ -58,7 +59,8 @@ class GamepadSenderService : Service() {
         const val CHANNEL_ID = "gamepad_sender"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
-        const val EXTRA_METHOD = "method" // "WIFI_UDP" o "WIFI_TCP"
+        const val EXTRA_METHOD = "method" // "WIFI_UDP", "WIFI_TCP" o "BLUETOOTH_DATA"
+        const val EXTRA_BT_ADDRESS = "bt_address" // MAC de la TV emparejada (solo BLUETOOTH_DATA)
         const val ACTION_START = "com.ultimate.gamepad.phone.START"
         const val ACTION_STOP = "com.ultimate.gamepad.phone.STOP"
         /**
@@ -86,6 +88,12 @@ class GamepadSenderService : Service() {
             private set
         /** Inicio de la sesión TCP actual (se renueva en cada reconexión): los envíos solo valen como prueba de vida en los primeros 3 s sin eco (ver isTvResponding). */
         @Volatile var tcpSessionStartMs: Long = 0L
+            private set
+        /** Último envío por Bluetooth datos sin excepción (prueba de vida por BT, espejo de lastTcpSendAtMs). */
+        @Volatile var lastBtSendAtMs: Long = 0L
+            private set
+        /** Inicio de la sesión Bluetooth datos actual (se renueva en cada reconexión): igual que tcpSessionStartMs, ver isTvResponding. */
+        @Volatile var btSessionStartMs: Long = 0L
             private set
         /**
          * Paquetes de mando recibidos por la TV, leídos del eco de
@@ -193,13 +201,27 @@ class GamepadSenderService : Service() {
                         lastTcpSendAtMs > 0 &&
                         now - lastTcpSendAtMs <= ConnectionHealth.PING_TIMEOUT_MS
                 }
+            } else if (activeMethod == TransportMethod.BLUETOOTH_DATA) {
+                // BT (Fase 5): igual que TCP, el canal es un flujo.
+                // El eco (lector BT) prueba que la TV vive; solo
+                // antes del primer eco valen los envíos, y solo en
+                // los primeros 3 s de la sesión.
+                val now = System.currentTimeMillis()
+                if (lastEchoAtMs > 0) {
+                    ConnectionHealth.isTvResponding(lastEchoAtMs, now)
+                } else {
+                    btSessionStartMs > 0 &&
+                        now - btSessionStartMs <= ConnectionHealth.PING_TIMEOUT_MS &&
+                        lastBtSendAtMs > 0 &&
+                        now - lastBtSendAtMs <= ConnectionHealth.PING_TIMEOUT_MS
+                }
             } else {
                 ConnectionHealth.isTvResponding(lastEchoAtMs)
             }
 
         /** Limpia los marcadores de salud (al entrar en HID o al desconectar): un eco viejo de Wi-Fi no debe fingir que la TV responde. */
         fun resetHealth() {
-            lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L; tcpSessionStartMs = 0L
+            lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L; tcpSessionStartMs = 0L; lastBtSendAtMs = 0L; btSessionStartMs = 0L
             tvPacketsReceived = 0; tvReceivingPackets = false; lastTvPacketsAtMs = 0L; lastTvPacketsStamp = -1
             resetStats()
         }
@@ -225,7 +247,7 @@ class GamepadSenderService : Service() {
             val saved = LastConnectionPrefs.load(this)
             if (saved == null) { stopSelf(); return START_NOT_STICKY }
             activeMethod = saved.method
-            startSending(saved.host, saved.port, saved.method)
+            startSending(saved.host, saved.port, saved.method, saved.btAddress)
             return START_STICKY
         }
         when (action) {
@@ -235,15 +257,16 @@ class GamepadSenderService : Service() {
                 val port = intent.getIntExtra(EXTRA_PORT, GamepadProtocol.DEFAULT_PORT)
                 val method = runCatching { TransportMethod.valueOf(intent.getStringExtra(EXTRA_METHOD) ?: "WIFI_UDP") }
                     .getOrDefault(TransportMethod.WIFI_UDP)
+                val btAddress = intent.getStringExtra(EXTRA_BT_ADDRESS)
                 activeMethod = method
-                startSending(host, port, method)
+                startSending(host, port, method, btAddress)
                 return START_STICKY
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun startSending(host: String, port: Int, method: TransportMethod) {
+    private fun startSending(host: String, port: Int, method: TransportMethod, btAddress: String? = null) {
         startForeground(1, notification("Enviando por $method a $host:$port…"))
         // A3: el servicio está enviando (la UI lo usa al reabrir la app
         // tras la muerte del proceso para no decir DESCONECTADO).
@@ -259,12 +282,15 @@ class GamepadSenderService : Service() {
         // socket nuevo. Cancelar el job basta para que el bucle viejo
         // se deshaga de los suyos.
         job?.cancel()
-        wifiLock.acquire()
+        // WifiLock de baja latencia: solo para Wi-Fi (BT no lo necesita).
+        if (method == TransportMethod.WIFI_UDP || method == TransportMethod.WIFI_TCP) wifiLock.acquire()
         lastError = null; lastPingMs = null; lastEchoAtMs = 0L
         job = scope.launch {
             var udp: UdpTransport? = null
             var tcp: TcpGamepadTransport? = null
             var tcpReaderJob: Job? = null
+            var bt: BluetoothDataTransport? = null
+            var btReaderJob: Job? = null
             // Fuera del try: el finally (estado cero al parar) usa
             // address y sequence, y lo declarado dentro del try no
             // es visible en el finally.
@@ -276,6 +302,7 @@ class GamepadSenderService : Service() {
                 var lastPingSentAt = 0L
                 var pingSequence = -1
                 lastTcpSendAtMs = 0L
+                lastBtSendAtMs = 0L
                 while (isActive) {
                     try {
                         val state = GamepadSender.currentState.copy(
@@ -360,6 +387,56 @@ class GamepadSenderService : Service() {
                                 }
                                 lastTcpSendAtMs = System.currentTimeMillis()
                             }
+                            TransportMethod.BLUETOOTH_DATA -> {
+                                if (bt == null) {
+                                    val transport = BluetoothDataTransport(this@GamepadSenderService)
+                                    val address = btAddress ?: throw java.io.IOException("Sin TV Bluetooth elegida")
+                                    if (!transport.connect(address)) throw java.io.IOException(transport.lastError ?: "Bluetooth SPP sin conexión")
+                                    bt = transport
+                                    // Sesión BT nueva: igual que TCP, los ecos
+                                    // viejos no valen y el plazo de gracia de
+                                    // "envío sin eco" empieza ahora.
+                                    lastEchoAtMs = 0L; lastPingMs = null
+                                    btSessionStartMs = System.currentTimeMillis()
+                                    // Lector de ecos BT (Fase 5): el eco del
+                                    // ping llega por el mismo socket RFCOMM y
+                                    // hay que leerlo en otra corrutina, como
+                                    // por TCP. Hijo del bucle: al cancelar el
+                                    // job, el lector muere con él.
+                                    val connectedBt = transport
+                                    btReaderJob?.cancel()
+                                    btReaderJob = launch {
+                                        while (isActive && bt === connectedBt) {
+                                            val raw = try {
+                                                connectedBt.readRaw(1000)
+                                            } catch (_: Exception) {
+                                                break // Socket muerto: el bucle principal reconecta.
+                                            } ?: continue
+                                            if (!GamepadProtocol.isPing(raw)) continue
+                                            val echoed = connectedBt.recordEcho(raw, pingSequence) ?: continue
+                                            lastPingMs = connectedBt.lastPingMs
+                                            if (lastPingMs != null) recordPingSample(lastPingMs!!)
+                                            lastEchoAtMs = System.currentTimeMillis()
+                                            recordTvPackets(echoed)
+                                        }
+                                    }
+                                }
+                                // La escritura RFCOMM puede bloquearse si la TV
+                                // deja de leer: con timeout, un envío atascado
+                                // se trata como fallo y se reintenta, igual que TCP.
+                                val currentBt = bt ?: throw java.io.IOException("Bluetooth SPP no conectado")
+                                val sent = withTimeoutOrNull(500) { currentBt.send(state, GamepadSender.activeProfileId); true } ?: false
+                                if (!sent) throw java.io.IOException("Bluetooth SPP sin respuesta (escritura bloqueada)")
+                                recordSent()
+                                // Ping BT con eco (Fase 5): cada 500 ms
+                                // igual que por Wi-Fi/TCP.
+                                val now = System.currentTimeMillis()
+                                if (now - lastPingSentAt >= 500) {
+                                    lastPingSentAt = now; pingSequence = sequence
+                                    runCatching { currentBt.sendPing(pingSequence, now) }
+                                }
+                                lastBtSendAtMs = System.currentTimeMillis()
+                            }
                             else -> { lastError = "Método $method no es de este servicio"; delay(1000) }
                         }
                         lastError = null
@@ -370,8 +447,10 @@ class GamepadSenderService : Service() {
                         // Reconexión automática: no salir del bucle.
                         lastError = e.message ?: e.javaClass.simpleName
                         tcpReaderJob?.cancel(); tcpReaderJob = null
+                        btReaderJob?.cancel(); btReaderJob = null
                         runCatching { tcp?.close() }; tcp = null
                         runCatching { udp?.close() }; udp = null
+                        runCatching { bt?.close() }; bt = null
                         delay(1000)
                     }
                     delay(8) // ~120 Hz: el mando responde el doble de rápido que a 60 Hz.
@@ -388,6 +467,7 @@ class GamepadSenderService : Service() {
                 // excepción); va con runCatching para no alargar
                 // el cierre.
                 tcpReaderJob?.cancel(); tcpReaderJob = null
+                btReaderJob?.cancel(); btReaderJob = null
                 val zero = GamepadState(sequence = sequence, timestampMs = System.currentTimeMillis())
                 val addr = address
                 // El estado cero también lleva el profileId activo:
@@ -396,9 +476,11 @@ class GamepadSenderService : Service() {
                 val profileId = GamepadSender.activeProfileId
                 if (addr != null) runCatching { udp?.send(zero, addr, port, profileId) }
                 runCatching { tcp?.send(zero, profileId) }
+                runCatching { bt?.send(zero, profileId) }
                 // Al cancelar o salir, los sockets no quedan abiertos.
                 runCatching { tcp?.close() }; tcp = null
                 runCatching { udp?.close() }; udp = null
+                runCatching { bt?.close() }; bt = null
             }
         }
     }

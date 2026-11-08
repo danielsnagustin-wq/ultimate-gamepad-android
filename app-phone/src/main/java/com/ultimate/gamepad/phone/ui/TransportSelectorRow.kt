@@ -18,12 +18,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,8 +58,12 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
     val hapticContext = LocalContext.current
     fun tick() = vibrateTick(hapticContext, vibration)
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.refreshHidStatus(force = true)
+        if (granted) {
+            vm.refreshHidStatus(force = true)
+            vm.refreshBtDataStatus()
+        }
     }
+    var showBtDialog by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -122,14 +130,27 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 Text("Volver a comprobar Bluetooth", color = Color.White)
             }
         }
-        // BLE/SPP (2026-11-07): NO implementado, y hay que decirlo
-        // así. Antes el chip decía "Pendiente Etapa 2", que suena a
-        // que casi funciona; no es un respaldo real y no se puede
-        // forzar. Respaldos reales: Wi-Fi UDP/TCP y Bluetooth HID.
-        Text(
-            "Bluetooth datos (BLE/SPP): no implementado todavía — no se puede usar ni forzar. Si falla todo el Wi-Fi, los respaldos reales son Bluetooth HID y el hotspot.",
-            color = Color(0xFFFFC107), fontSize = 12.sp,
-        )
+        // Bluetooth datos (SPP/RFCOMM, Fase 5): respaldo real si falla
+        // todo el Wi-Fi. La TV se elige de la lista de emparejados
+        // (sin escaneo); el PIN sigue siendo el que muestra la TV.
+        val btStatus = ui.transportStatus[TransportMethod.BLUETOOTH_DATA]
+        if (btStatus == TransportStatus.UNAVAILABLE) {
+            Text("Bluetooth datos: ${ui.btDataStatusDetail ?: "no disponible"}", color = Color.White, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = { tick(); vm.refreshBtDataDevices(); showBtDialog = true }) {
+                Text("Elegir TV emparejada", color = Color.White)
+            }
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = { tick(); vm.refreshBtDataStatus() }) {
+                Text("Volver a comprobar Bluetooth", color = Color.White)
+            }
+        }
+        if (ui.selectedMethod == TransportMethod.BLUETOOTH_DATA) {
+            Text(
+                "Por Bluetooth datos los gatillos LT/RT son analógicos (0..255), como por Wi-Fi. La latencia real depende del enlace; sin eco, el ping muestra '—'.",
+                color = Color.White, fontSize = 12.sp,
+            )
+        }
         if (ui.selectedMethod == TransportMethod.BLUETOOTH_HID) {
             // H3 / Fase 1: no prometer lo que el HID no da. Por
             // Bluetooth HID los gatillos LT/RT son digitales
@@ -162,6 +183,36 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             }) {
                 Text("Abrir ajustes de la app")
             }
+        }
+        // Diálogo "Elegir TV emparejada" (Fase 5): sin escaneo, solo
+        // la lista de emparejados. Al tocar una TV se persiste su MAC.
+        if (showBtDialog) {
+            AlertDialog(
+                onDismissRequest = { showBtDialog = false },
+                title = { Text("TV por Bluetooth", color = Color.White) },
+                text = {
+                    Column {
+                        if (ui.btDataDevices.isEmpty()) {
+                            Text("No hay TVs emparejadas. Empareja la TV en Ajustes > Bluetooth y vuelve a intentarlo.", color = Color.White, fontSize = 12.sp)
+                        } else {
+                            for (device in ui.btDataDevices) {
+                                Button(
+                                    onClick = { tick(); vm.selectBtDataDevice(device.address); showBtDialog = false },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text("${device.name} (${device.address})", color = Color.White)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { showBtDialog = false }) {
+                        Text("Cerrar", color = Color.White)
+                    }
+                },
+            )
         }
     }
 }

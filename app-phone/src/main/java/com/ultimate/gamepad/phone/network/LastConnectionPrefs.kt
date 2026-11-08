@@ -17,9 +17,11 @@ import com.ultimate.gamepad.core.TransportMethod
  * DESCONECTADO aunque el ViewModel naciera de cero, y el bucle de
  * ping verifica en segundos si la TV responde de verdad.
  *
- * Solo se guardan los métodos Wi-Fi (el servicio solo envía por Wi-Fi;
- * HID no pasa por aquí). Un método guardado que no sea Wi-Fi se ignora
- * al cargar, nunca se crashea.
+ * Fase 5 (Bluetooth datos SPP/RFCOMM): también guarda la MAC de la
+ * TV emparejada (btAddress). Si save() se llama con btAddress = null
+ * (p. ej. al conectar por Wi-Fi), se conserva la MAC guardada antes:
+ * cambiar de método no debe borrar la TV elegida. Solo se guardan
+ * los métodos Wi-Fi y BLUETOOTH_DATA (HID no pasa por aquí).
  */
 object LastConnectionPrefs {
     private const val PREFS = "ultimate_gamepad_last_connection"
@@ -28,15 +30,20 @@ object LastConnectionPrefs {
     private const val KEY_PIN = "pin"
     private const val KEY_METHOD = "method"
     private const val KEY_RUNNING = "service_running"
+    private const val KEY_BT_ADDRESS = "bt_address"
 
-    data class Saved(val host: String, val port: Int, val pin: String, val method: TransportMethod)
+    data class Saved(val host: String, val port: Int, val pin: String, val method: TransportMethod, val btAddress: String? = null)
 
-    fun save(context: Context, host: String, port: Int, pin: String, method: TransportMethod) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+    fun save(context: Context, host: String, port: Int, pin: String, method: TransportMethod, btAddress: String? = null) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Con btAddress = null se conserva la MAC guardada antes.
+        val address = btAddress ?: prefs.getString(KEY_BT_ADDRESS, null)
+        prefs.edit()
             .putString(KEY_HOST, host)
             .putInt(KEY_PORT, port)
             .putString(KEY_PIN, pin)
             .putString(KEY_METHOD, method.name)
+            .putString(KEY_BT_ADDRESS, address)
             .apply()
     }
 
@@ -46,12 +53,13 @@ object LastConnectionPrefs {
         val method = runCatching {
             TransportMethod.valueOf(prefs.getString(KEY_METHOD, null) ?: "")
         }.getOrNull() ?: return null
-        if (method != TransportMethod.WIFI_UDP && method != TransportMethod.WIFI_TCP) return null
+        if (method != TransportMethod.WIFI_UDP && method != TransportMethod.WIFI_TCP && method != TransportMethod.BLUETOOTH_DATA) return null
         return Saved(
             host = host,
             port = prefs.getInt(KEY_PORT, GamepadProtocol.DEFAULT_PORT),
             pin = prefs.getString(KEY_PIN, "") ?: "",
             method = method,
+            btAddress = prefs.getString(KEY_BT_ADDRESS, null)?.takeIf { it.isNotBlank() },
         )
     }
 

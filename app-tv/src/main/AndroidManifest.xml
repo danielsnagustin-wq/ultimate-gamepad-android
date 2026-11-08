@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- A4: igual que en el teléfono (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Fase 5 (Bluetooth datos SPP/RFCOMM): imprescindibles en API 31+
+         para listenUsingRfcommWithServiceRecord y leer el adapter.
+         Sin uses-feature required: una TV sin BT debe seguir abriendo
+         la app y decir "Sin Bluetooth en esta TV", no desaparecer. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
     <uses-feature android:name="android.software.leanback" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -38,6 +46,12 @@
              UI diga que está disponible. -->
         <service
             android:name=".receiver.TcpReceiverService"
+            android:exported="false" />
+        <!-- Receptor Bluetooth datos SPP/RFCOMM (Fase 5): lo arranca
+             MainActivity junto al UDP. Sin esta declaración,
+             startService() lo ignora en silencio y el BT nunca escucha. -->
+        <service
+            android:name=".receiver.BluetoothDataReceiverService"
             android:exported="false" />
         <!-- Proveedor de Shizuku: necesario para que Shizuku encuentre
              nuestro UserService. Sin él, bindUserService falla. -->
