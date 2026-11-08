@@ -153,6 +153,15 @@ private fun statusText(status: TransportStatus): String = when (status) {
     TransportStatus.PENDING_STAGE2 -> "No implementado"
 }
 
+/**
+ * Frecuencia real de envío según el método (arreglo 08): Wi-Fi
+ * UDP/TCP envía el estado completo a 120 Hz, pero por Bluetooth
+ * HID el reenvío es a 10 Hz (GamepadViewModel, startHidHeartbeat:
+ * delay 100 ms). El texto "enviando a 120 Hz" mentía para HID.
+ */
+internal fun transportSendRateHz(method: TransportMethod): Int =
+    if (method == TransportMethod.BLUETOOTH_HID) 10 else 120
+
 private fun statusColor(status: TransportStatus): Color = when (status) {
     TransportStatus.AVAILABLE -> Color(0xFF4CAF50)
     // Punto de estado, no texto: gris apagado para "no

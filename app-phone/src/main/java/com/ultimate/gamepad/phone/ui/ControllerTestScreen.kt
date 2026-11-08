@@ -120,7 +120,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         Spacer(Modifier.height(4.dp))
         Text(
             "1. Teléfono envía: " + when (ui.status) {
-                ConnectionStatus.CONNECTED -> "SÍ — conectado, enviando a 120 Hz."
+                ConnectionStatus.CONNECTED -> "SÍ — conectado, enviando a ${transportSendRateHz(ui.attemptMethod)} Hz por ${ui.attemptMethod.label}."
                 ConnectionStatus.CONNECTING -> "Aún no — conectando…"
                 else -> "NO — sin conexión."
             },

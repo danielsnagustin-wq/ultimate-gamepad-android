@@ -65,7 +65,10 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
             "Jitter (variación del ping)",
             ui.pingJitterMs?.let { "$it ms" } ?: "— (faltan muestras: hacen falta 2 ecos)",
         )
-        PerformanceRow("Paquetes/s enviados", "${ui.packetsPerSec} /s (objetivo ~120 /s)")
+        // Arreglo 08: el objetivo depende del método activo
+        // (Wi-Fi 120 /s, Bluetooth HID 10 /s), no siempre 120.
+        val sendRateHz = transportSendRateHz(if (ui.status == ConnectionStatus.DISCONNECTED) ui.selectedMethod else ui.attemptMethod)
+        PerformanceRow("Paquetes/s enviados", "${ui.packetsPerSec} /s (objetivo ~$sendRateHz /s)")
         PerformanceRow("Paquetes enviados (total)", "${ui.packetsSent}")
         PerformanceRow(
             "TV recibe paquetes",
@@ -82,7 +85,7 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Referencia en red local: ping 1–10 ms, jitter 0–3 ms y ~120 paquetes/s. Si el ping sube o los paquetes/s caen, la red está saturada o la TV no responde; el modo Automático cambia a TCP.",
+            "Referencia en red local (Wi-Fi): ping 1–10 ms, jitter 0–3 ms y ~120 paquetes/s. Por Bluetooth HID el envío es de 10 paquetes/s. Si el ping sube o los paquetes/s caen, la red está saturada o la TV no responde; el modo Automático cambia a TCP.",
             color = Color.White, fontSize = 12.sp,
         )
         if (ui.error != null) {
