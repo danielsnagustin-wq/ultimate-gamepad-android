@@ -34,10 +34,6 @@ object InputMapper {
     /** Fuente única para todo evento de juego. Ver GamepadClassification. */
     const val GAMEPAD_SOURCE: Int = InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK
 
-    /** Comprueba que un evento no se ha colado con fuente de mando a distancia. */
-    fun assertGamepadSource(sources: Int): Boolean =
-        (sources and InputDevice.SOURCE_GAMEPAD) != 0 || (sources and InputDevice.SOURCE_JOYSTICK) != 0
-
     fun buttonToKeyCode(button: Int): Int = when (button) {
         GamepadButtons.A -> KeyEvent.KEYCODE_BUTTON_A
         GamepadButtons.B -> KeyEvent.KEYCODE_BUTTON_B

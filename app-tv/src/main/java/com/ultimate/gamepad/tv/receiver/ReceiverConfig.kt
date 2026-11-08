@@ -23,5 +23,4 @@ package com.ultimate.gamepad.tv.receiver
  */
 object ReceiverConfig {
     const val SHIZUKU_PHASE2_ENABLED: Boolean = true
-    const val SHIZUKU_ATTEMPT_WHEN_PRESENT: Boolean = true
 }
