@@ -1,5 +1,8 @@
 package com.ultimate.gamepad.phone.ui
 
+import android.content.Context
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -34,6 +37,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sqrt
+
+/** Vibración corta (15 ms) al pulsar un botón de las pantallas
+ * (Ajustes, Extras, perfiles, tipo de mando, prueba,
+ * rendimiento, selector de transporte). Misma duración y mismo
+ * respeto al ajuste que `vibrateOnPress()` del ViewModel (que ya
+ * vibra en los botones del MANDO: setButton/setDpad/pulseButton).
+ * Los sticks no vibran: son entrada continua, no pulsaciones.
+ * minSdk 26, así VibrationEffect.createOneShot no necesita
+ * guarda de versión. */
+fun vibrateTick(context: Context, enabled: Boolean) {
+    if (!enabled) return
+    val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+    runCatching {
+        if (vibrator.hasVibrator()) {
+            vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+    }
+}
 
 /** Pulsación con liberación garantizada: si el gesto se cancela
  * (llamada, bloqueo de pantalla, otro gesto que se lo queda),

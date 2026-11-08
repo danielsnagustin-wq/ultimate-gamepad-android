@@ -16,9 +16,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.GamepadProfiles
@@ -47,6 +50,9 @@ import com.ultimate.gamepad.core.GamepadProfiles
  */
 @Composable
 fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) {
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,7 +94,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                         if (selected) Color(0xFF7C4DFF) else Color(0xFF333333),
                         RoundedCornerShape(14.dp),
                     )
-                    .clickable { vm.setActiveProfile(profile.id) }
+                    .clickable { tick(); vm.setActiveProfile(profile.id) }
                     .padding(14.dp),
             ) {
                 Row {
@@ -115,7 +121,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         }
         val previous = ui.previousProfileId?.let { GamepadProfiles.fromId(it) }
         if (previous != null && previous.id != ui.activeProfileId) {
-            Button(onClick = { vm.revertProfile() }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { tick(); vm.revertProfile() }, modifier = Modifier.fillMaxWidth()) {
                 Text("↩  Volver al perfil anterior: ${previous.name}", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
@@ -125,7 +131,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             color = Color.White, fontSize = 12.sp,
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+        Button(onClick = { tick(); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
     }
 }
 

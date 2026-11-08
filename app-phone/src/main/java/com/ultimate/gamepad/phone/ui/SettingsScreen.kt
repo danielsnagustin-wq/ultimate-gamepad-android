@@ -58,6 +58,9 @@ import com.ultimate.gamepad.core.PairingInfo
 @Composable
 fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     val deadZone by vm.deadZone.collectAsState()
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     var host by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     // Pantalla completa OPACA con scroll: el fondo opaco tapa el
@@ -109,7 +112,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         if (ui.status == ConnectionStatus.CONNECTED) {
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { vm.disconnect() }) { Text("Desconectar") }
+            Button(onClick = { tick(); vm.disconnect() }) { Text("Desconectar") }
         }
         Spacer(Modifier.height(16.dp))
         // --- Buscar TV en la red (sin escribir IP ni PIN) ---
@@ -121,12 +124,12 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("No estás en Wi-Fi. Conecta el teléfono a la misma red Wi-Fi que la TV.", color = Color(0xFFFF5252), fontSize = 13.sp)
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.discoverTvs() }, enabled = !ui.discovering) {
+        Button(onClick = { tick(); vm.discoverTvs() }, enabled = !ui.discovering) {
             Text(if (ui.discovering) "Buscando TV…" else "🔍  Buscar TV en la red", color = Color.White)
         }
         for (tv in ui.discoveredTvs) {
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { vm.connectToDiscovered(tv) }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { tick(); vm.connectToDiscovered(tv) }, modifier = Modifier.fillMaxWidth()) {
                 Text("${tv.name} — ${tv.ip}", color = Color.White)
             }
         }
@@ -154,20 +157,20 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(4.dp))
         Text("Modo Sin router / Hotspot: activa el hotspot del teléfono, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Button(onClick = { vm.openQrScanner() }) { Text("Escanear QR de la TV") }
+        Button(onClick = { tick(); vm.openQrScanner() }) { Text("Escanear QR de la TV") }
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("IP de la TV, ej. 192.168.1.20", color = Color.White) }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos", color = Color.White) }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
-        Button(onClick = { vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
+        Button(onClick = { tick(); vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
         Spacer(Modifier.height(16.dp))
         // --- Personalizar botones ---
         Text("Personalizar botones", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text("Abre el panel visual y arrastra cada botón con el dedo, como en los juegos: ahí lo mueves, lo haces más grande o más pequeño, más transparente o lo quitas.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openLayoutEditor() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openLayoutEditor() }, modifier = Modifier.fillMaxWidth()) {
             Text("🎮  Abrir panel de botones", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
@@ -186,19 +189,19 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(4.dp))
         Text("Tipo de mando, perfiles por juego, prueba de mando y rendimiento.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openControllerType() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openControllerType() }, modifier = Modifier.fillMaxWidth()) {
             Text("🎮  Tipo de mando (Xbox / PlayStation)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openGameProfiles() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openGameProfiles() }, modifier = Modifier.fillMaxWidth()) {
             Text("🗂️  Perfiles por juego", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openControllerTest() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openControllerTest() }, modifier = Modifier.fillMaxWidth()) {
             Text("🧪  Prueba de mando (qué se envía)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openPerformance() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openPerformance() }, modifier = Modifier.fillMaxWidth()) {
             Text("📶  Rendimiento (latencia y red)", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
@@ -207,7 +210,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(4.dp))
         Text("Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.openExtras() }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { tick(); vm.openExtras() }, modifier = Modifier.fillMaxWidth()) {
             Text("✨  Extras (turbo, macros, teclado, ratón…)", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
@@ -242,6 +245,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = {
+                    tick()
                     if (notificationsAsked) {
                         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, notifContext.packageName)
@@ -257,7 +261,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             }
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }
+        Button(onClick = { tick(); vm.closeSettings() }) { Text("Cerrar ajustes") }
     }
 }
 
@@ -271,8 +275,17 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
  * conexión una y otra vez.
  */
 @Composable
-fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
+fun QrScannerScreen(
+    onResult: (String) -> Unit,
+    onClose: () -> Unit,
+    // Arreglo 09: la vibración llega por parámetro (por defecto
+    // apagada) porque esta pantalla no recibe el ViewModel; el
+    // parche del manifiesto pasa vm.vibrationEnabled desde
+    // GamepadScreen.kt, el único sitio que la instancia.
+    vibrationEnabled: Boolean = false,
+) {
     val context = LocalContext.current
+    fun tick() = vibrateTick(context, vibrationEnabled)
     val lifecycleOwner = LocalLifecycleOwner.current
     var hasPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -310,9 +323,9 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
         if (!hasPermission) {
             Text("Se necesita la cámara para escanear el QR de la TV.", color = Color.White)
             Spacer(Modifier.height(12.dp))
-            Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Dar permiso de cámara") }
+            Button(onClick = { tick(); launcher.launch(Manifest.permission.CAMERA) }) { Text("Dar permiso de cámara") }
             Spacer(Modifier.height(8.dp))
-            Button(onClick = onClose) { Text("Volver a IP / PIN") }
+            Button(onClick = { tick(); onClose() }) { Text("Volver a IP / PIN") }
             return@Column
         }
         AndroidView(factory = { ctx ->
@@ -362,9 +375,9 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
         if (qrError != null) {
             Text(qrError!!, color = Color(0xFFFF5252), fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { qrError = null }) { Text("Entendido, seguir escaneando") }
+            Button(onClick = { tick(); qrError = null }) { Text("Entendido, seguir escaneando") }
             Spacer(Modifier.height(12.dp))
         }
-        Button(onClick = onClose) { Text("Cancelar escaneo") }
+        Button(onClick = { tick(); onClose() }) { Text("Cancelar escaneo") }
     }
 }

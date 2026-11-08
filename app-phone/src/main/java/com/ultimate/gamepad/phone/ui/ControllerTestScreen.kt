@@ -15,12 +15,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.ControllerTestChecklist
@@ -57,6 +59,9 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
     var state by remember { mutableStateOf(GamepadSender.currentState) }
     var openNowConfirmed by remember { mutableStateOf(false) }
     val profile = GamepadProfiles.fromId(ui.activeProfileId)
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     LaunchedEffect(Unit) {
         while (true) {
             val current = GamepadSender.currentState
@@ -114,7 +119,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             )
         }
         Spacer(Modifier.height(12.dp))
-        Button(onClick = { checklist.reset() }) { Text("Reiniciar prueba") }
+        Button(onClick = { tick(); checklist.reset() }) { Text("Reiniciar prueba") }
         Spacer(Modifier.height(16.dp))
         Text("Las 4 etapas", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
@@ -147,10 +152,10 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             fontSize = 14.sp,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { openNowConfirmed = !openNowConfirmed }, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { tick(); openNowConfirmed = !openNowConfirmed }, modifier = Modifier.fillMaxWidth()) {
             Text(if (openNowConfirmed) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+        Button(onClick = { tick(); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
     }
 }

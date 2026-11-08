@@ -19,9 +19,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.HidAvailability
@@ -44,6 +47,9 @@ import com.ultimate.gamepad.core.TransportStatus
 fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
     // El launcher se declara siempre (regla de Compose: no puede ir
     // dentro de un if); solo se usa cuando falta el permiso.
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) vm.refreshHidStatus(force = true)
     }
@@ -57,12 +63,12 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 label = if (ui.transportMode == TransportMode.AUTO) "● Automático" else "Automático",
                 selected = ui.transportMode == TransportMode.AUTO,
                 dotColor = Color(0xFF4CAF50),
-            ) { vm.setTransportMode(TransportMode.AUTO) }
+            ) { tick(); vm.setTransportMode(TransportMode.AUTO) }
             Chip(
                 label = if (ui.hotspotMode) "● Hotspot" else "Sin router / Hotspot",
                 selected = ui.hotspotMode,
                 dotColor = Color(0xFF4CAF50),
-            ) { vm.setHotspotMode(!ui.hotspotMode) }
+            ) { tick(); vm.setHotspotMode(!ui.hotspotMode) }
             for ((method, status) in ui.transportStatus) {
                 // Mientras la comprobación HID no ha resuelto, el
                 // chip lo dice ("Comprobando…") en vez del "No
@@ -91,7 +97,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                     label = label,
                     selected = ui.selectedMethod == method,
                     dotColor = dot,
-                ) { vm.selectMethod(method) }
+                ) { tick(); vm.selectMethod(method) }
             }
         }
         if (ui.hotspotMode) {
@@ -113,7 +119,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         if (ui.hidAvailability == HidAvailability.UNAVAILABLE) {
             Text("Bluetooth HID: no disponible en este teléfono (no expone HID_DEVICE o el Bluetooth está apagado).", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
-            Button(onClick = { vm.refreshHidStatus(force = true) }) {
+            Button(onClick = { tick(); vm.refreshHidStatus(force = true) }) {
                 Text("Volver a comprobar Bluetooth", color = Color.White)
             }
         }
@@ -138,7 +144,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Spacer(Modifier.height(4.dp))
             Text("Bluetooth HID: falta el permiso de Bluetooth (Android 12+). Sin él, el teléfono no puede exponerse como mando.", color = Color(0xFFFFC107), fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
-            Button(onClick = { permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
+            Button(onClick = { tick(); permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
                 Text("Dar permiso de Bluetooth", color = Color.White)
             }
         }

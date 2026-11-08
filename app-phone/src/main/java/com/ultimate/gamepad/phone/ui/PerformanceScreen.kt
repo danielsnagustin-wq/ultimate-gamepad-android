@@ -13,8 +13,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -35,6 +38,9 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) {
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     LaunchedEffect(Unit) {
         while (true) { vm.refreshPerformance(); delay(500) }
     }
@@ -93,7 +99,7 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
             Text("Último error: ${ui.error}", color = Color(0xFFFF5252), fontSize = 13.sp)
         }
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+        Button(onClick = { tick(); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
     }
 }
 

@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -67,6 +68,8 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
     val recording by vm.recordingMacro.collectAsState()
     val recordingProgress by vm.recordingMacroProgress.collectAsState()
     val playing by vm.playingMacro.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     var macroName by remember { mutableStateOf("") }
     var keyboardText by remember { mutableStateOf("") }
 
@@ -119,7 +122,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                 GamepadButtons.LB to "LB",
                 GamepadButtons.RB to "RB",
             )) {
-                Button(onClick = { vm.setTurbo(bit, bit !in turboButtons) }) {
+                Button(onClick = { tick(); vm.setTurbo(bit, bit !in turboButtons) }) {
                     Text(if (bit in turboButtons) "$label ✓" else label, color = Color.White)
                 }
             }
@@ -166,9 +169,9 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         )
         Spacer(Modifier.height(8.dp))
         if (recording == null) {
-            Button(onClick = { vm.startMacroRecording(macroName) }) { Text("●  Grabar macro") }
+            Button(onClick = { tick(); vm.startMacroRecording(macroName) }) { Text("●  Grabar macro") }
         } else {
-            Button(onClick = { vm.stopMacroRecording() }) { Text("■  Parar y guardar ($recording)") }
+            Button(onClick = { tick(); vm.stopMacroRecording() }) { Text("■  Parar y guardar ($recording)") }
         }
         for (macro in macros) {
             Spacer(Modifier.height(8.dp))
@@ -182,15 +185,15 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                     fontSize = 13.sp,
                     modifier = Modifier.weight(1f),
                 )
-                Button(onClick = { vm.playMacro(macro.name) }, enabled = playing == null && recording == null) {
+                Button(onClick = { tick(); vm.playMacro(macro.name) }, enabled = playing == null && recording == null) {
                     Text(if (playing == macro.name) "▶…" else "▶", color = Color.White)
                 }
-                Button(onClick = { vm.deleteMacro(macro.name) }, enabled = playing == null && recording == null) { Text("🗑") }
+                Button(onClick = { tick(); vm.deleteMacro(macro.name) }, enabled = playing == null && recording == null) { Text("🗑") }
             }
         }
         if (playing != null) {
             Spacer(Modifier.height(8.dp))
-            Button(onClick = { vm.stopMacroPlayback() }) { Text("■  Parar reproducción ($playing)") }
+            Button(onClick = { tick(); vm.stopMacroPlayback() }) { Text("■  Parar reproducción ($playing)") }
         }
 
         // --- Vibración ---
@@ -203,7 +206,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.setVibrationEnabled(!vibration) }) {
+        Button(onClick = { tick(); vm.setVibrationEnabled(!vibration) }) {
             Text(if (vibration) "Vibración: SÍ (toca para apagar)" else "Vibración: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(4.dp))
@@ -223,7 +226,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.setGyroEnabled(!gyroOn) }) {
+        Button(onClick = { tick(); vm.setGyroEnabled(!gyroOn) }) {
             Text(if (gyroOn) "Giroscopio: SÍ (toca para apagar)" else "Giroscopio: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
@@ -245,7 +248,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.setKeyboardEnabled(!ui.keyboardEnabled) }) {
+        Button(onClick = { tick(); vm.setKeyboardEnabled(!ui.keyboardEnabled) }) {
             Text(if (ui.keyboardEnabled) "Teclado en la TV: SÍ (toca para apagar)" else "Teclado en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
@@ -259,12 +262,12 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { vm.typeText(keyboardText) },
+                onClick = { tick(); vm.typeText(keyboardText) },
                 enabled = ui.keyboardEnabled && keyboardText.isNotEmpty(),
             ) { Text("Enviar texto") }
-            Button(onClick = { vm.sendSpecialKey("enter") }, enabled = ui.keyboardEnabled) { Text("Enter ⏎") }
-            Button(onClick = { vm.sendSpecialKey("backspace") }, enabled = ui.keyboardEnabled) { Text("⌫ Borrar") }
-            Button(onClick = { vm.sendSpecialKey("space") }, enabled = ui.keyboardEnabled) { Text("Espacio") }
+            Button(onClick = { tick(); vm.sendSpecialKey("enter") }, enabled = ui.keyboardEnabled) { Text("Enter ⏎") }
+            Button(onClick = { tick(); vm.sendSpecialKey("backspace") }, enabled = ui.keyboardEnabled) { Text("⌫ Borrar") }
+            Button(onClick = { tick(); vm.sendSpecialKey("space") }, enabled = ui.keyboardEnabled) { Text("Espacio") }
         }
 
         // --- Modo ratón ---
@@ -277,7 +280,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { vm.setMouseEnabled(!ui.mouseEnabled) }) {
+        Button(onClick = { tick(); vm.setMouseEnabled(!ui.mouseEnabled) }) {
             Text(if (ui.mouseEnabled) "Ratón en la TV: SÍ (toca para apagar)" else "Ratón en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
@@ -306,16 +309,16 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_LEFT) },
+                onClick = { tick(); vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_LEFT) },
                 enabled = ui.mouseEnabled,
             ) { Text("Clic izquierdo") }
             Button(
-                onClick = { vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_RIGHT) },
+                onClick = { tick(); vm.mouseClick(ExtrasProtocol.MOUSE_BUTTON_RIGHT) },
                 enabled = ui.mouseEnabled,
             ) { Text("Clic derecho") }
         }
 
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onClose) { Text("Volver") }
+        Button(onClick = { tick(); onClose() }) { Text("Volver") }
     }
 }

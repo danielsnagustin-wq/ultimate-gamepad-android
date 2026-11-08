@@ -54,6 +54,9 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     // ui.info. Se lee el estado del ViewModel (sin tocar la
     // firma, que la usa GamepadScreen.kt).
     val ui by vm.ui.collectAsState()
+    val vibration by vm.vibrationEnabled.collectAsState()
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibration)
     var profiles by remember { mutableStateOf(GameProfilePrefs.loadAll(context)) }
     var editing by remember { mutableStateOf<GameProfile?>(null) }
     // Nombre del perfil que se abrió en el editor (null = perfil
@@ -137,21 +140,21 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                     Spacer(Modifier.height(4.dp))
                     Row {
                         Button(onClick = {
-                            vm.applyGameProfile(p)
+                            tick(); vm.applyGameProfile(p)
                             GameProfilePrefs.saveActiveName(context, p.name)
                             activeName = p.name
                         }) { Text("Aplicar") }
                         Spacer(Modifier.weight(1f))
-                        OutlinedButton(onClick = { editingOriginalName = p.name; editing = p }) { Text("Editar") }
+                        OutlinedButton(onClick = { tick(); editingOriginalName = p.name; editing = p }) { Text("Editar") }
                     }
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Button(onClick = { editingOriginalName = null; editing = GameProfile(name = "Juego nuevo") }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { tick(); editingOriginalName = null; editing = GameProfile(name = "Juego nuevo") }, modifier = Modifier.fillMaxWidth()) {
                 Text("＋  Nuevo perfil de juego", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
-            Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
+            Button(onClick = { tick(); onClose() }, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
         } else if (pendingOverwrite != null) {
             // P3: confirmación de sobrescritura. Sin este paso, el
             // perfil con ese nombre se borraba en silencio.
@@ -165,16 +168,17 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             Button(
-                onClick = { if (pendingOverwriteApply) doApply(clash) else doSave(clash) },
+                onClick = { tick(); if (pendingOverwriteApply) doApply(clash) else doSave(clash) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Sobrescribir «${clash.name}»", color = Color.White) }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { pendingOverwrite = null }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { tick(); pendingOverwrite = null }, modifier = Modifier.fillMaxWidth()) {
                 Text("Cancelar, no borrar nada", color = Color.White)
             }
         } else {
             GameProfileEditor(
                 draft = draft,
+                vibrationEnabled = vibration,
                 onDraftChange = { editing = it },
                 onSave = {
                     val clean = it.sanitized()
@@ -217,6 +221,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
 @Composable
 private fun GameProfileEditor(
     draft: GameProfile,
+    vibrationEnabled: Boolean,
     onDraftChange: (GameProfile) -> Unit,
     onSave: (GameProfile) -> Unit,
     onApply: (GameProfile) -> Unit,
@@ -224,6 +229,9 @@ private fun GameProfileEditor(
     onCancel: () -> Unit,
     onSaveLayout: (GameProfile) -> Unit,
 ) {
+    // Arreglo 09: los botones del editor también vibran.
+    val hapticContext = LocalContext.current
+    fun tick() = vibrateTick(hapticContext, vibrationEnabled)
     var name by remember(draft) { mutableStateOf(draft.name) }
     Column {
         OutlinedTextField(
@@ -237,7 +245,7 @@ private fun GameProfileEditor(
         for (profile in GamepadProfiles.ALL) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Button(
-                    onClick = { onDraftChange(draft.copy(profileId = profile.id)) },
+                    onClick = { tick(); onDraftChange(draft.copy(profileId = profile.id)) },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text((if (draft.profileId == profile.id) "● " else "") + profile.name, color = Color.White)
@@ -271,6 +279,7 @@ private fun GameProfileEditor(
                     fontSize = 14.sp, modifier = Modifier.weight(1f), color = Color.White,
                 )
                 OutlinedButton(onClick = {
+                    tick()
                     val options: List<Int?> = listOf(null, GamepadButtons.A, GamepadButtons.B, GamepadButtons.X, GamepadButtons.Y)
                         .filter { it != source }
                     val current = draft.remap[source]
@@ -283,20 +292,20 @@ private fun GameProfileEditor(
         }
         Spacer(Modifier.height(12.dp))
         Button(
-            onClick = { onSaveLayout(draft.copy(name = name)) },
+            onClick = { tick(); onSaveLayout(draft.copy(name = name)) },
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(if (draft.layoutJson != null) "✓ Diseño guardado — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil", color = Color.White)
         }
         Spacer(Modifier.height(12.dp))
-        Button(onClick = { onApply(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Aplicar este perfil") }
+        Button(onClick = { tick(); onApply(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Aplicar este perfil") }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = { onSave(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar cambios") }
+        Button(onClick = { tick(); onSave(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Guardar cambios") }
         Spacer(Modifier.height(8.dp))
         Row {
-            OutlinedButton(onClick = { onDelete(draft) }, modifier = Modifier.weight(1f)) { Text("Eliminar") }
+            OutlinedButton(onClick = { tick(); onDelete(draft) }, modifier = Modifier.weight(1f)) { Text("Eliminar") }
             Spacer(Modifier.weight(1f))
-            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancelar") }
+            OutlinedButton(onClick = { tick(); onCancel() }, modifier = Modifier.weight(1f)) { Text("Cancelar") }
         }
     }
 }
