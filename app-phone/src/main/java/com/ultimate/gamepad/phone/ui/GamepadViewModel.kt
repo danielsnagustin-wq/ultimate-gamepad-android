@@ -176,6 +176,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Nombre de la macro que se está grabando (null = no se graba). */
     private val _recordingMacro = MutableStateFlow<String?>(null)
     val recordingMacro: StateFlow<String?> = _recordingMacro.asStateFlow()
+    /** P-A: progreso en vivo de la grabacion (elapsedMs, eventos) para la UI. */
+    private val _recordingMacroProgress = MutableStateFlow<Pair<Long, Int>?>(null)
+    val recordingMacroProgress: StateFlow<Pair<Long, Int>?> = _recordingMacroProgress.asStateFlow()
     /** Nombre de la macro que se está reproduciendo (null = ninguna). */
     private val _playingMacro = MutableStateFlow<String?>(null)
     val playingMacro: StateFlow<String?> = _playingMacro.asStateFlow()
@@ -193,6 +196,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private var turboJob: Job? = null
     private var macroRecorder: MacroRecorder? = null
     private var macroPlayJob: Job? = null
+    /** P5: seguimiento del tope de macro en el ViewModel (el
+     * MacroRecorder de core lo aplica en silencio: onState()
+     * deja de anotar pasado 30 s / 200 eventos sin avisar).
+     * Se espeja su conteo de cambios para avisar en ui.error
+     * cuando se alcanza el tope; sin tocar Macros.kt. */
+    private var macroRecordStartMs: Long = 0L
+    private var macroRecordedChanges: Int = 0
+    private var macroLastButtons: Int = 0
+    private var macroLastExtra: Int = 0
+    private var macroCapWarned: Boolean = false
     /** Stick derecho que manda el giroscopio (Fase 4); publish() lo usa en vez del táctil cuando el giro está activado. */
     private var gyroX: Float = 0f
     private var gyroY: Float = 0f
@@ -519,9 +532,17 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun startMacroRecording(name: String) {
         val clean = name.ifBlank { "Macro" }.take(40)
         stopMacroPlayback()
-        macroRecorder = MacroRecorder().apply { start(System.currentTimeMillis()) }
+        val now = System.currentTimeMillis()
+        macroRecorder = MacroRecorder().apply { start(now) }
         _recordingMacro.value = clean
-        _ui.update { it.copy(info = "Grabando macro \"$clean\": pulsa los botones; para con «Parar y guardar». Máx. 30 s.") }
+        // P5: arranca el seguimiento del tope (30 s / 200 eventos).
+        macroRecordStartMs = now
+        macroRecordedChanges = 0
+        macroLastButtons = 0
+        macroLastExtra = 0
+        macroCapWarned = false
+        _recordingMacroProgress.value = 0L to 0
+        _ui.update { it.copy(info = "Grabando macro \"$clean\": pulsa los botones; para con «Parar y guardar». Máx. 30 s / 200 eventos.") }
     }
 
     /** Para la grabación y guarda la macro (si se pulsó algo). Mismo nombre = se sustituye. */
@@ -531,6 +552,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         val macro = recorder.stop(System.currentTimeMillis(), name)
         macroRecorder = null
         _recordingMacro.value = null
+        macroRecordStartMs = 0L
+        macroRecordedChanges = 0
+        macroCapWarned = false
+        _recordingMacroProgress.value = null
         if (macro == null) {
             _ui.update { it.copy(info = "Macro vacía: no se grabó ningún botón.") }
             return
@@ -808,7 +833,36 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Macro grabando (Fase 4): se anota el estado de botones
         // SIN turbo ni remapeo (los botones físicos), para que la
         // reproducción pulse lo mismo que se grabó.
-        macroRecorder?.onState(System.currentTimeMillis(), buttons, extraButtons)
+        // P5: el tope (30 s / 200 eventos) es silencioso en el
+        // grabador; aquí se avisa UNA vez en ui.error cuando se
+        // alcanza, para que la UI lo muestre (el botón ▶ quedaba
+        // mudo grabando). El conteo espeja el del grabador: solo
+        // cuentan los CAMBIOS de botones, igual que onState().
+        macroRecorder?.let { recorder ->
+            val nowMs = System.currentTimeMillis()
+            recorder.onState(nowMs, buttons, extraButtons)
+            if (buttons != macroLastButtons || extraButtons != macroLastExtra) {
+                macroRecordedChanges++
+                macroLastButtons = buttons
+                macroLastExtra = extraButtons
+            }
+            val overTime = nowMs - macroRecordStartMs > GamepadMacro.MAX_DURATION_MS
+            val overEvents = macroRecordedChanges >= GamepadMacro.MAX_EVENTS
+            // P-A: progreso en vivo para la UI.
+            _recordingMacroProgress.value = (nowMs - macroRecordStartMs) to macroRecordedChanges
+            if ((overTime || overEvents) && !macroCapWarned) {
+                macroCapWarned = true
+                _ui.update {
+                    it.copy(error = "Tope de macro alcanzado (${if (overTime) "30 s" else "200 eventos"}): lo grabado hasta aquí se guarda al parar; lo nuevo ya no se graba.")
+                }
+                // P-A: auto-stop al llegar al tope: se guarda lo
+                // grabado hasta aqui (stopMacroRecording pone
+                // "Macro guardada" en ui.info). Sin aviso
+                // duplicado: el aviso de tope de arriba ya se puso
+                // una vez en ui.error.
+                stopMacroRecording()
+            }
+        }
         maybeStartTurbo()
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.

@@ -65,6 +65,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
     val gyroSens by vm.gyroSensitivity.collectAsState()
     val macros by vm.macros.collectAsState()
     val recording by vm.recordingMacro.collectAsState()
+    val recordingProgress by vm.recordingMacroProgress.collectAsState()
     val playing by vm.playingMacro.collectAsState()
     var macroName by remember { mutableStateOf("") }
     var keyboardText by remember { mutableStateOf("") }
@@ -136,11 +137,26 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         Text("Macros (grabar y reproducir)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Graba una secuencia de botones con sus tiempos (máx. 30 s) y reprodúcela con un toque. Solo botones: no graba sticks ni gatillos. Solo teléfono.",
+            "Graba una secuencia de botones con sus tiempos (máx. 30 s y 200 eventos) y reprodúcela con un toque. Solo botones: no graba sticks ni gatillos. Solo teléfono. Lo que pase del tope no se graba.",
             color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
+        // P5/P6: estado de grabación visible. Antes el botón ▶
+        // quedaba mudo mientras se grababa (playMacro no hace nada
+        // si recording != null) y el tope era silencioso. Ahora la
+        // grabación se ve, ▶ y 🗑 se desactivan mientras se graba y
+        // el tope se anuncia (el aviso al llegar al tope necesita
+        // estado del ViewModel: parche en el manifiesto).
+        if (recording != null) {
+            Text(
+                "● Grabando macro «$recording» — pulsa los botones del mando; para con «Parar y guardar». " +
+                    (recordingProgress?.let { (elapsedMs, events) -> "${elapsedMs / 1000} s / 30 s - $events/200 eventos" } ?: "Límite: 30 s / 200 eventos") + ".",
+                color = Color(0xFFFF5252),
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         OutlinedTextField(
             value = macroName,
             onValueChange = { macroName = it.take(40) },
@@ -166,10 +182,10 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                     fontSize = 13.sp,
                     modifier = Modifier.weight(1f),
                 )
-                Button(onClick = { vm.playMacro(macro.name) }, enabled = playing == null) {
+                Button(onClick = { vm.playMacro(macro.name) }, enabled = playing == null && recording == null) {
                     Text(if (playing == macro.name) "▶…" else "▶", color = Color.White)
                 }
-                Button(onClick = { vm.deleteMacro(macro.name) }, enabled = playing == null) { Text("🗑") }
+                Button(onClick = { vm.deleteMacro(macro.name) }, enabled = playing == null && recording == null) { Text("🗑") }
             }
         }
         if (playing != null) {
