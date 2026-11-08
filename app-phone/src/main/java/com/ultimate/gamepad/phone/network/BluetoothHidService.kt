@@ -346,9 +346,22 @@ class BluetoothHidService(private val context: Context) {
         )
     }
 
+    /**
+     * Da de baja la app HID (la TV deja de ver el mando) SIN cerrar
+     * el proxy del perfil. registerApp/unregisterApp se pueden llamar
+     * varias veces sobre el mismo proxy, y cerrarlo aquí dejaba
+     * hidDevice en null: el register() inmediato de setActiveProfile
+     * (cambio de perfil) fallaba en silencio y el mando moría al
+     * cambiar de perfil sin ningún error en pantalla. El proxy se
+     * cierra solo en requestProxy (al pedir uno nuevo) o al morir el
+     * proceso. Se marca UNAVAILABLE de inmediato para que publish()
+     * deje de enviar reportes en este mismo instante (el callback
+     * onAppStatusChanged lo pondría en FAILED después).
+     */
     fun unregister() {
         runCatching { hidDevice?.unregisterApp() }
         appRegistered = false
-        closeProfileProxy()
+        connectedDevice = null
+        status = TransportStatus.UNAVAILABLE
     }
 }

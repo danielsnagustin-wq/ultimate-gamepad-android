@@ -1568,6 +1568,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun disconnect(silent: Boolean = false) {
+        // H-D: dar de baja el HID. Sin esto, "Desconectar" dejaba el
+        // teléfono registrado como mando: publish() seguía enviando
+        // reportes a la TV si el enlace seguía activo (solo mira
+        // hidService.status) y si la TV reconectaba, la UI volvía a
+        // "Conectado" sola por el callback. El reintento en segundo
+        // plano ya está cancelado aquí (hidRetryJob), así que nada
+        // vuelve a registrarlo tras una desconexión explícita. En
+        // caída de TV (onHidDropped) no se pasa por aquí: ahí el
+        // HID se queda registrado a propósito para reconectar.
+        hidService.unregister()
         hidRetryJob?.cancel(); hidRetryJob = null
         hidCheckJob?.cancel(); hidCheckJob = null
         stopHidHeartbeat()
