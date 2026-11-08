@@ -39,7 +39,8 @@ import com.ultimate.gamepad.core.TransportStatus
  *   byte 2: hat switch (0=arriba, 1=arriba-derecha, 2=derecha,
  *           3=abajo-derecha, 4=abajo, 5=abajo-izquierda,
  *           6=izquierda, 7=arriba-izquierda, 8=centro)
- *   bytes 3-6: ejes X, Y, Z, Rz (0..255, centro 128; Y arriba = 0)
+ *   bytes 3-6: ejes X, Y, Z, Rz CON SIGNO (-127..127, centro 0),
+ *   como declara el descriptor (Logical Minimum -127, Maximum 127).
  * Los valores se escalan desde GamepadState (-1..1 / 0..1).
  * Este descriptor es el que usan los proyectos open-source de
  * BluetoothHidDevice; el descriptor exacto se valida en Etapa 0
@@ -273,7 +274,13 @@ class BluetoothHidService(private val context: Context) {
      * enviaba como hat y el RT se ignoraba. La TV leía botones y
      * sticks equivocados por Bluetooth HID. */
     fun hidReportFrom(state: GamepadState): ByteArray {
-        fun axis(v: Float): Byte = ((v.coerceIn(-1f, 1f) * 127f) + 128f).toInt().toByte()
+        // Ejes CON SIGNO (-127..127, centro 0), como declara el
+        // descriptor (Logical Minimum -127, Maximum 127). La versión
+        // anterior sumaba 128 (0..255, centro 128) y el parser de la
+        // TV lo leía como signed: en reposo el byte 0x80 era -128
+        // (fuera de rango, el stick quedaba pegado a tope) y la
+        // dirección salía invertida (derecha = -1, izquierda = +1).
+        fun axis(v: Float): Byte = ((v.coerceIn(-1f, 1f) * 127f).toInt()).toByte()
         var b0 = 0
         if (state.isPressed(GamepadButtons.A)) b0 = b0 or 0x01
         if (state.isPressed(GamepadButtons.B)) b0 = b0 or 0x02
