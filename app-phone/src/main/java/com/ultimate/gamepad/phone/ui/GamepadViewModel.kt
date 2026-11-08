@@ -8,6 +8,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.VibrationEffect
@@ -125,6 +126,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
 
+    /** Callback de red (cambio/pérdida de Wi-Fi): se desregistra en onCleared. */
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
     /** Reenvío HID periódico (10 Hz) del último estado mientras el HID está conectado (ver startHidHeartbeat). */
     private var hidHeartbeatJob: Job? = null
 
@@ -176,6 +180,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // enteraba: ahora el ViewModel reacciona (fallback a Wi-Fi
         // + reintento en segundo plano). Ver onHidConnectionChanged().
         hidService.onConnectionChanged = { status -> onHidConnectionChanged(status) }
+        // Cambio de red (2026-11-07): sin esto, al cambiar de Wi-Fi
+        // o al activar el hotspot, el estado de red solo se
+        // refrescaba al reabrir la pantalla; ahora reacciona solo.
+        registerNetworkCallback()
         // Perfil guardado (Fase 3): el emisor en proceso debe llevar
         // el mismo que el guardado, no el 0 por defecto, o el primer
         // paquete tras arrancar saldría como Xbox 360 con otro perfil
@@ -202,6 +210,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onCleared() {
+        networkCallback?.let { cb ->
+            val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            runCatching { cm.unregisterNetworkCallback(cb) }
+        }
+        networkCallback = null
         turboJob?.cancel()
         macroPlayJob?.cancel()
         stopGyroSensor()
@@ -958,6 +971,54 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         _ui.update { it.copy(wifiConnected = wifi || hotspot) }
     }
 
+    /**
+     * Reacción al cambio de red (2026-11-07): antes, al cambiar de
+     * Wi-Fi, al perderla o al activar el hotspot, nada reaccionaba
+     * hasta que el ping fallara 3 s después (o hasta reabrir la
+     * pantalla). Ahora:
+     * - Al aparecer una red: se refresca el estado Wi-Fi/hotspot al
+     *   momento (la búsqueda deja de decir "No estás en Wi-Fi"
+     *   cuando acabas de activar el hotspot).
+     * - Al perderse la red por defecto jugando en AUTO por Wi-Fi:
+     *   1 s después, si el eco sigue sin volver (eco anterior a la
+     *   pérdida más de 1 s), se fuerza el siguiente método
+     *   (tryNextTransport con force). Sin el force, la ventana de
+     *   eco de 3 s haría el cambio un no-op hasta los 3 s de
+     *   siempre. Si la red volvió sola en ese segundo, el eco ya
+     *   está de vuelta y no se cambia nada. Por HID no se cambia:
+     *   el HID no usa la Wi-Fi. En MANUAL no se cambia solo: el
+     *   error lo muestra refreshPing como siempre.
+     * El socket UDP no ligado a interfaz sobrevive al cambio de
+     * red solo; lo que cambia es la IP de la TV (DHCP nuevo): si
+     * la TV cambia de IP, hay que redescubrirla o reconectar a
+     * mano — eso no lo arregla ningún callback y la UI lo dice en
+     * el error de "sin respuesta".
+     */
+    private fun registerNetworkCallback() {
+        val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                refreshWifiState()
+            }
+
+            override fun onLost(network: Network) {
+                refreshWifiState()
+                if (_ui.value.transportMode != TransportMode.AUTO) return
+                if (_ui.value.attemptMethod == TransportMethod.BLUETOOTH_HID) return
+                val st = _ui.value.status
+                if (st != ConnectionStatus.CONNECTED && st != ConnectionStatus.CONNECTING) return
+                viewModelScope.launch {
+                    delay(1000)
+                    val lastEcho = GamepadSenderService.lastEchoAtMs
+                    val echoStale = lastEcho == 0L || System.currentTimeMillis() - lastEcho > 1000
+                    if (echoStale) tryNextTransport(force = true)
+                }
+            }
+        }
+        networkCallback = callback
+        runCatching { cm.registerDefaultNetworkCallback(callback) }
+    }
+
     /** Busca TVs con el receptor abierto en la misma Wi-Fi (~3 s). */
     fun discoverTvs() {
         if (_ui.value.discovering) return
@@ -1104,10 +1165,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
      * CONECTANDO (sin primer eco) como en CONECTADO (se perdió el
      * eco): en ambos casos la TV no responde por ese método.
      */
-    fun tryNextTransport() {
+    fun tryNextTransport(force: Boolean = false) {
         if (_ui.value.transportMode != TransportMode.AUTO) return
         if (_ui.value.status != ConnectionStatus.CONNECTED && _ui.value.status != ConnectionStatus.CONNECTING) return
-        if (GamepadSenderService.isTvResponding()) return
+        if (!force && GamepadSenderService.isTvResponding()) return
         val current = GamepadSenderService.activeMethod
         val order = TransportSelector.AUTO_ORDER
         val next = order.dropWhile { it != current }.drop(1).firstOrNull { it != TransportMethod.BLUETOOTH_DATA }
