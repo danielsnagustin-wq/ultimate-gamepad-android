@@ -65,17 +65,17 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("🗂️  Perfiles por juego", fontSize = 20.sp)
+        Text("🗂️  Perfiles por juego", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Un perfil por juego, elegido a mano (sin detección automática: en GeForce NOW el juego corre en la nube). \"Aplicar\" cambia el mando, la sensibilidad, el remapeo y el diseño a la vez.",
-            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+            color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(12.dp))
         val draft = editing
         if (draft == null) {
             if (profiles.isEmpty()) {
-                Text("Aún no hay perfiles. Crea uno con el botón de abajo.", color = Color(0xFF9AA0B0), fontSize = 14.sp)
+                Text("Aún no hay perfiles. Crea uno con el botón de abajo.", color = Color.White, fontSize = 14.sp)
             }
             for (p in profiles) {
                 Spacer(Modifier.height(8.dp))
@@ -88,7 +88,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                         "${GamepadProfiles.fromId(p.profileId).name} · zona muerta ${(p.deadZone * 100).toInt()}% · curva ${"%.2f".format(p.curve)} · gatillos x${"%.2f".format(p.triggerScale)}" +
                             (if (p.remap.isNotEmpty()) " · remap ${p.remap.entries.joinToString(", ") { "${GameProfilePrefs.buttonLabel(it.key)}→${GameProfilePrefs.buttonLabel(it.value)}" }}" else "") +
                             (if (p.layoutJson != null) " · diseño guardado" else ""),
-                        color = Color(0xFF9AA0B0), fontSize = 12.sp,
+                        color = Color.White, fontSize = 12.sp,
                     )
                     Spacer(Modifier.height(4.dp))
                     Row {
@@ -103,7 +103,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             Button(onClick = { editing = GameProfile(name = "Juego nuevo") }, modifier = Modifier.fillMaxWidth()) {
-                Text("＋  Nuevo perfil de juego")
+                Text("＋  Nuevo perfil de juego", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
             Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }
@@ -158,28 +158,28 @@ private fun GameProfileEditor(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(12.dp))
-        Text("Tipo de mando", fontSize = 15.sp)
+        Text("Tipo de mando", fontSize = 15.sp, color = Color.White)
         for (profile in GamepadProfiles.ALL) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = { onDraftChange(draft.copy(profileId = profile.id)) },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text((if (draft.profileId == profile.id) "● " else "") + profile.name)
+                    Text((if (draft.profileId == profile.id) "● " else "") + profile.name, color = Color.White)
                 }
             }
             Spacer(Modifier.height(4.dp))
         }
         Spacer(Modifier.height(8.dp))
-        Text("Zona muerta de sticks: ${(draft.deadZone * 100).toInt()}%", fontSize = 15.sp)
+        Text("Zona muerta de sticks: ${(draft.deadZone * 100).toInt()}%", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.deadZone, onValueChange = { onDraftChange(draft.copy(deadZone = it)) }, valueRange = 0f..0.15f)
-        Text("Curva de respuesta: ${"%.2f".format(draft.curve)} (1.00 = lineal, menos = más vivo en el centro)", fontSize = 15.sp)
+        Text("Curva de respuesta: ${"%.2f".format(draft.curve)} (1.00 = lineal, menos = más vivo en el centro)", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.curve, onValueChange = { onDraftChange(draft.copy(curve = it)) }, valueRange = 0.5f..1.5f)
-        Text("Sensibilidad de gatillos: x${"%.2f".format(draft.triggerScale)}", fontSize = 15.sp)
+        Text("Sensibilidad de gatillos: x${"%.2f".format(draft.triggerScale)}", fontSize = 15.sp, color = Color.White)
         Slider(value = draft.triggerScale, onValueChange = { onDraftChange(draft.copy(triggerScale = it)) }, valueRange = 0.5f..1.5f)
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Vibración al pulsar", fontSize = 15.sp, modifier = Modifier.weight(1f))
+            Text("Vibración al pulsar", fontSize = 15.sp, modifier = Modifier.weight(1f), color = Color.White)
             Switch(checked = draft.vibrationEnabled, onCheckedChange = { onDraftChange(draft.copy(vibrationEnabled = it)) })
         }
         Text(
@@ -187,13 +187,13 @@ private fun GameProfileEditor(
             color = Color(0xFFFFC107), fontSize = 12.sp,
         )
         Spacer(Modifier.height(12.dp))
-        Text("Remapeo (lo que se envía, no lo que se dibuja)", fontSize = 15.sp)
-        Text("Toca \"Cambiar\" para ciclar el destino. Las etiquetas del mando no cambian.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Remapeo (lo que se envía, no lo que se dibuja)", fontSize = 15.sp, color = Color.White)
+        Text("Toca \"Cambiar\" para ciclar el destino. Las etiquetas del mando no cambian.", color = Color.White, fontSize = 12.sp)
         for (source in listOf(GamepadButtons.A, GamepadButtons.B, GamepadButtons.X, GamepadButtons.Y)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     "${GameProfilePrefs.buttonLabel(source)} → ${draft.remap[source]?.let { GameProfilePrefs.buttonLabel(it) } ?: "sin cambio"}",
-                    fontSize = 14.sp, modifier = Modifier.weight(1f),
+                    fontSize = 14.sp, modifier = Modifier.weight(1f), color = Color.White,
                 )
                 OutlinedButton(onClick = {
                     val options: List<Int?> = listOf(null, GamepadButtons.A, GamepadButtons.B, GamepadButtons.X, GamepadButtons.Y)
@@ -211,7 +211,7 @@ private fun GameProfileEditor(
             onClick = { onSaveLayout(draft.copy(name = name)) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (draft.layoutJson != null) "✓ Diseño guardado — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil")
+            Text(if (draft.layoutJson != null) "✓ Diseño guardado — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil", color = Color.White)
         }
         Spacer(Modifier.height(12.dp))
         Button(onClick = { onApply(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Aplicar este perfil") }

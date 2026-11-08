@@ -73,7 +73,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             ) { }
             .padding(16.dp),
     ) {
-        Text("⚙  Configuración y conexión", fontSize = 20.sp)
+        Text("⚙  Configuración y conexión", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(8.dp))
         Text(
             text = when (ui.status) {
@@ -86,13 +86,13 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
                 ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)
                 ConnectionStatus.CONNECTING -> Color(0xFFFFC107)
                 ConnectionStatus.ERROR -> Color(0xFFFF5252)
-                else -> Color(0xFFE8EAF0)
+                else -> Color.White
             },
             fontSize = 15.sp,
         )
         Text(
             text = "Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}   ·   Método: ${ui.selectedMethod.label} (${ui.transportMode})",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 13.sp,
         )
         // ¿La TV recibe paquetes de mando, o solo responde al ping?
@@ -112,21 +112,21 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         Spacer(Modifier.height(16.dp))
         // --- Buscar TV en la red (sin escribir IP ni PIN) ---
-        Text("Buscar TV en la red", fontSize = 15.sp)
+        Text("Buscar TV en la red", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("El teléfono busca la TV con el receptor abierto en la misma Wi-Fi. Toca la TV en la lista y conecta directo, sin escribir IP ni PIN.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("El teléfono busca la TV con el receptor abierto en la misma Wi-Fi. Toca la TV en la lista y conecta directo, sin escribir IP ni PIN.", color = Color.White, fontSize = 12.sp)
         if (!ui.wifiConnected) {
             Spacer(Modifier.height(4.dp))
             Text("No estás en Wi-Fi. Conecta el teléfono a la misma red Wi-Fi que la TV.", color = Color(0xFFFF5252), fontSize = 13.sp)
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.discoverTvs() }, enabled = !ui.discovering) {
-            Text(if (ui.discovering) "Buscando TV…" else "🔍  Buscar TV en la red")
+            Text(if (ui.discovering) "Buscando TV…" else "🔍  Buscar TV en la red", color = Color.White)
         }
         for (tv in ui.discoveredTvs) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = { vm.connectToDiscovered(tv) }, modifier = Modifier.fillMaxWidth()) {
-                Text("${tv.name} — ${tv.ip}")
+                Text("${tv.name} — ${tv.ip}", color = Color.White)
             }
         }
         // El error de búsqueda ANTES no se veía aquí: discoverTvs()
@@ -144,36 +144,36 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp)
         }
         Spacer(Modifier.height(16.dp))
-        Text("Método de conexión", fontSize = 15.sp)
+        Text("Método de conexión", fontSize = 15.sp, color = Color.White)
         TransportSelectorRow(vm, ui)
         Spacer(Modifier.height(12.dp))
-        Text("Conectar a la TV — misma red Wi-Fi", fontSize = 15.sp)
+        Text("Conectar a la TV — misma red Wi-Fi", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(8.dp))
-        Text("1) Abre Ultimate Gamepad en la TV y anota su IP y PIN, o escanea su QR.")
+        Text("1) Abre Ultimate Gamepad en la TV y anota su IP y PIN, o escanea su QR.", color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Modo Sin router / Hotspot: activa el hotspot del teléfono, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Modo Sin router / Hotspot: activa el hotspot del teléfono, conecta la TV a esa red y escribe la IP del hotspot (normalmente 192.168.43.x). Es el mismo Wi-Fi UDP/TCP, sin router.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.openQrScanner() }) { Text("Escanear QR de la TV") }
         Spacer(Modifier.height(12.dp))
-        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("IP de la TV, ej. 192.168.1.20") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = host, onValueChange = { host = it }, label = { Text("IP de la TV, ej. 192.168.1.20", color = Color.White) }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = pin, onValueChange = { pin = it.take(4) }, label = { Text("PIN de 4 dígitos", color = Color.White) }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.connectManual(host, 51999, pin) }) { Text("Conectar por IP / PIN") }
         Spacer(Modifier.height(16.dp))
         // --- Personalizar botones ---
-        Text("Personalizar botones", fontSize = 15.sp)
+        Text("Personalizar botones", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Abre el panel visual y arrastra cada botón con el dedo, como en los juegos: ahí lo mueves, lo haces más grande o más pequeño, más transparente o lo quitas.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Abre el panel visual y arrastra cada botón con el dedo, como en los juegos: ahí lo mueves, lo haces más grande o más pequeño, más transparente o lo quitas.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openLayoutEditor() }, modifier = Modifier.fillMaxWidth()) {
-            Text("🎮  Abrir panel de botones")
+            Text("🎮  Abrir panel de botones", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
         // --- Sensibilidad de sticks ---
-        Text("Sensibilidad de sticks", fontSize = 15.sp)
+        Text("Sensibilidad de sticks", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Zona muerta: cuánto tienes que mover el stick para que empiece a responder. Más baja = responde desde el primer toque; más alta = no se mueve solo. Ahora: ${(deadZone * 100).toInt()}%.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Zona muerta: cuánto tienes que mover el stick para que empiece a responder. Más baja = responde desde el primer toque; más alta = no se mueve solo. Ahora: ${(deadZone * 100).toInt()}%.", color = Color.White, fontSize = 12.sp)
         Slider(
             value = deadZone,
             onValueChange = { vm.setDeadZone(it) },
@@ -181,33 +181,33 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         )
         Spacer(Modifier.height(16.dp))
         // --- Mando PRO (Fase 3) ---
-        Text("Mando PRO", fontSize = 15.sp)
+        Text("Mando PRO", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Tipo de mando, perfiles por juego, prueba de mando y rendimiento.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Tipo de mando, perfiles por juego, prueba de mando y rendimiento.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openControllerType() }, modifier = Modifier.fillMaxWidth()) {
-            Text("🎮  Tipo de mando (Xbox / PlayStation)")
+            Text("🎮  Tipo de mando (Xbox / PlayStation)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openGameProfiles() }, modifier = Modifier.fillMaxWidth()) {
-            Text("🗂️  Perfiles por juego")
+            Text("🗂️  Perfiles por juego", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openControllerTest() }, modifier = Modifier.fillMaxWidth()) {
-            Text("🧪  Prueba de mando (qué se envía)")
+            Text("🧪  Prueba de mando (qué se envía)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openPerformance() }, modifier = Modifier.fillMaxWidth()) {
-            Text("📶  Rendimiento (latencia y red)")
+            Text("📶  Rendimiento (latencia y red)", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
         // --- Extras (Fase 4) ---
-        Text("Extras (Fase 4)", fontSize = 15.sp)
+        Text("Extras (Fase 4)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openExtras() }, modifier = Modifier.fillMaxWidth()) {
-            Text("✨  Extras (turbo, macros, teclado, ratón…)")
+            Text("✨  Extras (turbo, macros, teclado, ratón…)", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
         // --- Notificaciones (A4) ---
@@ -218,9 +218,9 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         // (y si Android ya no vuelve a preguntar, se abre la
         // pantalla de notificaciones del sistema). La notificación
         // del mando en primer plano funciona igual sin este permiso.
-        Text("Notificaciones", fontSize = 15.sp)
+        Text("Notificaciones", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
-        Text("Android 13+ las bloquea hasta que las actives. El mando funciona igual sin ellas, pero sin el permiso no verás avisos de conexión.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Text("Android 13+ las bloquea hasta que las actives. El mando funciona igual sin ellas, pero sin el permiso no verás avisos de conexión.", color = Color.White, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
         val notifContext = LocalContext.current
         var notificationsGranted by remember {
@@ -252,7 +252,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (notificationsAsked) "Abrir ajustes de notificaciones" else "Activar notificaciones")
+                Text(if (notificationsAsked) "Abrir ajustes de notificaciones" else "Activar notificaciones", color = Color.White)
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -299,7 +299,7 @@ fun QrScannerScreen(onResult: (String) -> Unit, onClose: () -> Unit) {
             .padding(16.dp),
     ) {
         if (!hasPermission) {
-            Text("Se necesita la cámara para escanear el QR de la TV.")
+            Text("Se necesita la cámara para escanear el QR de la TV.", color = Color.White)
             Spacer(Modifier.height(12.dp))
             Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("Dar permiso de cámara") }
             Spacer(Modifier.height(8.dp))

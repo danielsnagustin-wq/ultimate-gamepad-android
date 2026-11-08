@@ -80,21 +80,21 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             ) { }
             .padding(16.dp),
     ) {
-        Text("✨  Extras — Fase 4", fontSize = 20.sp)
+        Text("✨  Extras — Fase 4", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón. Todo es opcional: el mando funciona igual sin tocar nada aquí.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
 
         // --- Turbo ---
         Spacer(Modifier.height(16.dp))
-        Text("Turbo (pulsos automáticos)", fontSize = 15.sp)
+        Text("Turbo (pulsos automáticos)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Mientras mantienes un botón con turbo, el teléfono lo pulsa y suelta solo a $turboRate Hz. Solo teléfono: la TV recibe los pulsos como pulsaciones normales, sin cambios en la TV.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
@@ -108,12 +108,12 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                 GamepadButtons.RB to "RB",
             )) {
                 Button(onClick = { vm.setTurbo(bit, bit !in turboButtons) }) {
-                    Text(if (bit in turboButtons) "$label ✓" else label)
+                    Text(if (bit in turboButtons) "$label ✓" else label, color = Color.White)
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text("Velocidad: $turboRate Hz", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+        Text("Velocidad: $turboRate Hz", fontSize = 12.sp, color = Color.White)
         Slider(
             value = turboRate.toFloat(),
             onValueChange = { vm.setTurboRate(it.roundToInt()) },
@@ -122,18 +122,18 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
 
         // --- Macros ---
         Spacer(Modifier.height(16.dp))
-        Text("Macros (grabar y reproducir)", fontSize = 15.sp)
+        Text("Macros (grabar y reproducir)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Graba una secuencia de botones con sus tiempos (máx. 30 s) y reprodúcela con un toque. Solo botones: no graba sticks ni gatillos. Solo teléfono.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = macroName,
             onValueChange = { macroName = it.take(40) },
-            label = { Text("Nombre de la macro") },
+            label = { Text("Nombre de la macro", color = Color.White) },
             modifier = Modifier.fillMaxWidth(),
             enabled = recording == null,
         )
@@ -156,7 +156,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                     modifier = Modifier.weight(1f),
                 )
                 Button(onClick = { vm.playMacro(macro.name) }, enabled = playing == null) {
-                    Text(if (playing == macro.name) "▶…" else "▶")
+                    Text(if (playing == macro.name) "▶…" else "▶", color = Color.White)
                 }
                 Button(onClick = { vm.deleteMacro(macro.name) }, enabled = playing == null) { Text("🗑") }
             }
@@ -168,16 +168,16 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
 
         // --- Vibración ---
         Spacer(Modifier.height(16.dp))
-        Text("Vibración al pulsar (teléfono)", fontSize = 15.sp)
+        Text("Vibración al pulsar (teléfono)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Vibra un instante al pulsar un botón del teléfono. Respeta el ajuste del perfil de juego activo (Fase 3): al aplicar un perfil, su ajuste de vibración pisa este interruptor.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.setVibrationEnabled(!vibration) }) {
-            Text(if (vibration) "Vibración: SÍ (toca para apagar)" else "Vibración: NO (toca para encender)")
+            Text(if (vibration) "Vibración: SÍ (toca para apagar)" else "Vibración: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(4.dp))
         Text(
@@ -188,19 +188,19 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
 
         // --- Giroscopio ---
         Spacer(Modifier.height(16.dp))
-        Text("Giroscopio (inclinar = stick derecho)", fontSize = 15.sp)
+        Text("Giroscopio (inclinar = stick derecho)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Al activarlo, la inclinación del teléfono mueve el stick derecho y el stick táctil derecho queda ignorado. Desactívalo para volver al stick táctil. La dirección exacta está pendiente de verificar en el teléfono real.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.setGyroEnabled(!gyroOn) }) {
-            Text(if (gyroOn) "Giroscopio: SÍ (toca para apagar)" else "Giroscopio: NO (toca para encender)")
+            Text(if (gyroOn) "Giroscopio: SÍ (toca para apagar)" else "Giroscopio: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
-        Text("Sensibilidad: ${"%.1f".format(gyroSens)}x (1.0 = 45° recorre todo el stick)", fontSize = 12.sp, color = Color(0xFF9AA0B0))
+        Text("Sensibilidad: ${"%.1f".format(gyroSens)}x (1.0 = 45° recorre todo el stick)", fontSize = 12.sp, color = Color.White)
         Slider(
             value = gyroSens,
             onValueChange = { vm.setGyroSensitivity(it) },
@@ -210,22 +210,22 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
 
         // --- Teclado virtual ---
         Spacer(Modifier.height(16.dp))
-        Text("Teclado virtual (chat de GeForce NOW)", fontSize = 15.sp)
+        Text("Teclado virtual (chat de GeForce NOW)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Crea un dispositivo de TECLADO aparte en la TV (uinput, \"Ultimate Gamepad Keyboard\"): nunca se mezcla con el mando. Actívalo, escribe y envía. Caracteres sin tecla (p. ej. ñ) se saltan y se avisa.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.setKeyboardEnabled(!ui.keyboardEnabled) }) {
-            Text(if (ui.keyboardEnabled) "Teclado en la TV: SÍ (toca para apagar)" else "Teclado en la TV: NO (toca para encender)")
+            Text(if (ui.keyboardEnabled) "Teclado en la TV: SÍ (toca para apagar)" else "Teclado en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = keyboardText,
             onValueChange = { keyboardText = it },
-            label = { Text("Texto para la TV") },
+            label = { Text("Texto para la TV", color = Color.White) },
             modifier = Modifier.fillMaxWidth(),
             enabled = ui.keyboardEnabled,
         )
@@ -242,16 +242,16 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
 
         // --- Modo ratón ---
         Spacer(Modifier.height(16.dp))
-        Text("Modo ratón (mover el cursor)", fontSize = 15.sp)
+        Text("Modo ratón (mover el cursor)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Crea un dispositivo de RATÓN aparte en la TV (uinput, \"Ultimate Gamepad Mouse\"): mueve el cursor en los menús y haz clic. Arrastra en el panel de abajo para moverlo.",
-            color = Color(0xFF9AA0B0),
+            color = Color.White,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.setMouseEnabled(!ui.mouseEnabled) }) {
-            Text(if (ui.mouseEnabled) "Ratón en la TV: SÍ (toca para apagar)" else "Ratón en la TV: NO (toca para encender)")
+            Text(if (ui.mouseEnabled) "Ratón en la TV: SÍ (toca para apagar)" else "Ratón en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         Box(
@@ -272,7 +272,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         ) {
             Text(
                 if (ui.mouseEnabled) "Arrastra aquí para mover el cursor" else "Activa el ratón para usar el panel",
-                color = Color(0xFF9AA0B0),
+                color = Color.White,
                 fontSize = 13.sp,
             )
         }

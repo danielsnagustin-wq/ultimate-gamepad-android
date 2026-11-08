@@ -54,11 +54,11 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("🎮  Tipo de mando", fontSize = 20.sp)
+        Text("🎮  Tipo de mando", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Cambiar el tipo cambia el mando que se dibuja Y el mando virtual que crea la TV (nombre y VID/PID). Al elegir, la TV recrea el dispositivo con ese perfil.",
-            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+            color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(12.dp))
         Text(
@@ -87,12 +87,12 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                     if (selected) Text("● ACTIVO", color = Color(0xFF9BF00B), fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("La TV expone: \"${profile.deviceName}\"", color = Color(0xFFE8EAF0), fontSize = 14.sp)
+                Text("La TV expone: \"${profile.deviceName}\"", color = Color.White, fontSize = 14.sp)
                 Text(
                     "VID 0x${profile.vendorId.toString(16).uppercase()} · PID 0x${profile.productId.toString(16).uppercase()}",
-                    color = Color(0xFF9AA0B0), fontSize = 13.sp,
+                    color = Color.White, fontSize = 13.sp,
                 )
-                Text(profileDescription(profile.id), color = Color(0xFF9AA0B0), fontSize = 13.sp)
+                Text(profileDescription(profile.id), color = Color.White, fontSize = 13.sp)
                 if (profile.hasTouchpad) {
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -106,13 +106,13 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         val previous = ui.previousProfileId?.let { GamepadProfiles.fromId(it) }
         if (previous != null && previous.id != ui.activeProfileId) {
             Button(onClick = { vm.revertProfile() }, modifier = Modifier.fillMaxWidth()) {
-                Text("↩  Volver al perfil anterior: ${previous.name}")
+                Text("↩  Volver al perfil anterior: ${previous.name}", color = Color.White)
             }
             Spacer(Modifier.height(8.dp))
         }
         Text(
             "Comprueba en la TV (diagnóstico \"¿Cómo me ve Android?\") que el nombre nuevo aparece y dice \"Parece mando real: SÍ\". Si OpenNOW sigue viendo el mando viejo, reinicia OpenNOW: puede no re-enumerar el mando nuevo sin reiniciarse (sin verificar en la TV real).",
-            color = Color(0xFF9AA0B0), fontSize = 12.sp,
+            color = Color.White, fontSize = 12.sp,
         )
         Spacer(Modifier.height(16.dp))
         Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }

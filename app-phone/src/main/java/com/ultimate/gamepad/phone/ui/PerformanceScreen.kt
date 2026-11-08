@@ -45,11 +45,11 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("📶  Rendimiento", fontSize = 20.sp)
+        Text("📶  Rendimiento", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Valores en vivo del envío por Wi-Fi. Sin gráficos: lo que importa es el número.",
-            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+            color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(12.dp))
         PerformanceRow("Estado", when (ui.status) {
@@ -83,7 +83,7 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         Spacer(Modifier.height(8.dp))
         Text(
             "Referencia en red local: ping 1–10 ms, jitter 0–3 ms y ~120 paquetes/s. Si el ping sube o los paquetes/s caen, la red está saturada o la TV no responde; el modo Automático cambia a TCP.",
-            color = Color(0xFF9AA0B0), fontSize = 12.sp,
+            color = Color.White, fontSize = 12.sp,
         )
         if (ui.error != null) {
             Spacer(Modifier.height(8.dp))
@@ -96,7 +96,7 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
 
 @Composable
 private fun PerformanceRow(label: String, value: String) {
-    Text(label, color = Color(0xFF9AA0B0), fontSize = 13.sp)
-    Text(value, fontSize = 17.sp)
+    Text(label, color = Color.White, fontSize = 13.sp)
+    Text(value, fontSize = 17.sp, color = Color.White)
     Spacer(Modifier.height(10.dp))
 }

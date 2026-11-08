@@ -84,7 +84,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Text(
                 "Modo Hotspot: activa el hotspot del teléfono y conecta la TV a esa red. " +
                     "Escribe la IP del hotspot (normalmente 192.168.43.x) en Conectar.",
-                color = Color(0xFF9AA0B0), fontSize = 12.sp,
+                color = Color.White, fontSize = 12.sp,
             )
         }
         // Estado de la verificación HID, sin ambigüedad: antes el
@@ -94,13 +94,13 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         // UNAVAILABLE = comprobado y no disponible, con botón para
         // volver a comprobar (p. ej. tras encender el Bluetooth).
         if (ui.hidAvailability == HidAvailability.UNKNOWN) {
-            Text("Bluetooth HID: comprobando si este teléfono puede ser mando Bluetooth…", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+            Text("Bluetooth HID: comprobando si este teléfono puede ser mando Bluetooth…", color = Color.White, fontSize = 12.sp)
         }
         if (ui.hidAvailability == HidAvailability.UNAVAILABLE) {
-            Text("Bluetooth HID: no disponible en este teléfono (no expone HID_DEVICE o el Bluetooth está apagado).", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+            Text("Bluetooth HID: no disponible en este teléfono (no expone HID_DEVICE o el Bluetooth está apagado).", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
             Button(onClick = { vm.refreshHidStatus(force = true) }) {
-                Text("Volver a comprobar Bluetooth")
+                Text("Volver a comprobar Bluetooth", color = Color.White)
             }
         }
         // BLE/SPP (2026-11-07): NO implementado, y hay que decirlo
@@ -117,7 +117,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             // (pulsados o no), sin recorrido analógico.
             Text(
                 "Por Bluetooth HID los gatillos LT/RT son digitales, sin recorrido analógico.",
-                color = Color(0xFF9AA0B0), fontSize = 12.sp,
+                color = Color.White, fontSize = 12.sp,
             )
         }
         if (ui.hidAvailability.name == "PERMISSION_DENIED") {
@@ -125,7 +125,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("Bluetooth HID: falta el permiso de Bluetooth (Android 12+). Sin él, el teléfono no puede exponerse como mando.", color = Color(0xFFFFC107), fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
             Button(onClick = { permissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT) }) {
-                Text("Dar permiso de Bluetooth")
+                Text("Dar permiso de Bluetooth", color = Color.White)
             }
         }
     }
@@ -141,6 +141,8 @@ private fun statusText(status: TransportStatus): String = when (status) {
 
 private fun statusColor(status: TransportStatus): Color = when (status) {
     TransportStatus.AVAILABLE -> Color(0xFF4CAF50)
+    // Punto de estado, no texto: gris apagado para "no
+    // disponible" (el texto del chip sí es blanco, arreglo 01).
     TransportStatus.UNAVAILABLE -> Color(0xFF9AA0B0)
     TransportStatus.CONNECTED -> Color(0xFF4CAF50)
     TransportStatus.FAILED -> Color(0xFFFF5252)

@@ -84,17 +84,17 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        Text("🧪  Prueba de mando (teléfono)", fontSize = 20.sp)
+        Text("🧪  Prueba de mando (teléfono)", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Esto es lo que se está ENVIANDO desde el teléfono. Pulsa cada botón y mueve cada stick: la lista se marca sola. Lo que ve Android en la TV se comprueba en la prueba de la TV.",
-            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+            color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(8.dp))
-        Text("Perfil: ${profile.name} (${profile.deviceName})", fontSize = 14.sp)
+        Text("Perfil: ${profile.name} (${profile.deviceName})", fontSize = 14.sp, color = Color.White)
         Text(
             "Método: ${ui.attemptMethod.label} · Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}",
-            color = Color(0xFF9AA0B0), fontSize = 13.sp,
+            color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -102,20 +102,21 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                 "Stick der: (${"%.2f".format(state.rightX)}, ${"%.2f".format(state.rightY)})  " +
                 "LT: ${"%.2f".format(state.leftTrigger)} RT: ${"%.2f".format(state.rightTrigger)}",
             fontSize = 14.sp,
+            color = Color.White,
         )
         Spacer(Modifier.height(12.dp))
-        Text("Checklist — ${checklist.testedCount}/${checklist.totalCount} controles probados", fontSize = 15.sp)
+        Text("Checklist — ${checklist.testedCount}/${checklist.totalCount} controles probados", fontSize = 15.sp, color = Color.White)
         for (item in checklist.items(ui.activeProfileId)) {
             Text(
                 (if (item.tested) "✓ " else "○ ") + item.label,
-                color = if (item.tested) Color(0xFF4CAF50) else Color(0xFFE8EAF0),
+                color = if (item.tested) Color(0xFF4CAF50) else Color.White,
                 fontSize = 14.sp,
             )
         }
         Spacer(Modifier.height(12.dp))
         Button(onClick = { checklist.reset() }) { Text("Reiniciar prueba") }
         Spacer(Modifier.height(16.dp))
-        Text("Las 4 etapas", fontSize = 15.sp)
+        Text("Las 4 etapas", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "1. Teléfono envía: " + when (ui.status) {
@@ -124,6 +125,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                 else -> "NO — sin conexión."
             },
             fontSize = 14.sp,
+            color = Color.White,
         )
         Text(
             "2. Receptor recibe: " + when {
@@ -132,10 +134,12 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                 else -> "Sin datos — conecta primero (el teléfono aún no tiene eco de la TV)."
             },
             fontSize = 14.sp,
+            color = Color.White,
         )
         Text(
             "3. Android registra: sin datos en el teléfono — míralo en el diagnóstico de la TV (\"Parece mando real\").",
             fontSize = 14.sp,
+            color = Color.White,
         )
         Text(
             "4. OpenNOW recibe: " + if (openNowConfirmed) "SÍ — confirmado por ti tras probar un juego." else "PENDIENTE — solo se marca tras probar un juego.",
@@ -144,7 +148,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         )
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = { openNowConfirmed = !openNowConfirmed }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (openNowConfirmed) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego")
+            Text(if (openNowConfirmed) "✓ Confirmado en un juego (tocar para quitar)" else "Confirmo que funciona en un juego", color = Color.White)
         }
         Spacer(Modifier.height(16.dp))
         Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Volver") }

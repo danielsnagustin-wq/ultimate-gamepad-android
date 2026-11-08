@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
  * EditorTodoScreen de aquí es solo un marcador y no se enlaza
  * desde ningún botón.
  */
-@Composable fun EditorTodoScreen() = Text("El editor de controles ya existe: Ajustes > Personalizar botones (panel visual).")
+@Composable fun EditorTodoScreen() = Text("El editor de controles ya existe: Ajustes > Personalizar botones (panel visual).", color = Color.White)
 
 /** Perfiles por juego (Fase 3): pantalla real, no TODO. */
 @Composable fun ProfilesTodoScreen(vm: GamepadViewModel) = GameProfilesScreen(vm) {}

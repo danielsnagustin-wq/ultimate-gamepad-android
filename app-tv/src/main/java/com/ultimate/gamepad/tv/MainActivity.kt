@@ -78,8 +78,8 @@ class MainActivity : Activity() {
     private val greenDark = Color.parseColor("#15803D")
     private val red = Color.parseColor("#F87171")
     private val amber = Color.parseColor("#FBBF24")
-    private val greyText = Color.parseColor("#B8B8CC")
-    private val dimText = Color.parseColor("#8A8AA0")
+    private val greyText = Color.WHITE // Ítem 2 usuario: todo el texto blanco sobre negro.
+    private val dimText = Color.WHITE // Ítem 2 usuario: también el texto secundario es blanco.
 
     private lateinit var statusCardBg: GradientDrawable
     private lateinit var statusDotView: TextView
@@ -307,7 +307,7 @@ class MainActivity : Activity() {
             shizukuNoteView = TextView(this@MainActivity).apply {
                 text = "Sin Shizuku no hay mando virtual posible: OpenNOW no verá ningún mando. No es un fallo de tu teléfono."
                 textSize = 20f
-                setTextColor(amber)
+                setTextColor(Color.WHITE) // Ítem 2 usuario: texto blanco; el ámbar queda solo para estados.
                 setPadding(0, dp(12), 0, 0)
             }
             addView(shizukuNoteView)
@@ -388,7 +388,7 @@ class MainActivity : Activity() {
         }
         layout.addView(detailsToggleBtn, cardParams())
         detailsCard = card()
-        diagView = TextView(this).apply { textSize = 16f; setTextColor(Color.parseColor("#D8D8E0")) }
+        diagView = TextView(this).apply { textSize = 16f; setTextColor(Color.WHITE) }
         detailsCard.addView(diagView)
         detailsCard.visibility = View.GONE
         layout.addView(detailsCard, cardParams())
