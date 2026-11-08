@@ -280,6 +280,10 @@ class UdpReceiverService : Service() {
         job?.cancel()
         runCatching { socket?.close() }; socket = null
         wifiLock.acquire()
+        // NSD/mDNS (W6): anunciar la TV en la red local mientras el
+        // receptor escucha. Idempotente: onStartCommand puede
+        // repetirse (START_STICKY) y start() no re-registra.
+        NsdAdvertiser.start(this)
         job = scope.launch {
             // El socket vive como local de la corrutina y el campo
             // solo es un espejo para poder cerrarlo desde fuera
@@ -412,6 +416,8 @@ class UdpReceiverService : Service() {
         releaseControls(this)
         job?.cancel(); watchdogJob?.cancel(); watchdogJob = null; runCatching { socket?.close() }; socket = null
         wifiLock.release()
+        // NSD/mDNS (W6): dejar de anunciar al parar el receptor.
+        NsdAdvertiser.stop()
         stopService(Intent(this, TcpReceiverService::class.java))
         scope.cancel()
         super.onDestroy()

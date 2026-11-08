@@ -42,6 +42,8 @@ import com.ultimate.gamepad.core.TurboConfig
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.DiscoveryClient
+import com.ultimate.gamepad.phone.network.NsdDiscovery
+import kotlinx.coroutines.async
 import com.ultimate.gamepad.phone.network.ExtrasSender
 import com.ultimate.gamepad.phone.network.GamepadProfilePrefs
 import com.ultimate.gamepad.phone.network.GamepadSender
@@ -1062,9 +1064,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (host.isNotBlank()) {
             connect(PairingInfo(host, _ui.value.port, _ui.value.pin), TransportMethod.WIFI_UDP)
         } else {
-            // Sin IP guardada: buscar la TV por broadcast y conectar a la primera.
+            // Sin IP guardada: buscar la TV por broadcast y NSD y conectar a la primera.
             viewModelScope.launch {
-                val found = DiscoveryClient.discover()
+                val found = mergeDiscovered(
+                    DiscoveryClient.discover(),
+                    NsdDiscovery.discover(getApplication()),
+                )
                 val tv = found.firstOrNull()
                 if (tv != null) {
                     connectToDiscovered(tv)
@@ -1248,7 +1253,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             _ui.update { it.copy(discovering = true, error = null) }
-            val found = DiscoveryClient.discover()
+            // NSD/mDNS (W6) + broadcast UDP en paralelo: el total es
+            // max(3 s broadcast, 4 s NSD) ≈ 4 s, no 7 s en serie.
+            // El broadcast queda como respaldo y es la única fuente
+            // del PIN; NSD cubre routers que filtran el broadcast
+            // o tienen aislamiento AP.
+            val broadcastDeferred = async { DiscoveryClient.discover() }
+            val nsdDeferred = async { NsdDiscovery.discover(getApplication()) }
+            val found = mergeDiscovered(broadcastDeferred.await(), nsdDeferred.await())
             _ui.update {
                 it.copy(
                     discovering = false,
@@ -1261,7 +1273,38 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Conectar con un toque a una TV descubierta (ya trae IP y PIN). */
     fun connectToDiscovered(tv: DiscoveredTv) {
+        if (tv.pin.isBlank()) {
+            // TV vista SOLO por NSD: NSD nunca anuncia el PIN.
+            // No conectar con PIN vacío: pre-rellenar IP/puerto y
+            // pedir el PIN que muestra la TV (campos manuales de
+            // Ajustes, justo debajo de la lista).
+            _ui.update {
+                it.copy(
+                    host = tv.ip,
+                    port = tv.port,
+                    error = "Esta TV se encontró por NSD y no anunció su PIN. Escribe abajo el PIN que muestra la TV y pulsa Conectar.",
+                )
+            }
+            return
+        }
         connect(PairingInfo(tv.ip, tv.port, tv.pin), _ui.value.selectedMethod)
+    }
+
+    /**
+     * Fusiona NSD + broadcast UDP sin duplicados: misma IP = una
+     * sola entrada. NSD va primero (tiene el nombre real anunciado)
+     * y el broadcast pisa la misma IP (trae el PIN, que NSD nunca
+     * anuncia). Una TV vista SOLO por NSD queda con pin = "" (PIN
+     * pendiente: hay que pedir el PIN que muestra la TV).
+     */
+    private fun mergeDiscovered(
+        broadcast: List<DiscoveredTv>,
+        nsd: List<DiscoveredTv>,
+    ): List<DiscoveredTv> {
+        val merged = LinkedHashMap<String, DiscoveredTv>()
+        for (tv in nsd) merged[tv.ip] = tv
+        for (tv in broadcast) merged[tv.ip] = tv
+        return merged.values.toList()
     }
 
     private fun connect(info: PairingInfo, method: TransportMethod) {
