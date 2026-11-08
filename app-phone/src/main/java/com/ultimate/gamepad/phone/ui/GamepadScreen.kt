@@ -119,8 +119,13 @@ fun GamepadScreen(vm: GamepadViewModel) {
             r4 = layout.element(LayoutConfig.R4).toGeom(),
         )
         val columns = LayoutGeometry.landscapeColumns(geom)
-        // En vertical la escala se calcula por el ancho (la pantalla es alta y sobra sitio).
-        val fitScale = LayoutGeometry.portraitFitScale(maxWidth.value)
+        // En vertical la escala tiene en cuenta el ancho real del
+        // contenido (incluida la fila central con L4/R4, 458 dp):
+        // antes solo dependía del ancho de pantalla y la fila se
+        // salía por la derecha en teléfonos de 390 dp (R4 fuera
+        // de la pantalla). La pantalla es alta y sobra sitio en
+        // alto; el ajuste lo manda el ancho.
+        val fitScale = LayoutGeometry.portrait(geom, maxWidth.value, maxHeight.value).fitScale
         // Ancho de la fila de hombros: se captura aquí porque dentro del
         // Column el receptor es ColumnScope y maxWidth ya no se puede
         // usar con receptor implícito.
@@ -439,7 +444,12 @@ private fun StickLabel(label: String) {
 private fun CenterControls(vm: GamepadViewModel, layout: LayoutConfig, horizontal: Boolean, yShift: Float = 0f) {
     if (horizontal) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            // Centrada, no anclada a la izquierda: si la fila
+            // desborda, el desbordamiento es simétrico y el ajuste
+            // por ancho basta para que quepa; anclada a la
+            // izquierda, R4 se saldría aunque el ajuste fuera
+            // exacto, porque el escalado es alrededor del centro.
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {

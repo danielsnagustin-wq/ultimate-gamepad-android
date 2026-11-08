@@ -177,6 +177,57 @@ class LayoutGeometryTest {
         }
     }
 
+    /**
+     * La fila central en vertical con L4/R4 (Fase 4): la pantalla
+     * dibuja seis piezas (L4, VIEW, Xbox, MENU, SHARE, R4) = 458 dp,
+     * pero la geometría contaba solo cuatro (322 dp) y el ajuste
+     * solo dependía del ancho de pantalla. En un teléfono de 390 dp
+     * R4 quedaba fuera por la derecha. Ahora la fila cuenta las
+     * seis piezas, el ajuste tiene en cuenta el ancho del contenido
+     * y la fila va centrada (con la fila anclada a la izquierda el
+     * desbordamiento es de un solo lado y ningún ajuste centrado
+     * lo arregla: con el ajuste viejo R4 terminaba en 411,8 dp de
+     * un área de 366 dp).
+     */
+    @Test fun `en vertical la fila central con L4 y R4 cabe en el ancho`() {
+        // Ancho real de la fila que dibuja la pantalla en vertical.
+        val rowW = L.L4_W + L.VIEW_W + L.XBOX_W_PORTRAIT + L.MENU_W + L.SHARE_W + L.R4_W +
+            5 * L.PORTRAIT_CENTER_SPACING
+        assertEquals(458f, rowW, 0.001f)
+        val layout = LayoutGeometry.GeomLayout()
+        // La geometría cuenta la fila entera: es la más ancha.
+        val p390 = L.portrait(layout, 366f, 820f)
+        assertEquals(458f, p390.contentW, 0.001f)
+        // El ajuste hace caber el contenido: 366 / 458 = 0,799.
+        assertEquals(366f / 458f, p390.fitScale, 0.001f)
+        assertTrue("ancho escalado ${p390.scaledW} > disponible ${p390.availW}", p390.scaledW <= p390.availW + 0.5f)
+        // R4, última pieza de la fila centrada: su borde derecho
+        // visual queda justo en el borde del área (366 dp).
+        val r4Right = 366f / 2f + rowW / 2f * p390.fitScale
+        assertTrue("R4 se sale ($r4Right > 366)", r4Right <= 366f + 0.5f)
+        // Y L4, primera pieza: su borde izquierdo visual queda en 0.
+        val l4Left = 366f / 2f - rowW / 2f * p390.fitScale
+        assertTrue("L4 se sale ($l4Left < 0)", l4Left >= -0.5f)
+        // La matemática vieja NO lo cazaba: centro de 322 dp y
+        // ajuste solo por pantalla (0,832) con la fila anclada a
+        // la izquierda dejaban R4 en 411,8 dp, fuera del área.
+        val oldFit = L.portraitFitScale(366f)
+        val oldR4Right = 366f / 2f + (rowW - 366f / 2f) * oldFit
+        assertTrue("la vieja NO dejaba R4 fuera ($oldR4Right <= 366): el test no cazaría el error", oldR4Right > 366f)
+        // En el resto de teléfonos verticales también cabe (escala 1).
+        for ((w, h) in listOf(360f to 640f, 412f to 915f)) {
+            val p = L.portrait(layout, areaW(w), areaH(h))
+            assertEquals(458f, p.contentW, 0.001f)
+            assertTrue("$w x $h: ancho escalado ${p.scaledW} > disponible ${p.availW}", p.scaledW <= p.availW + 0.5f)
+        }
+        // Con escala 1.4 cabe en 390 y 412 dp, pero no en 360 dp:
+        // ahí el ajuste tocaría el suelo de 0.55 (límite conocido).
+        for ((w, h) in listOf(390f to 844f, 412f to 915f)) {
+            val p = L.portrait(scaled(1.4f), areaW(w), areaH(h))
+            assertTrue("$w x $h escala 1.4: ancho escalado ${p.scaledW} > disponible ${p.availW}", p.scaledW <= p.availW + 0.5f)
+        }
+    }
+
     @Test fun `en vertical los hombros tampoco tapan la tuerca`() {
         for ((w, h) in listOf(360f to 640f, 390f to 844f, 412f to 915f, 800f to 1280f)) {
             assertShoulders("$w x $h", w, LayoutGeometry.GeomLayout())

@@ -25,12 +25,19 @@ import kotlin.math.abs
  * - La tuerca tapaba RT y LT se salía por el borde: los hombros
  *   se movían sin límite. Ahora el desplazamiento se recorta al
  *   dibujar (lo guardado no cambia).
+ * - La fila central en vertical no contaba L4/R4: se calculaba
+ *   con 322 dp (VIEW/Xbox/MENU/SHARE) cuando la pantalla dibuja
+ *   458 dp con las paletas, y el ajuste solo dependía del ancho
+ *   de pantalla. En un teléfono de 390 dp R4 quedaba fuera por la
+ *   derecha. Ahora la fila cuenta las seis piezas, el ajuste
+ *   tiene en cuenta el ancho del contenido y la fila va centrada:
+ *   con la fila anclada a la izquierda el desbordamiento es de un
+ *   solo lado y ningún ajuste centrado lo arregla.
  *
  * Límites conocidos (no los cubren los tests, a propósito):
- * - En vertical el ajuste depende solo del ancho de pantalla, no
- *   de la escala de los elementos: con escala 1.4 o 1.6 en un
- *   teléfono vertical los botones se salen por los lados. En
- *   horizontal el ajuste sí tiene en cuenta la escala.
+ * - En vertical el ajuste tiene un suelo de 0.55: con escala 1.6
+ *   en un teléfono vertical el contenido ya no cabe (y con 1.4
+ *   tampoco en pantallas de 360 dp). En horizontal el suelo es 0.45.
  * - Con los desplazamientos guardados por el usuario (stick +39,
  *   cruceta +23) la cruceta roza la etiqueta L3 unos 10 dp: los
  *   desplazamientos desiguales se comen el hueco de 6 dp. Se quita
@@ -348,6 +355,8 @@ object LayoutGeometry {
         val xb = layout.xbox
         val mn = layout.menu
         val sh = layout.share
+        val l4 = layout.l4
+        val r4 = layout.r4
         val row1H = maxOf(if (ls.visible) STICK_H * ls.scale else 0f, if (ab.visible) ABXY_H * ab.scale else 0f)
         val row2H = maxOf(if (dp.visible) DPAD_H * dp.scale else 0f, if (rs.visible) STICK_H * rs.scale else 0f)
         val centerH = maxOf(
@@ -355,18 +364,33 @@ object LayoutGeometry {
             if (xb.visible) XBOX_H_PORTRAIT * xb.scale else 0f,
             if (mn.visible) MENU_H * mn.scale else 0f,
             if (sh.visible) SHARE_H * sh.scale else 0f,
+            if (l4.visible) L4_H * l4.scale else 0f,
+            if (r4.visible) R4_H * r4.scale else 0f,
         )
         val row1W = (if (ls.visible) STICK_W * ls.scale else 0f) + (if (ab.visible) ABXY_W * ab.scale else 0f)
         val row2W = (if (dp.visible) DPAD_W * dp.scale else 0f) + (if (rs.visible) STICK_W * rs.scale else 0f)
-        val centerCount = listOf(vx, xb, mn, sh).count { it.visible }
+        // La fila central en vertical son SEIS piezas (L4, VIEW,
+        // Xbox, MENU, SHARE, R4): 458 dp con el diseño por
+        // defecto. Antes solo se contaban cuatro (322 dp) y R4
+        // quedaba fuera por la derecha en teléfonos de 390 dp.
+        val centerCount = listOf(vx, xb, mn, sh, l4, r4).count { it.visible }
         val centerW = (if (vx.visible) VIEW_W * vx.scale else 0f) +
             (if (xb.visible) XBOX_W_PORTRAIT * xb.scale else 0f) +
             (if (mn.visible) MENU_W * mn.scale else 0f) +
             (if (sh.visible) SHARE_W * sh.scale else 0f) +
+            (if (l4.visible) L4_W * l4.scale else 0f) +
+            (if (r4.visible) R4_W * r4.scale else 0f) +
             PORTRAIT_CENTER_SPACING * (centerCount - 1).coerceAtLeast(0)
         val totalH = row1H + row2H + PORTRAIT_MIDDLE_SPACING + centerH
         val contentW = maxOf(row1W, row2W, centerW)
-        val fitScale = portraitFitScale(areaW)
+        // El ajuste tiene en cuenta también el ancho del
+        // contenido, no solo el de la pantalla: con la fila de
+        // 458 dp en un área de 366 dp el ajuste es 366/458 =
+        // 0,799 (antes era 366/440 = 0,832 y la fila se salía).
+        // Con el suelo de 0.55, a escala 1.6 el contenido ya no
+        // cabe en un teléfono vertical (límite conocido).
+        val widthFit = if (contentW > 0f) areaW / contentW else Float.MAX_VALUE
+        val fitScale = minOf(portraitFitScale(areaW), widthFit).coerceAtLeast(MIN_FIT_SCALE_PORTRAIT)
         val availH = areaH - SHOULDER_ROW_H
         return PortraitGeometry(totalH, contentW, fitScale, totalH * fitScale, contentW * fitScale, availH, areaW)
     }
