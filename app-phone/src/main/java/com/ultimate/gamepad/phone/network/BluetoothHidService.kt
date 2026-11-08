@@ -1,5 +1,6 @@
 package com.ultimate.gamepad.phone.network
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHidDevice
@@ -8,7 +9,9 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
@@ -109,8 +112,26 @@ class BluetoothHidService(private val context: Context) {
     private fun requestProxy(onResult: (HidAvailability) -> Unit) {
         closeProfileProxy()
         val myId = ++proxyRequestId
+        // Sin BLUETOOTH_CONNECT (Android 12+) adapter.isEnabled y
+        // getProfileProxy lanzan SecurityException: antes se llegaba
+        // a isEnabled sin comprobar el permiso y fuera de
+        // runCatching, así que en un primer arranque sin el permiso
+        // la app podía crashear al abrir la pantalla de conexión.
+        // Ahora el permiso se comprueba primero y se devuelve
+        // PERMISSION_DENIED, para que la UI enseñe el botón "Dar
+        // permiso de Bluetooth" en vez de romperse.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            availability = HidAvailability.PERMISSION_DENIED
+            status = TransportStatus.UNAVAILABLE
+            onResult(availability); return
+        }
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
-        if (adapter == null || !adapter.isEnabled) {
+        // Cinturón y tirantes: aunque el permiso esté concedido,
+        // isEnabled no debe poder tumbar la comprobación.
+        val enabled = runCatching { adapter?.isEnabled == true }.getOrDefault(false)
+        if (adapter == null || !enabled) {
             availability = HidAvailability.UNAVAILABLE
             status = TransportStatus.UNAVAILABLE
             onResult(availability); return
