@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -25,7 +27,7 @@ android {
     val fixedDebugKeystoreB64 = rootProject.file("debug.keystore.b64")
     if (fixedDebugKeystoreB64.exists()) {
         fixedDebugKeystore.parentFile.mkdirs()
-        fixedDebugKeystore.writeBytes(java.util.Base64.getDecoder().decode(fixedDebugKeystoreB64.readText().trim()))
+        fixedDebugKeystore.writeBytes(Base64.getDecoder().decode(fixedDebugKeystoreB64.readText().trim()))
     }
     signingConfigs {
         getByName("debug") {
