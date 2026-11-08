@@ -89,8 +89,12 @@ fun Modifier.pressEffect(pressed: Boolean): Modifier {
 /**
  * Stick analógico, 180 dp con más recorrido (antes 160 dp): el
  * recorrido corto era parte de la mala sensibilidad. El pomo
- * viaja hasta 80 px desde el centro (antes 70 px), así el stick
- * se puede mover más y llegar al tope de verdad. Un toque
+ * viaja hasta 54 dp desde el centro (antes 80 px, que en ~400 dpi
+ * eran solo ~32 dp), así el stick se puede mover más y llegar al
+ * tope de verdad. Un toque
+ * Tope geometrico: base 180 dp (radio 90), pomo radio 36 dp
+ * -> 90 - 36 = 54 dp (con 80 dp el borde del pomo quedaba 26 dp
+ * fuera del anillo).
  * corto sin arrastrar es pulsar el stick (L3/R3, como en un
  * mando real): el detector de toques y el de arrastre conviven —
  * el toque solo dispara si no hubo movimiento, y el arrastre
@@ -99,7 +103,16 @@ fun Modifier.pressEffect(pressed: Boolean): Modifier {
 @Composable
 fun JoystickView(onMove: (Float, Float) -> Unit, onRelease: () -> Unit, onClick: (() -> Unit)? = null) {
     var knob by remember { mutableStateOf(Offset.Zero) }
-    val radius = 80f
+    // P4 (auditoría): `radius` eran 80 PÍXELES, no dp, sobre una
+    // base de 180 dp: en ~400 dpi el pomo daba deflexión máxima a
+    // 1/5 del recorrido (hipersensible y dependiente de la
+    // densidad). Ahora son 54 dp convertidos a px con la densidad
+    // real (tope geometrico 90-36=54 dp); el arrastre (dragAmount,
+    // en px) y el pomo (knob, en px)
+    // se comparan con ese mismo radio en px, así la deflexión
+    // (clamped / radius) es 0..1 en cualquier densidad.
+    val density = LocalDensity.current
+    val radius = with(density) { 54.dp.toPx() }
     Box(
         modifier = Modifier.size(180.dp)
             .pointerInput(Unit) { detectTapGestures(onTap = { onClick?.invoke() }) }
