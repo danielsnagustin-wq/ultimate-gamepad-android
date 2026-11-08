@@ -42,8 +42,6 @@ import com.ultimate.gamepad.core.TurboConfig
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
 import com.ultimate.gamepad.phone.network.DiscoveryClient
-import com.ultimate.gamepad.phone.network.NsdDiscovery
-import kotlinx.coroutines.async
 import com.ultimate.gamepad.phone.network.ExtrasSender
 import com.ultimate.gamepad.phone.network.GamepadProfilePrefs
 import com.ultimate.gamepad.phone.network.GamepadSender
@@ -132,23 +130,16 @@ data class GamepadUiState(
         // AVAILABLE con Wi-Fi/hotspot o UNAVAILABLE sin red.
         TransportMethod.WIFI_UDP to TransportStatus.UNAVAILABLE,
         TransportMethod.WIFI_TCP to TransportStatus.UNAVAILABLE,
-        TransportMethod.BLUETOOTH_DATA to TransportStatus.UNAVAILABLE,
+        TransportMethod.BLUETOOTH_DATA to TransportStatus.PENDING_STAGE2,
         TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE,
     ),
     val hidAvailability: HidAvailability = HidAvailability.UNKNOWN,
-    /** TVs emparejadas por Bluetooth (Fase 5): las rellena refreshBtDataDevices(). */
-    val btDataDevices: List<BluetoothDataTransport.BondedBtDevice> = emptyList(),
-    /** Motivo real del estado de Bluetooth datos (Fase 5): lo deja refreshBtDataStatus(). */
-    val btDataStatusDetail: String? = null,
 )
 
 class GamepadViewModel(application: Application) : AndroidViewModel(application) {
     private val _ui = MutableStateFlow(GamepadUiState())
     val ui: StateFlow<GamepadUiState> = _ui.asStateFlow()
     private val hidService = BluetoothHidService(application)
-
-    /** Transporte Bluetooth datos (SPP/RFCOMM, Fase 5): instancia solo para disponibilidad/lista de emparejados; el envío lo hace la instancia del servicio. */
-    private val btDataTransport = BluetoothDataTransport(application)
 
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
@@ -962,8 +953,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun setTransportMode(mode: TransportMode) = _ui.update { it.copy(transportMode = mode) }
     fun setHotspotMode(enabled: Boolean) = _ui.update { it.copy(hotspotMode = enabled) }
 
-    /** Forzar un método manualmente. */
+    /** Forzar un método manualmente. BLE/SPP no se puede forzar: no implementado (Fase 5). */
     fun selectMethod(method: TransportMethod) {
+        if (method == TransportMethod.BLUETOOTH_DATA) {
+            _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): no implementado todavía (Fase 5 del plan). No se puede forzar; usa Wi-Fi o Bluetooth HID.") }
+            return
+        }
         _ui.update { it.copy(selectedMethod = method, transportMode = TransportMode.MANUAL, error = null) }
         // Si ya hay conexión o intento en curso, reconectar con el método nuevo.
         val host = _ui.value.host
@@ -1020,32 +1015,6 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** Comprueba Bluetooth datos (SPP/RFCOMM, Fase 5) y actualiza su estado real con motivo. Espejo de refreshHidStatus(). */
-    fun refreshBtDataStatus() {
-        val status = btDataTransport.refreshStatus()
-        _ui.update {
-            it.copy(
-                transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_DATA to status),
-                btDataStatusDetail = btDataTransport.lastError,
-            )
-        }
-    }
-
-    /** Rellena la lista de TVs emparejadas por Bluetooth (Fase 5) para el diálogo "Elegir TV emparejada". */
-    fun refreshBtDataDevices() {
-        _ui.update { it.copy(btDataDevices = btDataTransport.bondedDevices()) }
-    }
-
-    /** Elige la TV emparejada para Bluetooth datos (Fase 5): persiste su MAC y marca el método como disponible si el BT está encendido. */
-    fun selectBtDataDevice(address: String) {
-        LastConnectionPrefs.save(getApplication(), _ui.value.host, _ui.value.port, _ui.value.pin, TransportMethod.BLUETOOTH_DATA, btAddress = address)
-        if (btDataTransport.isBluetoothEnabled()) {
-            _ui.update { it.copy(transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_DATA to TransportStatus.AVAILABLE), btDataStatusDetail = null) }
-        } else {
-            refreshBtDataStatus()
-        }
-    }
-
     /**
      * La TV cortó el Bluetooth (o volvió). Esto es lo que antes no
      * existía: el callback del HID ponía FAILED en el servicio y
@@ -1093,12 +1062,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (host.isNotBlank()) {
             connect(PairingInfo(host, _ui.value.port, _ui.value.pin), TransportMethod.WIFI_UDP)
         } else {
-            // Sin IP guardada: buscar la TV por broadcast y NSD y conectar a la primera.
+            // Sin IP guardada: buscar la TV por broadcast y conectar a la primera.
             viewModelScope.launch {
-                val found = mergeDiscovered(
-                    DiscoveryClient.discover(),
-                    NsdDiscovery.discover(getApplication()),
-                )
+                val found = DiscoveryClient.discover()
                 val tv = found.firstOrNull()
                 if (tv != null) {
                     connectToDiscovered(tv)
@@ -1253,14 +1219,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
                 when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
-                    BluetoothAdapter.STATE_ON -> {
-                        refreshHidStatus(force = true)
-                        refreshBtDataStatus()
-                    }
+                    BluetoothAdapter.STATE_ON -> refreshHidStatus(force = true)
                     BluetoothAdapter.STATE_OFF -> _ui.update {
                         it.copy(
                             hidAvailability = HidAvailability.UNAVAILABLE,
-                            transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE) + (TransportMethod.BLUETOOTH_DATA to TransportStatus.UNAVAILABLE),
+                            transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.UNAVAILABLE),
                         )
                     }
                 }
@@ -1285,14 +1248,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             _ui.update { it.copy(discovering = true, error = null) }
-            // NSD/mDNS (W6) + broadcast UDP en paralelo: el total es
-            // max(3 s broadcast, 4 s NSD) ≈ 4 s, no 7 s en serie.
-            // El broadcast queda como respaldo y es la única fuente
-            // del PIN; NSD cubre routers que filtran el broadcast
-            // o tienen aislamiento AP.
-            val broadcastDeferred = async { DiscoveryClient.discover() }
-            val nsdDeferred = async { NsdDiscovery.discover(getApplication()) }
-            val found = mergeDiscovered(broadcastDeferred.await(), nsdDeferred.await())
+            val found = DiscoveryClient.discover()
             _ui.update {
                 it.copy(
                     discovering = false,
@@ -1305,43 +1261,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Conectar con un toque a una TV descubierta (ya trae IP y PIN). */
     fun connectToDiscovered(tv: DiscoveredTv) {
-        if (tv.pin.isBlank()) {
-            // TV vista SOLO por NSD: NSD nunca anuncia el PIN.
-            // No conectar con PIN vacío: pre-rellenar IP/puerto y
-            // pedir el PIN que muestra la TV (campos manuales de
-            // Ajustes, justo debajo de la lista).
-            _ui.update {
-                it.copy(
-                    host = tv.ip,
-                    port = tv.port,
-                    error = "Esta TV se encontró por NSD y no anunció su PIN. Escribe abajo el PIN que muestra la TV y pulsa Conectar.",
-                )
-            }
-            return
-        }
         connect(PairingInfo(tv.ip, tv.port, tv.pin), _ui.value.selectedMethod)
-    }
-
-    /**
-     * Fusiona NSD + broadcast UDP sin duplicados: misma IP = una
-     * sola entrada. NSD va primero (tiene el nombre real anunciado)
-     * y el broadcast pisa la misma IP (trae el PIN, que NSD nunca
-     * anuncia). Una TV vista SOLO por NSD queda con pin = "" (PIN
-     * pendiente: hay que pedir el PIN que muestra la TV).
-     */
-    private fun mergeDiscovered(
-        broadcast: List<DiscoveredTv>,
-        nsd: List<DiscoveredTv>,
-    ): List<DiscoveredTv> {
-        val merged = LinkedHashMap<String, DiscoveredTv>()
-        for (tv in nsd) merged[tv.ip] = tv
-        for (tv in broadcast) merged[tv.ip] = tv
-        return merged.values.toList()
     }
 
     private fun connect(info: PairingInfo, method: TransportMethod) {
         if (method == TransportMethod.BLUETOOTH_HID) { connectHid(); return }
-        if (method == TransportMethod.BLUETOOTH_DATA) { connectBtData(info); return }
+        if (method == TransportMethod.BLUETOOTH_DATA) {
+            _ui.update { it.copy(error = "Bluetooth datos (BLE/SPP): no implementado todavía (Fase 5 del plan).") }; return
+        }
         // A3: persistir la última conexión para que el servicio pueda
         // reanudar solo tras la muerte del proceso (intent nulo).
         LastConnectionPrefs.save(getApplication(), info.host, info.port, info.pin, method)
@@ -1360,41 +1287,6 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         }
         // En segundo plano el sistema rechaza el arranque (ForegroundServiceStartNotAllowed):
         // antes crasheaba si el fallback de AUTO lo intentaba con la app dormida.
-        runCatching { getApplication<Application>().startForegroundService(intent) }
-            .onFailure {
-                _ui.update {
-                    it.copy(status = ConnectionStatus.ERROR, error = "No se pudo iniciar el servicio de envío. Inténtalo de nuevo con la app abierta.")
-                }
-            }
-    }
-
-    /** Conexión por Bluetooth datos (SPP/RFCOMM, Fase 5), espejo de connectHid(). */
-    private fun connectBtData(info: PairingInfo) {
-        if (!btDataTransport.hasConnectPermission()) {
-            _ui.update {
-                it.copy(status = ConnectionStatus.ERROR, error = "Falta el permiso de Bluetooth. Toca \"Dar permiso de Bluetooth\" en el selector de método.", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_DATA to TransportStatus.FAILED))
-            }
-            return
-        }
-        val mac = LastConnectionPrefs.load(getApplication())?.btAddress?.takeIf { it.isNotBlank() }
-        if (mac.isNullOrBlank()) {
-            _ui.update {
-                it.copy(status = ConnectionStatus.ERROR, error = "Empareja la TV en Ajustes > Bluetooth y elígela en 'TV por Bluetooth' (Ajustes > Conexión).", transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_DATA to TransportStatus.FAILED))
-            }
-            return
-        }
-        // A3: persistir la última conexión (con la MAC) para que el servicio pueda reanudar solo tras la muerte del proceso.
-        LastConnectionPrefs.save(getApplication(), info.host, info.port, info.pin, TransportMethod.BLUETOOTH_DATA, btAddress = mac)
-        _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_DATA, showSettings = false, showQrScanner = false, error = null, info = null)
-        }
-        val intent = Intent(getApplication(), GamepadSenderService::class.java).apply {
-            action = GamepadSenderService.ACTION_START
-            putExtra(GamepadSenderService.EXTRA_HOST, info.host)
-            putExtra(GamepadSenderService.EXTRA_PORT, info.port)
-            putExtra(GamepadSenderService.EXTRA_METHOD, TransportMethod.BLUETOOTH_DATA.name)
-            putExtra(GamepadSenderService.EXTRA_BT_ADDRESS, mac)
-        }
         runCatching { getApplication<Application>().startForegroundService(intent) }
             .onFailure {
                 _ui.update {
@@ -1518,12 +1410,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         if (!force && GamepadSenderService.isTvResponding()) return
         val current = GamepadSenderService.activeMethod
         val order = TransportSelector.AUTO_ORDER
-        val next = order.dropWhile { it != current }.drop(1).firstOrNull()
+        val next = order.dropWhile { it != current }.drop(1).firstOrNull { it != TransportMethod.BLUETOOTH_DATA }
         if (next == null) {
             // A7: nombrar el método real del último fallo, no
             // "ningún método Wi-Fi": si se llegó aquí por HID, el
             // fallo fue del HID y decir Wi-Fi confunde.
-            _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Sin respuesta de la TV por $current (último método probado). Revisa la red, el Bluetooth o prueba Hotspot / HID.") }
+            _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Sin respuesta de la TV por $current (último método probado). Revisa la red o prueba Hotspot / HID.") }
             return
         }
         val info = PairingInfo(_ui.value.host, _ui.value.port, _ui.value.pin)
