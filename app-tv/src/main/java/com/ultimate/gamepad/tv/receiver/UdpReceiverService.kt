@@ -403,7 +403,11 @@ class UdpReceiverService : Service() {
         watchdogJob = scope.launch {
             while (isActive) {
                 delay(500)
-                releaseStaleControls(this@UdpReceiverService)
+                // El watchdog nunca debe matar el proceso: un fallo en
+                // deliver() (p. ej. el bind de Shizuku) se anota y se
+                // sigue, igual que el bucle UDP hace por paquete.
+                runCatching { releaseStaleControls(this@UdpReceiverService) }
+                    .onFailure { lastError = it.message ?: it.javaClass.simpleName }
             }
         }
         return START_STICKY
