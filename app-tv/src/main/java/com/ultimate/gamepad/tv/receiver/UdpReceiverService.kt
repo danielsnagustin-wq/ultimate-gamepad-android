@@ -56,6 +56,15 @@ import java.net.InetSocketAddress
 class UdpReceiverService : Service() {
     companion object {
         const val CHANNEL_ID = "gamepad_receiver"
+        /**
+         * A4: igual que en el teléfono: el canal existe desde el
+         * primer arranque de la app (MainActivity), no solo cuando
+         * arranca el servicio.
+         */
+        fun createNotificationChannel(context: Context) {
+            val nm = context.getSystemService(NotificationManager::class.java) ?: return
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Ultimate Gamepad TV", NotificationManager.IMPORTANCE_LOW))
+        }
         @Volatile var virtualGamepadReady: Boolean = false
             private set
         @Volatile var lastSequence: Int = -1
@@ -357,8 +366,7 @@ class UdpReceiverService : Service() {
     }
 
     private fun notification(text: String): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Ultimate Gamepad TV", NotificationManager.IMPORTANCE_LOW))
+        createNotificationChannel(this)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ultimate Gamepad TV")
             .setContentText(text)

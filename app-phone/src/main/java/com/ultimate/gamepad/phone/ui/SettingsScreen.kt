@@ -1,7 +1,10 @@
 package com.ultimate.gamepad.phone.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -205,6 +208,52 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.openExtras() }, modifier = Modifier.fillMaxWidth()) {
             Text("✨  Extras (turbo, macros, teclado, ratón…)")
+        }
+        Spacer(Modifier.height(16.dp))
+        // --- Notificaciones (A4) ---
+        // En Android 13+ el permiso POST_NOTIFICATIONS está
+        // bloqueado hasta que la app lo pida: el canal ya existe
+        // desde el arranque (MainActivity), pero sin el permiso el
+        // interruptor de Ajustes no se deja activar. Aquí se pide
+        // (y si Android ya no vuelve a preguntar, se abre la
+        // pantalla de notificaciones del sistema). La notificación
+        // del mando en primer plano funciona igual sin este permiso.
+        Text("Notificaciones", fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text("Android 13+ las bloquea hasta que las actives. El mando funciona igual sin ellas, pero sin el permiso no verás avisos de conexión.", color = Color(0xFF9AA0B0), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+        val notifContext = LocalContext.current
+        var notificationsGranted by remember {
+            mutableStateOf(
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(notifContext, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            )
+        }
+        var notificationsAsked by remember { mutableStateOf(false) }
+        val notificationsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            notificationsGranted = granted
+            notificationsAsked = true
+        }
+        if (notificationsGranted) {
+            Text("● Notificaciones activas", color = Color(0xFF4CAF50), fontSize = 13.sp)
+        } else {
+            Text("● Notificaciones bloqueadas", color = Color(0xFFFF5252), fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (notificationsAsked) {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, notifContext.packageName)
+                        }
+                        notifContext.startActivity(intent)
+                    } else {
+                        notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (notificationsAsked) "Abrir ajustes de notificaciones" else "Activar notificaciones")
+            }
         }
         Spacer(Modifier.height(16.dp))
         Button(onClick = { vm.closeSettings() }) { Text("Cerrar ajustes") }

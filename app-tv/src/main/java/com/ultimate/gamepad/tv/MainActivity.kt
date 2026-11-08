@@ -197,6 +197,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A4: el canal de notificación existe desde el primer arranque
+        // (ver GamepadSenderService en el teléfono).
+        UdpReceiverService.createNotificationChannel(this)
         pin = TvPairing.getOrCreatePin(this)
 
         val layout = LinearLayout(this).apply {

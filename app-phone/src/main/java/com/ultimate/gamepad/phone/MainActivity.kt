@@ -15,6 +15,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ultimate.gamepad.phone.network.GamepadSenderService
 import com.ultimate.gamepad.phone.ui.GamepadScreen
 import com.ultimate.gamepad.phone.ui.GamepadViewModel
 
@@ -33,6 +34,11 @@ private val appTypography = baseTypography.copy(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A4: el canal de notificación existe desde el primer arranque,
+        // no solo cuando arranca el servicio: en Android 13+ el
+        // interruptor de notificaciones de la app aparece bloqueado
+        // si no hay ningún canal creado.
+        GamepadSenderService.createNotificationChannel(this)
         // Modo inmersivo: la barra de botones del teléfono (atrás,
         // inicio, recientes) y la barra de estado se ocultan y el
         // mando usa toda la pantalla. Vuelven con un deslizamiento

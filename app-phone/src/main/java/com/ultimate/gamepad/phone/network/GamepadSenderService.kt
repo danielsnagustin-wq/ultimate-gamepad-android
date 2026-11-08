@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -60,6 +61,20 @@ class GamepadSenderService : Service() {
         const val EXTRA_METHOD = "method" // "WIFI_UDP" o "WIFI_TCP"
         const val ACTION_START = "com.ultimate.gamepad.phone.START"
         const val ACTION_STOP = "com.ultimate.gamepad.phone.STOP"
+        /**
+         * A4: crea el canal al arrancar la app (MainActivity), para
+         * que el interruptor de notificaciones exista en Ajustes
+         * aunque el servicio aún no haya arrancado nunca. Antes el
+         * canal solo se creaba dentro de notification(): en Android
+         * 13+ la app aparecía sin canal y el interruptor parecía
+         * bloqueado sin explicación.
+         */
+        fun createNotificationChannel(context: Context) {
+            val nm = context.getSystemService(NotificationManager::class.java) ?: return
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Ultimate Gamepad", NotificationManager.IMPORTANCE_LOW),
+            )
+        }
         @Volatile var lastError: String? = null
             private set
         @Volatile var lastPingMs: Long? = null
@@ -398,10 +413,7 @@ class GamepadSenderService : Service() {
     override fun onDestroy() { stopSending(); scope.cancel(); super.onDestroy() }
 
     private fun notification(text: String): Notification {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Ultimate Gamepad", NotificationManager.IMPORTANCE_LOW),
-        )
+        createNotificationChannel(this)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ultimate Gamepad")
             .setContentText(text)
