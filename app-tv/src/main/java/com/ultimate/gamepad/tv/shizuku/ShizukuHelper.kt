@@ -34,6 +34,34 @@ import java.net.InetAddress
 object ShizukuHelper {
     data class Status(val ready: Boolean, val label: String, val guidance: String)
 
+    // T3: freno al permiso de Shizuku. Antes, sendToGamepad()
+    // llamaba a Shizuku.requestPermission(0) por paquete (~120 Hz)
+    // mientras no había permiso, sin observar el resultado: un
+    // diálogo por paquete. Ahora se pide como mucho una vez cada
+    // 10 s, y el listener observa el resultado: si se concede, el
+    // freno se resetea para no esperar; si se deniega, no se
+    // insiste hasta que pasen los 10 s.
+    @Volatile private var lastPermissionRequestAtMs: Long = 0L
+    private const val PERMISSION_REQUEST_MIN_INTERVAL_MS = 10_000L
+    @Volatile private var permissionListenerRegistered: Boolean = false
+
+    private fun ensurePermissionResultListener() {
+        if (permissionListenerRegistered) return
+        permissionListenerRegistered = true
+        runCatching {
+            Shizuku.addRequestPermissionResultListener(
+                object : Shizuku.OnRequestPermissionResultListener {
+                    override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                        if (requestCode != 0) return
+                        if (grantResult == PackageManager.PERMISSION_GRANTED) {
+                            lastPermissionRequestAtMs = 0L
+                        }
+                    }
+                },
+            )
+        }
+    }
+
     fun status(context: Context): Status {
         val pm = context.packageManager
         val installed = runCatching {
@@ -66,7 +94,14 @@ object ShizukuHelper {
     fun sendToGamepad(context: Context, rawPacket: ByteArray, state: GamepadState, profileId: Int = GamepadProfiles.XBOX_360_ID): Boolean {
         if (!Shizuku.pingBinder()) return false
         if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            Shizuku.requestPermission(0)
+            // T3: pedir con freno (máx. 1 vez cada 10 s) y observar
+            // el resultado con el listener registrado arriba.
+            ensurePermissionResultListener()
+            val now = System.currentTimeMillis()
+            if (now - lastPermissionRequestAtMs >= PERMISSION_REQUEST_MIN_INTERVAL_MS) {
+                lastPermissionRequestAtMs = now
+                Shizuku.requestPermission(0)
+            }
             return false
         }
         // El bind real al UserService se hace en GamepadUserService.bind();
