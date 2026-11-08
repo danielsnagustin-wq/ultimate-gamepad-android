@@ -91,12 +91,29 @@ object NsdAdvertiser {
     private var nsdManager: NsdManager? = null
     private var appContext: Context? = null
     private var registering: Boolean = false
+    /** Parada pedida mientras el registro estaba en curso (ver stop()). */
+    private var stopPending: Boolean = false
     private var retryAttempt: Int = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val retryRunnable = Runnable { retryRegister() }
 
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
+            if (stopPending) {
+                // Se paró mientras se registraba: quitar el anuncio
+                // ahora mismo con el manager que sigue guardado. Sin
+                // esto, el anuncio quedaba colgado en la red y un
+                // stop() posterior no podía quitarlo (nsdManager ya
+                // era null).
+                stopPending = false
+                registering = false
+                runCatching { nsdManager?.unregisterService(registrationListener) }
+                nsdManager = null
+                appContext = null
+                isRegistered = false
+                registeredName = null
+                return
+            }
             isRegistered = true
             registeredName = serviceInfo.serviceName
             lastError = null
@@ -108,6 +125,14 @@ object NsdAdvertiser {
             isRegistered = false
             registeredName = null
             registering = false
+            if (stopPending) {
+                // Se paró mientras se registraba: no reintentar ni
+                // dejar error; solo limpiar.
+                stopPending = false
+                nsdManager = null
+                appContext = null
+                return
+            }
             lastError = "NSD: no se pudo anunciar la TV (${reason(errorCode)})."
             scheduleRetry()
         }
@@ -147,6 +172,17 @@ object NsdAdvertiser {
     fun stop() {
         mainHandler.removeCallbacks(retryRunnable)
         retryAttempt = 0
+        // Si el registro está en curso (registerService ya llamado,
+        // callback pendiente), no se puede desregistrar todavía:
+        // unregisterService lanzaría IllegalArgumentException (el
+        // listener aún no está registrado). Se marca pendiente y el
+        // callback (onServiceRegistered / onRegistrationFailed)
+        // termina de parar; el manager y el contexto se conservan
+        // hasta entonces para poder desregistrar.
+        if (registering && !isRegistered) {
+            stopPending = true
+            return
+        }
         registering = false
         val manager = nsdManager
         val wasRegistered = isRegistered
