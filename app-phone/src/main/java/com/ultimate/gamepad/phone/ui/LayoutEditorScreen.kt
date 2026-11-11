@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,7 +71,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     // a trompicones). Ahora la previa es fija y el ajuste de cada
     // botón se abre tocándolo, no en una barra de abajo.
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp),
     ) {
     Column(
         modifier = Modifier
