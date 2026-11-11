@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -83,14 +84,18 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     }
 
     fun doSave(clean: GameProfile) {
-        val next = profiles.filter { p -> p.name != clean.name } + clean
+        // UI-3: al renombrar también se quita el nombre ORIGINAL:
+        // antes filter solo excluía clean.name y el perfil viejo
+        // quedaba duplicado (renombrar copiaba, no renombraba).
+        val next = profiles.filter { p -> p.name != clean.name && p.name != editingOriginalName } + clean
         persist(next.sortedBy { p -> p.name })
         pendingOverwrite = null
         editing = null
     }
 
     fun doApply(clean: GameProfile) {
-        val next = profiles.filter { p -> p.name != clean.name } + clean
+        // UI-3: igual que doSave — quitar también el original.
+        val next = profiles.filter { p -> p.name != clean.name && p.name != editingOriginalName } + clean
         persist(next.sortedBy { p -> p.name })
         vm.applyGameProfile(clean)
         GameProfilePrefs.saveActiveName(context, clean.name)
@@ -102,7 +107,7 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
