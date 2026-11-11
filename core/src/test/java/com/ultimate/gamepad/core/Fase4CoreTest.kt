@@ -30,6 +30,30 @@ class Fase4CoreTest {
         assertFalse(decoded.isExtraPressed(GamepadExtraButtons.L4 shl 2))
     }
 
+    // --- Remapeo de paletas L4/R4 a L3/R3 (ronda REA GFN+OpenNOW) ---
+
+    @Test fun `L4 remapeada a L3 y R4 a R3 por defecto`() {
+        assertEquals(GamepadButtons.L3, GamepadButtons.extraRemapBits(GamepadExtraButtons.L4, GamepadButtons.L3, GamepadButtons.R3))
+        assertEquals(GamepadButtons.R3, GamepadButtons.extraRemapBits(GamepadExtraButtons.R4, GamepadButtons.L3, GamepadButtons.R3))
+        assertEquals(
+            GamepadButtons.L3 or GamepadButtons.R3,
+            GamepadButtons.extraRemapBits(GamepadExtraButtons.L4 or GamepadExtraButtons.R4, GamepadButtons.L3, GamepadButtons.R3),
+        )
+    }
+
+    @Test fun `sin paleta pulsada no se suma nada y Ninguna desactiva el remapeo`() {
+        assertEquals(0, GamepadButtons.extraRemapBits(0, GamepadButtons.L3, GamepadButtons.R3))
+        assertEquals(0, GamepadButtons.extraRemapBits(GamepadExtraButtons.L4, 0, GamepadButtons.R3))
+        assertEquals(0, GamepadButtons.extraRemapBits(GamepadExtraButtons.R4, GamepadButtons.L3, 0))
+    }
+
+    @Test fun `L4 y R4 pueden apuntar al mismo boton sin duplicar el bit`() {
+        assertEquals(
+            GamepadButtons.L3,
+            GamepadButtons.extraRemapBits(GamepadExtraButtons.L4 or GamepadExtraButtons.R4, GamepadButtons.L3, GamepadButtons.L3),
+        )
+    }
+
     @Test fun `un paquete viejo con byte 29 a 0 decodifica extraButtons a 0`() {
         val state = GamepadState(buttons = GamepadButtons.B)
         val bytes = GamepadProtocol.encode(state)
