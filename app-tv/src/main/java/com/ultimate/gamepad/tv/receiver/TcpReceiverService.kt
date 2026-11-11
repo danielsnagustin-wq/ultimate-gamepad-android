@@ -66,7 +66,9 @@ class TcpReceiverService : Service() {
                         continue
                     }
                     val (state, profileId) = packet
-                    UdpReceiverService.recordPacket(state, TransportMethod.WIFI_TCP)
+                    // Codex-1: solo se entrega si el paquete fue
+                    // aceptado (secuencia nueva); igual que por UDP.
+                    if (!UdpReceiverService.recordPacket(state, TransportMethod.WIFI_TCP)) continue
                     // H1 (Fase 1): antes solo se registraba el paquete;
                     // ahora también se entrega al mando virtual por el
                     // mismo punto único que UDP, así TCP inyecta de
