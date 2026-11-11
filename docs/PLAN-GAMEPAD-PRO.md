@@ -24,8 +24,9 @@ sigue siendo ese.
   en el run 42408588893), y la ruta A (uinput) es la primera que se
   intenta; si falla, cae a la B (`injectInputEvent`).
 - Bluetooth HID real en el teléfono: comprobación de disponibilidad,
-  registro del descriptor Game Pad, reportes HID de 7 bytes,
-  reconexión con backoff y fallback inmediato a Wi-Fi al caer.
+  registro del descriptor Game Pad, reportes HID de 7 bytes de datos
+  + Report ID (1), colección PID de force feedback (rumble, ronda REA
+  GFN+OpenNOW), reconexión con backoff y fallback inmediato a Wi-Fi al caer.
 - Diagnóstico en la TV que lee los `InputDevice` reales y dice
   "Parece mando real: SÍ / NO" con el motivo exacto.
 - Pantalla de mando completa estilo Xbox (sticks, cruceta, ABXY, LB/RB,
@@ -527,7 +528,9 @@ pantalla.
 >    botones en pantalla editables/borrables en el editor, evdev
 >    `BTN_TRIGGER_HAPPY2/3` (0x2C1/0x2C2) en `uinput_gamepad.c`.
 >    El bitmask de 16 NO se tocó. El remapeo por juego NO cubre
->    L4/R4. Por Bluetooth HID NO van (el descriptor no tiene hueco).
+>    L4/R4. Por Bluetooth HID no van como botones propios (el
+>    descriptor no tiene hueco), pero llegan como L3/R3 por el
+>    remapeo de paletas (ronda REA GFN+OpenNOW, 2026-11-11).
 > 2. **Turbo — IMPLEMENTADO (solo teléfono):** `Turbo.kt` en
 >    `:core` + generador en `GamepadViewModel` (10 Hz por defecto,
 >    5–20 Hz en la UI, botones A/B/X/Y/LB/RB), aplicado ANTES del
@@ -535,11 +538,17 @@ pantalla.
 > 3. **Macros — IMPLEMENTADO (solo teléfono):** `Macros.kt`
 >    (graba botones físicos con tiempos, máx. 30 s / 200 eventos)
 >    + UI grabar/nombrar/reproducir/borrar en `ExtrasScreen`.
-> 4. **Vibración — PARCIAL:** vibración al pulsar en el teléfono
+> 4. **Vibración — IMPLEMENTADO (ronda REA GFN+OpenNOW, 2026-11-11):** vibración al pulsar en el teléfono
 >    SÍ (`Vibrator`, 15 ms, respeta el ajuste del perfil de juego).
->    **Vibración DEL JUEGO (EV_FF/FF_RUMBLE) NO implementada:**
->    necesitaría force feedback en el mando virtual y no está;
->    ninguna pantalla la promete.
+>    **Vibración DEL JUEGO (rumble) SÍ, solo por Bluetooth HID:** el descriptor HID declara force feedback
+>    (colección PID USB 1.0, solo fuerza constante, reportes 2-7; `RumbleReport.kt` en `:core`) y
+>    `BluetoothHidService` recibe los reportes del host (Set Effect + Set Constant Force + Effect Operation,
+>    por control o por interrupción) y `GamepadViewModel.triggerGameRumble()` hace vibrar el teléfono (un solo
+>    motor: fuerte y débil colapsan al máximo; interruptor propio en Extras, por defecto SÍ). **Por Wi-Fi →
+>    uinput NO se puede:** leer EV_FF del dispositivo virtual exige /dev/uinput en lectura y Shizuku está
+>    descartado en esta TV; queda como límite documentado, no como hecho. Sin probar en dispositivo real: que
+>    el kernel de la TV cree el vibrador (`dumpsys input`), que el juego mande rumble y que la entrada no se
+>    haya movido con el Report ID (1) nuevo.
 > 5. **Teclado virtual y modo ratón — IMPLEMENTADO por uinput en
 >    la TV:** dispositivos SEPARADOS ("Ultimate Gamepad Keyboard"
 >    0x1234/0x5679, "Ultimate Gamepad Mouse" 0x1234/0x567A), nunca
@@ -569,13 +578,14 @@ es un mini-proyecto; no se hacen todos a la vez.
 3. **Macros**: secuencia grabada de botones con tiempos, reproducida
    por el teléfono. Solo teléfono. Criterio: grabar A-B y
    reproducirla.
-4. **Vibración**: el permiso ya existe; falta llamar a `Vibrator`
-   al pulsar (teléfono) y, para la vibración DEL MANDO (la que
-   pide el juego), implementar `FF` (force feedback) en uinput
-   (`EV_FF`, `FF_RUMBLE`) — eso es trabajo nativo aparte y solo
-   funciona si el juego lo pide. No prometer vibración del juego
-   sin eso. Criterio: vibración al pulsar (teléfono) sí; vibración
-   del juego, solo tras implementar `EV_FF` y probarla.
+4. **Vibración**: el permiso ya existe; vibrar al pulsar (teléfono)
+   SÍ. La vibración DEL JUEGO (la que pide el juego) SÍ por Bluetooth
+   HID (ronda REA GFN+OpenNOW, 2026-11-11): descriptor PID + reportes
+   del host + `Vibrator` en el teléfono. Por Wi-Fi → uinput NO se
+   puede (leer `EV_FF`/`FF_RUMBLE` del mando virtual exige /dev/uinput
+   en lectura y Shizuku está descartado en esta TV). Criterio:
+   vibración al pulsar (teléfono) sí; vibración del juego por HID,
+   solo tras probarla en la TV con un juego que vibre.
 5. **Teclado virtual y modo ratón**: cada uno es OTRO dispositivo
    virtual (uinput teclado / uinput ratón) o un HID aparte. No van
    dentro del gamepad. Decidir si van por uinput (TV) o por HID
