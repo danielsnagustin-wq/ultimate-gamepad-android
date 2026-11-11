@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -78,7 +79,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -256,7 +257,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { tick(); vm.setKeyboardEnabled(!ui.keyboardEnabled) }) {
-            Text(if (ui.keyboardEnabled) "Teclado en la TV: SÍ (toca para apagar)" else "Teclado en la TV: NO (toca para encender)", color = Color.White)
+            Text(if (ui.keyboardEnabled) "Teclado en la TV: enviado, sin confirmar (toca para apagar)" else "Teclado en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -294,7 +295,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         )
         Spacer(Modifier.height(8.dp))
         Button(onClick = { tick(); vm.setMouseEnabled(!ui.mouseEnabled) }) {
-            Text(if (ui.mouseEnabled) "Ratón en la TV: SÍ (toca para apagar)" else "Ratón en la TV: NO (toca para encender)", color = Color.White)
+            Text(if (ui.mouseEnabled) "Ratón en la TV: enviado, sin confirmar (toca para apagar)" else "Ratón en la TV: NO (toca para encender)", color = Color.White)
         }
         Spacer(Modifier.height(8.dp))
         Box(
