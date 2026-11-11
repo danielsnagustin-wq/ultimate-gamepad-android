@@ -34,6 +34,7 @@ import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.KeyMap
 import com.ultimate.gamepad.core.MacroRecorder
 import com.ultimate.gamepad.core.PairingInfo
+import com.ultimate.gamepad.core.RumbleReport
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.TransportSelector
 import com.ultimate.gamepad.core.TransportStatus
@@ -186,6 +187,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Vibrar al pulsar en el teléfono (Fase 4). */
     private val _vibrationEnabled = MutableStateFlow(ExtrasPrefs.loadVibration(application))
     val vibrationEnabled: StateFlow<Boolean> = _vibrationEnabled.asStateFlow()
+    /** Vibración del juego (rumble por Bluetooth HID, ronda REA GFN+OpenNOW). Interruptor propio: no es "vibrar al pulsar" y ningún perfil de juego lo pisa. */
+    private val _gameRumbleEnabled = MutableStateFlow(ExtrasPrefs.loadGameRumble(application))
+    val gameRumbleEnabled: StateFlow<Boolean> = _gameRumbleEnabled.asStateFlow()
     /** Macros guardadas (Fase 4). */
     private val _macros = MutableStateFlow(ExtrasPrefs.loadMacros(application))
     val macros: StateFlow<List<GamepadMacro>> = _macros.asStateFlow()
@@ -204,12 +208,19 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Sensibilidad del giroscopio (0.5..2; 1.0 = 45° recorre el stick). */
     private val _gyroSensitivity = MutableStateFlow(ExtrasPrefs.loadGyroSensitivity(application))
     val gyroSensitivity: StateFlow<Float> = _gyroSensitivity.asStateFlow()
+    /** Remapeo de paletas L4/R4 (ronda REA GFN+OpenNOW): botón del mando que actúa al pulsar cada paleta (por defecto L4→L3, R4→R3; 0 = nada). */
+    private val _l4Remap = MutableStateFlow(ExtrasPrefs.loadL4Remap(application))
+    val l4Remap: StateFlow<Int> = _l4Remap.asStateFlow()
+    private val _r4Remap = MutableStateFlow(ExtrasPrefs.loadR4Remap(application))
+    val r4Remap: StateFlow<Int> = _r4Remap.asStateFlow()
 
     /** Fase del pulso de turbo (true = botón activo, false = soltado). */
     private var turboPhaseOn: Boolean = true
     /** La app está en primer plano (RESUMED): en segundo plano el giroscopio no publica. */
     private var appForegrounded: Boolean = true
     private var turboJob: Job? = null
+    /** Trabajo de rumble del juego: se re-dispara cada 120 ms mientras el efecto siga vivo (ver triggerGameRumble). */
+    private var rumbleJob: Job? = null
     private var macroRecorder: MacroRecorder? = null
     private var macroPlayJob: Job? = null
     /** P5: seguimiento del tope de macro en el ViewModel (el
@@ -236,6 +247,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // enteraba: ahora el ViewModel reacciona (fallback a Wi-Fi
         // + reintento en segundo plano). Ver onHidConnectionChanged().
         hidService.onConnectionChanged = { status -> onHidConnectionChanged(status) }
+        // Rumble del juego (ronda REA GFN+OpenNOW): el host manda
+        // los efectos por Bluetooth HID y el servicio avisa aquí.
+        hidService.onRumble = { strong, weak, durationMs -> triggerGameRumble(strong, weak, durationMs) }
         // Cambio de red (2026-11-07): sin esto, al cambiar de Wi-Fi
         // o al activar el hotspot, el estado de red solo se
         // refrescaba al reabrir la pantalla; ahora reacciona solo.
@@ -296,6 +310,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         bluetoothReceiver = null
         turboJob?.cancel()
         macroPlayJob?.cancel()
+        stopGameRumble()
         stopGyroSensor()
         extrasSender.close()
         super.onCleared()
@@ -453,7 +468,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         publish()
     }
 
-    /** L4/R4 (Fase 4): como setButton, pero en el bitmask extra del byte 29 (no pasan por remapeo ni por HID). */
+    /** L4/R4 (Fase 4): como setButton, pero en el bitmask extra del byte 29. En publish() se suman como L3/R3 (remapeo de paletas, ronda REA), así que sí llegan al juego por todos los transportes, incluido Bluetooth HID. */
     fun setExtraButton(button: Int, pressed: Boolean) {
         val was = (extraButtons and button) != 0
         extraButtons = if (pressed) extraButtons or button else extraButtons and button.inv()
@@ -526,13 +541,68 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         ExtrasPrefs.saveVibration(getApplication(), enabled)
     }
 
+    /** Vibración del juego (rumble por Bluetooth HID): interruptor propio de Extras. NO lo pisa ningún perfil de juego (applyGameProfile solo toca "vibrar al pulsar"). */
+    fun setGameRumbleEnabled(enabled: Boolean) {
+        _gameRumbleEnabled.value = enabled
+        ExtrasPrefs.saveGameRumble(getApplication(), enabled)
+        if (!enabled) stopGameRumble()
+    }
+
+    /**
+     * Vibración DEL JUEGO (rumble, ronda REA GFN+OpenNOW): el host
+     * (la TV) manda un efecto de fuerza constante por Bluetooth HID
+     * y el teléfono vibra. Un solo motor: se usa el máximo de
+     * fuerte/débil (0..255). El reporte HID no trae una vibración
+     * continua: se re-dispara en trozos de 120 ms mientras el efecto
+     * siga vivo, hasta su duración (0xFFFF = infinita: solo la para
+     * un STOP del host, la desconexión, el segundo plano o apagar el
+     * interruptor). Sin interruptor o sin motor, no vibra nada.
+     */
+    fun triggerGameRumble(strong: Int, weak: Int, durationMs: Int = RumbleReport.DURATION_INFINITE) {
+        rumbleJob?.cancel()
+        rumbleJob = null
+        if (!_gameRumbleEnabled.value) {
+            vibratorCancel()
+            return
+        }
+        val amplitude = maxOf(strong, weak).coerceIn(0, 255)
+        if (amplitude == 0) {
+            vibratorCancel()
+            return
+        }
+        val vibrator = getApplication<Application>().getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+        if (!vibrator.hasVibrator()) return
+        rumbleJob = viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            while (isActive) {
+                runCatching { vibrator.vibrate(VibrationEffect.createOneShot(120, amplitude)) }
+                delay(120)
+                if (durationMs > 0 && durationMs != RumbleReport.DURATION_INFINITE &&
+                    System.currentTimeMillis() - startedAt >= durationMs
+                ) break
+            }
+            runCatching { vibrator.cancel() }
+        }
+    }
+
+    /** Para el rumble del juego (al soltar todo / irse a segundo plano / morir el ViewModel / apagar el interruptor). */
+    private fun stopGameRumble() {
+        rumbleJob?.cancel()
+        rumbleJob = null
+        vibratorCancel()
+    }
+
+    private fun vibratorCancel() {
+        val vibrator = getApplication<Application>().getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+        runCatching { vibrator.cancel() }
+    }
+
     /**
      * Vibración corta (15 ms) al pulsar un botón del teléfono.
-     * Solo teléfono: la vibración DEL JUEGO (que el juego haga
-     * vibrar el mando, EV_FF/FF_RUMBLE en uinput) NO existe en
-     * esta versión y ninguna pantalla la promete (ver
-     * docs/PLAN-GAMEPAD-PRO.md, Fase 4). El permiso VIBRATE ya
-     * estaba declarado en el manifest y no se usaba.
+     * Solo teléfono: la vibración DEL JUEGO es otra cosa
+     * (triggerGameRumble, por Bluetooth HID) y tiene su propio
+     * interruptor en Extras. El permiso VIBRATE ya estaba
+     * declarado en el manifest.
      */
     private fun vibrateOnPress() {
         if (!_vibrationEnabled.value) return
@@ -632,6 +702,22 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun setGyroSensitivity(value: Float) {
         _gyroSensitivity.value = value.coerceIn(0.5f, 2f)
         ExtrasPrefs.saveGyroSensitivity(getApplication(), _gyroSensitivity.value)
+    }
+
+    /** Paleta L4: botón del mando que actúa al pulsarla (0 = nada; solo L3/R3 valen). */
+    fun setL4Remap(target: Int) {
+        val clean = ExtrasPrefs.sanitizeRemap(target, GamepadButtons.L3)
+        _l4Remap.value = clean
+        ExtrasPrefs.saveL4Remap(getApplication(), clean)
+        publish()
+    }
+
+    /** Paleta R4: botón del mando que actúa al pulsarla (0 = nada; solo L3/R3 valen). */
+    fun setR4Remap(target: Int) {
+        val clean = ExtrasPrefs.sanitizeRemap(target, GamepadButtons.R3)
+        _r4Remap.value = clean
+        ExtrasPrefs.saveR4Remap(getApplication(), clean)
+        publish()
     }
 
     /**
@@ -838,10 +924,21 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // defecto) y los botones pasan por el remapeo activo.
         // Turbo (Fase 4) ANTES del remapeo: el turbo es del botón
         // físico que se mantiene; el remapeo traduce después.
-        // L4/R4 (Fase 4) viajan en extraButtons, fuera del bitmask.
+        // L4/R4 (Fase 4) viajan en extraButtons, fuera del bitmask,
+        // y se suman como L3/R3 (extraRemapBits) antes del remapeo.
         val turboed = Turbo.apply(buttons, _turboButtons.value, turboPhaseOn)
+        // Paletas L4/R4 (ronda REA GFN+OpenNOW): GFN y OpenNOW
+        // ignoran BTN_TRIGGER_HAPPY2/3 y el descriptor HID no tiene
+        // hueco para L4/R4, así que cada paleta actúa como un botón
+        // estándar del mando (por defecto L4→L3, R4→R3). Se suma
+        // ANTES del remapeo de perfil, junto al turbo: cubre la
+        // pulsación en pantalla, las macros (playMacro solo toca
+        // extraButtons y publica) y todos los transportes — Wi-Fi,
+        // Bluetooth datos y Bluetooth HID, donde hidReportFrom lee
+        // L3/R3. El byte 29 sigue viajando aparte, sin tocarse.
+        val withExtras = turboed or GamepadButtons.extraRemapBits(extraButtons, _l4Remap.value, _r4Remap.value)
         val state = GamepadState(
-            buttons = remapButtons(turboed), leftX = leftX, leftY = leftY,
+            buttons = remapButtons(withExtras), leftX = leftX, leftY = leftY,
             rightX = rightX, rightY = rightY,
             leftTrigger = (leftTrigger * _triggerScale.value).coerceIn(0f, 1f),
             rightTrigger = (rightTrigger * _triggerScale.value).coerceIn(0f, 1f),
@@ -889,7 +986,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         maybeStartTurbo()
         // Bluetooth HID es inyección directa: si está conectado, el
         // reporte va también por HID, sin pasar por la TV receptora.
-        // L4/R4 no van por HID (el descriptor no tiene hueco).
+        // L4/R4 llegan por HID como L3/R3 (remapeo de arriba): el
+        // descriptor no tiene hueco para las paletas como botones
+        // propios, pero L3/R3 sí los pasan GFN y OpenNOW al juego.
         if (hidService.status == TransportStatus.CONNECTED) hidService.sendReport(finalState)
     }
 
@@ -930,6 +1029,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         leftX = 0f; leftY = 0f; rightX = 0f; rightY = 0f
         leftTrigger = 0f; rightTrigger = 0f
         turboPhaseOn = true
+        stopGameRumble()
         publish()
     }
 
