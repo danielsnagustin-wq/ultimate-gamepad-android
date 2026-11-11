@@ -415,7 +415,7 @@ class BluetoothHidService(private val context: Context) {
         // Report ID (1) aparte: los datos NO incluyen el ID
         // ("Report data, not including Report Id"); el stack lo
         // pone primero en el cable.
-        return runCatching { hid.sendReport(device, RumbleReport.REPORT_ID_INPUT.toByte(), report) }.getOrDefault(false)
+        return runCatching { hid.sendReport(device, RumbleReport.REPORT_ID_INPUT, report) }.getOrDefault(false)
     }
 
     /** Reporte de 7 bytes DE DATOS según el descriptor (sin el
