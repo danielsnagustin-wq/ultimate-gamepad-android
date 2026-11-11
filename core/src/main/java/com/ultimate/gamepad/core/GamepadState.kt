@@ -13,8 +13,12 @@ import kotlin.math.sqrt
  * [extraButtons] (Fase 4): botones extra que NO caben en el
  * bitmask de 16 bits (GamepadExtraButtons: L4/R4). Viajan en el
  * byte reservado 29 del protocolo (GamepadProtocol), NO en el
- * bitmask; por eso el remapeo de GameProfile NO los cubre y el
- * descriptor HID (12/14 botones) tampoco los envía por Bluetooth.
+ * bitmask; por eso el remapeo de GameProfile NO los cubre. El
+ * descriptor HID (12/14 botones) tampoco los envía como botones
+ * propios: el ViewModel los remapea a L3/R3 en publish()
+ * (GamepadButtons.extraRemapBits, ronda REA GFN+OpenNOW), que
+ * GeForce NOW y OpenNOW sí pasan al juego por todos los
+ * transportes, incluido Bluetooth HID.
  */
 data class GamepadState(
     val buttons: Int = 0,
@@ -87,6 +91,22 @@ object GamepadButtons {
     const val DPAD_RIGHT: Int = 1 shl 13
     const val HOME: Int = 1 shl 14
     const val CAPTURE: Int = 1 shl 15
+
+    /**
+     * Remapeo de paletas L4/R4 (ronda REA GFN+OpenNOW, 2026-11-11):
+     * GeForce NOW y OpenNOW ignoran BTN_TRIGGER_HAPPY2/3 (lo que la
+     * TV emite por el byte 29) y el descriptor HID no tiene hueco
+     * para L4/R4, así que cada paleta actúa como un botón estándar
+     * del mando. Función pura para probarla en :core. [l4Target] /
+     * [r4Target] son bits de GamepadButtons (0 = la paleta no hace
+     * nada); por defecto L4→L3 y R4→R3.
+     */
+    fun extraRemapBits(extraButtons: Int, l4Target: Int, r4Target: Int): Int {
+        var out = 0
+        if ((extraButtons and GamepadExtraButtons.L4) != 0) out = out or l4Target
+        if ((extraButtons and GamepadExtraButtons.R4) != 0) out = out or r4Target
+        return out
+    }
 }
 
 /**
@@ -94,10 +114,13 @@ object GamepadButtons {
  * (16/16) y NO se puede ampliar sin romper el protocolo: L4/R4
  * viajan en el byte reservado 29 (bit 0 = L4, bit 1 = R4) y se
  * guardan en GamepadState.extraButtons, separados del bitmask.
- * En la TV se inyectan como BTN_TRIGGER_HAPPY2/3 (uinput); por
- * Bluetooth HID NO se envían (el descriptor declara 12/14
- * botones y no hay hueco para L4/R4) y el remapeo por juego
- * tampoco los cubre.
+ * En la TV se inyectan como BTN_TRIGGER_HAPPY2/3 (uinput), que
+ * GeForce NOW y OpenNOW ignoran; por Bluetooth HID NO se envían
+ * como botones propios (el descriptor declara 12/14 botones y no
+ * hay hueco para L4/R4) y el remapeo por juego tampoco los cubre.
+ * Lo que sí llega al juego por todos los transportes es el
+ * remapeo a L3/R3 (GamepadButtons.extraRemapBits, aplicado en
+ * GamepadViewModel.publish()).
  */
 object GamepadExtraButtons {
     const val L4: Int = 1 shl 0
