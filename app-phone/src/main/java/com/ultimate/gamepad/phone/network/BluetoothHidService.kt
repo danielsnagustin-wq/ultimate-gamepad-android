@@ -12,12 +12,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
+import com.ultimate.gamepad.core.RumbleReport
 import com.ultimate.gamepad.core.TransportStatus
+
+private const val TAG = "BluetoothHid"
 
 /**
  * Bluetooth HID — teléfono como mando real directo a la TV.
@@ -31,10 +35,10 @@ import com.ultimate.gamepad.core.TransportStatus
  * empareja y OpenNOW responde) solo se sabe probándolo en la
  * Hyundai — es parte de la Etapa 0 de Bluetooth.
  *
- * Descriptor (Fase 2): el del perfil activo
+ * Descriptor (Fase 2 + rumble, ronda REA GFN+OpenNOW): el del perfil activo
  * (HidGamepadDescriptor.descriptorFor): Xbox y genérico 12 botones,
- * DS4/DualSense 14 botones. Reporte HID de 7 bytes, EXACTO según
- * el descriptor del perfil:
+ * DS4/DualSense 14 botones. Reporte HID de 7 bytes DE DATOS + Report
+ * ID (1) = 8 bytes en el cable, EXACTO según el descriptor del perfil:
  *   byte 0: botones 1-8 (A, B, X, Y, LB, RB, SELECT, START)
  *   byte 1: botones 9-12 (L3, R3, LT digital, RT digital) + relleno
  *   byte 2: hat switch (0=arriba, 1=arriba-derecha, 2=derecha,
@@ -43,18 +47,39 @@ import com.ultimate.gamepad.core.TransportStatus
  *   bytes 3-6: ejes X, Y, Z, Rz CON SIGNO (-127..127, centro 0),
  *   como declara el descriptor (Logical Minimum -127, Maximum 127).
  * Los valores se escalan desde GamepadState (-1..1 / 0..1).
+ * La API de BluetoothHidDevice entrega/recibe los 7 datos SIN el ID
+ * (el ID va aparte en sendReport/replyReport/onSetReport): por eso
+ * hidReportFrom sigue devolviendo 7 bytes y sendReport pasa el ID 1.
  * Este descriptor es el que usan los proyectos open-source de
  * BluetoothHidDevice; el descriptor exacto se valida en Etapa 0
  * contra la Hyundai (algunas TVs son estrictas con el descriptor).
  *
- * L4/R4 (Fase 4) NO se envían por HID: el descriptor declara 12
- * botones (14 en DS4/DualSense) y no hay hueco para las paletas;
- * ampliar el descriptor cambiaría el reporte de 7 bytes y es
- * trabajo aparte. Por Bluetooth, L4/R4 solo llegan por Wi-Fi
- * (uinput en la TV, BTN_TRIGGER_HAPPY2/3). El turbo y las macros
- * sí llegan por HID (son pulsaciones normales en el teléfono
- * antes de enviar) y el giroscopio también (mueve el stick
- * derecho como el táctil).
+ * Rumble (vibración del juego, ronda REA GFN+OpenNOW): el descriptor
+ * añade una colección PID (Usage Page 0x0F, solo fuerza constante,
+ * reportes 2-7, ver RumbleReport.kt). El host manda Set Effect +
+ * Set Constant Force + Effect Operation (por control o por
+ * interrupción); el servicio los parsea (handleHostReport) y avisa
+ * con onRumble(fuerte, débil, duraciónMs). Create New Effect
+ * (Feature) asigna siempre el bloque 1 y Block Load / Device Gain
+ * se responden por onGetReport. El teléfono tiene UN motor: fuerte
+ * y débil colapsan al mismo valor. Por Wi-Fi → uinput NO se puede:
+ * leer EV_FF del dispositivo virtual exige /dev/uinput en lectura
+ * y Shizuku está descartado (regla 6 del AGENTS.md del repo);
+ * queda documentado como límite en docs/PLAN-GAMEPAD-PRO.md,
+ * nunca como hecho.
+ *
+ * L4/R4 (Fase 4, ronda REA GFN+OpenNOW): el descriptor declara 12
+ * botones (14 en DS4/DualSense) y no hay hueco para las paletas
+ * como botones propios; ampliar el descriptor cambiaría el
+ * reporte de 7 bytes y es trabajo aparte. En su lugar, el
+ * ViewModel las remapea a L3/R3 en publish()
+ * (GamepadButtons.extraRemapBits): por HID llegan como L3/R3, que
+ * GeForce NOW y OpenNOW sí pasan al juego. Por Wi-Fi, L4/R4
+ * siguen viajando además en el byte 29 (uinput en la TV,
+ * BTN_TRIGGER_HAPPY2/3), aunque los clientes lo ignoran. El
+ * turbo y las macros sí llegan por HID (son pulsaciones normales
+ * en el teléfono antes de enviar) y el giroscopio también (mueve
+ * el stick derecho como el táctil).
  */
 class BluetoothHidService(private val context: Context) {
     @Volatile var availability: HidAvailability = HidAvailability.UNKNOWN
@@ -71,6 +96,22 @@ class BluetoothHidService(private val context: Context) {
      * UI seguía en "Conectado" y el modo AUTO nunca saltaba a Wi-Fi.
      */
     @Volatile var onConnectionChanged: ((TransportStatus) -> Unit)? = null
+
+    /**
+     * Aviso al ViewModel cuando el host arranca o para un efecto de
+     * rumble: (fuerte 0..255, débil 0..255, duraciónMs; 0xFFFF =
+     * infinita). El teléfono tiene un solo motor: el ViewModel usa
+     * el máximo de los dos. (0, 0, 0) = parar.
+     */
+    @Volatile var onRumble: ((strong: Int, weak: Int, durationMs: Int) -> Unit)? = null
+
+    /** Último reporte de entrada enviado (7 bytes de datos, sin el ID 1): para responder a un GET_REPORT de entrada del host. */
+    @Volatile private var lastInputPayload: ByteArray = ByteArray(7)
+    /** Estado del efecto de rumble en curso (un solo motor). */
+    @Volatile private var rumbleMagnitude: Int = 0
+    @Volatile private var rumbleDurationMs: Int = RumbleReport.DURATION_INFINITE
+    @Volatile private var rumbleBlockIndex: Int = 0
+    @Volatile private var deviceGain: Int = 255
 
     /** ¿La app HID está registrada (registerApp devolvió true)? */
     @Volatile var appRegistered: Boolean = false
@@ -211,6 +252,8 @@ class BluetoothHidService(private val context: Context) {
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                 connectedDevice = null
                 status = TransportStatus.FAILED
+                // Sin host no hay rumble: parar la vibración.
+                onRumble?.invoke(0, 0, 0)
             } else {
                 return
             }
@@ -221,6 +264,83 @@ class BluetoothHidService(private val context: Context) {
             if (!registered) {
                 status = TransportStatus.FAILED
                 onConnectionChanged?.invoke(status)
+            }
+        }
+        override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {
+            handleHostReport(type.toInt(), id.toInt(), data)
+        }
+        override fun onInterruptData(device: BluetoothDevice, reportId: Byte, data: ByteArray) {
+            // Algunos hosts mandan el rumble por el canal de
+            // interrupción en vez de por control: mismo parseo.
+            handleHostReport(BluetoothHidDevice.REPORT_TYPE_OUTPUT.toInt(), reportId.toInt(), data)
+        }
+        override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {
+            val hid = hidDevice ?: return
+            val reply: ByteArray? = when {
+                type == BluetoothHidDevice.REPORT_TYPE_FEATURE &&
+                    id.toInt() == RumbleReport.REPORT_ID_BLOCK_LOAD ->
+                    RumbleReport.blockLoadReply(rumbleBlockIndex)
+                type == BluetoothHidDevice.REPORT_TYPE_FEATURE &&
+                    id.toInt() == RumbleReport.REPORT_ID_DEVICE_GAIN ->
+                    RumbleReport.deviceGainReply(deviceGain)
+                type == BluetoothHidDevice.REPORT_TYPE_INPUT &&
+                    id.toInt() == RumbleReport.REPORT_ID_INPUT ->
+                    lastInputPayload.copyOf()
+                else -> null
+            }
+            if (reply != null) {
+                runCatching { hid.replyReport(device, type, id, reply) }
+            } else {
+                runCatching { hid.reportError(device, BluetoothHidDevice.ERROR_RSP_INVALID_RPT_ID) }
+            }
+        }
+    }
+
+    /**
+     * Rumble del host (USB PID 1.0): parsea los reportes de salida
+     * y Feature y actualiza el estado del efecto. Llega por
+     * onSetReport (control) o por onInterruptData (interrupción):
+     * el parseo es el mismo y `data` nunca trae el Report ID.
+     * Solo fuerza constante (el descriptor no declara otra): un
+     * Set Effect de otro tipo se ignora. Un solo motor: todos los
+     * efectos colapsan al bloque que se esté tocando; Create New
+     * Effect siempre asigna el bloque 1.
+     */
+    private fun handleHostReport(type: Int, reportId: Int, data: ByteArray) {
+        if (type != BluetoothHidDevice.REPORT_TYPE_OUTPUT.toInt() &&
+            type != BluetoothHidDevice.REPORT_TYPE_FEATURE.toInt()
+        ) return
+        val event = RumbleReport.parseOutput(reportId, data) ?: return
+        when (event) {
+            is RumbleReport.Event.EffectSet -> {
+                if (event.effectType != RumbleReport.EFFECT_TYPE_CONSTANT_FORCE) {
+                    Log.d(TAG, "Rumble: Set Effect tipo ${event.effectType} ignorado (solo fuerza constante)")
+                    return
+                }
+                rumbleBlockIndex = event.blockIndex
+                rumbleDurationMs = event.durationMs
+            }
+            is RumbleReport.Event.ConstantForceSet -> {
+                rumbleMagnitude = event.magnitude
+            }
+            is RumbleReport.Event.Operation -> {
+                when (event.operation) {
+                    RumbleReport.OP_START, RumbleReport.OP_START_SOLO -> {
+                        Log.d(TAG, "Rumble: START bloque ${event.blockIndex} magnitud $rumbleMagnitude dur ${rumbleDurationMs}ms")
+                        onRumble?.invoke(rumbleMagnitude, rumbleMagnitude, rumbleDurationMs)
+                    }
+                    RumbleReport.OP_STOP -> {
+                        Log.d(TAG, "Rumble: STOP bloque ${event.blockIndex}")
+                        onRumble?.invoke(0, 0, 0)
+                    }
+                }
+            }
+            is RumbleReport.Event.CreateNewEffect -> {
+                rumbleBlockIndex = 1
+                Log.d(TAG, "Rumble: Create New Effect tipo ${event.effectType} -> bloque 1")
+            }
+            is RumbleReport.Event.DeviceGainSet -> {
+                deviceGain = event.gain
             }
         }
     }
@@ -291,10 +411,15 @@ class BluetoothHidService(private val context: Context) {
         val hid = hidDevice ?: return false
         val device = connectedDevice ?: return false
         val report = hidReportFrom(state)
-        return runCatching { hid.sendReport(device, 0, report) }.getOrDefault(false)
+        lastInputPayload = report.copyOf()
+        // Report ID (1) aparte: los datos NO incluyen el ID
+        // ("Report data, not including Report Id"); el stack lo
+        // pone primero en el cable.
+        return runCatching { hid.sendReport(device, RumbleReport.REPORT_ID_INPUT.toByte(), report) }.getOrDefault(false)
     }
 
-    /** Reporte de 7 bytes según el descriptor. La versión anterior
+    /** Reporte de 7 bytes DE DATOS según el descriptor (sin el
+     * Report ID 1: lo pone el stack en sendReport). La versión anterior
      * mandaba 13 bytes con otra disposición: el eje izquierdo caía
      * en el byte del hat (basura), los ejes salían revueltos
      * (X=leftY, Y=rightX, Z=rightY, Rz=LT), la cruceta nunca se
