@@ -57,7 +57,7 @@ class GamepadProfileTest {
         assertEquals(0.toByte(), bytes[31])
     }
 
-    @Test fun `el descriptor HID es por perfil y mantiene 7 bytes de reporte`() {
+    @Test fun `el descriptor HID es por perfil y mantiene 7 bytes de datos (+ Report ID 1)`() {
         val xbox = HidGamepadDescriptor.descriptorFor(GamepadProfiles.XBOX_360_ID)
         val ds4 = HidGamepadDescriptor.descriptorFor(GamepadProfiles.DS4_ID)
         val dualsense = HidGamepadDescriptor.descriptorFor(GamepadProfiles.DUALSENSE_ID)
@@ -71,11 +71,28 @@ class GamepadProfileTest {
         assertTrue(generic.contentEquals(HidGamepadDescriptor.BYTES))
         // DS4/DualSense: 14 botones (Usage Maximum y Report Count 14,
         // relleno 2 en vez de 4); el resto del descriptor es idéntico.
-        assertNotEquals(xbox[15], ds4[15])
-        assertEquals(0x0E.toByte(), ds4[15])
-        assertEquals(0x0E.toByte(), ds4[23])
-        assertEquals(0x02.toByte(), ds4[29])
+        // (+2 por el Report ID (1) insertado tras abrir la colección.)
+        assertNotEquals(xbox[17], ds4[17])
+        assertEquals(0x0E.toByte(), ds4[17])
+        assertEquals(0x0E.toByte(), ds4[25])
+        assertEquals(0x02.toByte(), ds4[31])
         assertTrue(ds4.contentEquals(dualsense))
+        // Rumble (ronda REA GFN+OpenNOW): Report ID (1) en la entrada
+        // del mando y colección PID (Usage Page 0x0F) con reportes 2-7.
+        assertEquals(0x85.toByte(), xbox[6])
+        assertEquals(0x01.toByte(), xbox[7])
+        assertTrue(contains(xbox, byteArrayOf(0x05, 0x0F)))
+        for (id in 2..7) {
+            assertTrue(contains(xbox, byteArrayOf(0x85.toByte(), id.toByte())))
+        }
+    }
+
+    private fun contains(haystack: ByteArray, needle: ByteArray): Boolean {
+        outer@ for (i in 0..haystack.size - needle.size) {
+            for (j in needle.indices) if (haystack[i + j] != needle[j]) continue@outer
+            return true
+        }
+        return false
     }
 
     @Test fun `DS4 y DualSense declaran touchpad en hardware pero no implementado`() {
