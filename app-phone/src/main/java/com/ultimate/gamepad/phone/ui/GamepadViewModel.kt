@@ -125,7 +125,6 @@ data class GamepadUiState(
     // Selector multi-transporte (Etapa 1).
     val transportMode: TransportMode = TransportMode.AUTO,
     val selectedMethod: TransportMethod = TransportMethod.WIFI_UDP,
-    val hotspotMode: Boolean = false,
     val transportStatus: Map<TransportMethod, TransportStatus> = mapOf(
         // P-B: Wi-Fi nace SIN COMPROBAR (antes AVAILABLE sin
         // comprobar nada): refreshWifiState() lo resuelve a
@@ -960,7 +959,6 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun closeLayoutEditor() = _ui.update { it.copy(showLayoutEditor = false) }
 
     fun setTransportMode(mode: TransportMode) = _ui.update { it.copy(transportMode = mode) }
-    fun setHotspotMode(enabled: Boolean) = _ui.update { it.copy(hotspotMode = enabled) }
 
     /** Forzar un método manualmente. */
     fun selectMethod(method: TransportMethod) {
@@ -1366,6 +1364,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                     it.copy(status = ConnectionStatus.ERROR, error = "No se pudo iniciar el servicio de envío. Inténtalo de nuevo con la app abierta.")
                 }
             }
+        // UI-2: el giroscopio vuelve solo si seguía activado:
+        // disconnect() solo paró el sensor, sin tocar la
+        // preferencia guardada (startGyroSensor es idempotente).
+        if (_gyroEnabled.value) startGyroSensor()
     }
 
     /** Conexión por Bluetooth datos (SPP/RFCOMM, Fase 5), espejo de connectHid(). */
@@ -1483,6 +1485,9 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // el fallback. El latido HID lo arranca el callback al
         // conectar de verdad (onHidConnectionChanged).
         GamepadSenderService.resetHealth()
+        // UI-2: el giroscopio vuelve solo si seguía activado
+        // (disconnect() solo paró el sensor).
+        if (_gyroEnabled.value) startGyroSensor()
         // H-B: sin visibilidad, la TV no puede descubrir el
         // teléfono para emparejarlo. Se pide al registrar (solo
         // aquí, nunca en el reintento en segundo plano).
@@ -1587,18 +1592,21 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // macro a medias.
         stopMacroPlayback()
         turboJob?.cancel(); turboJob = null; turboPhaseOn = true
-        // P8: al desconectar se resetean teclado, ratón y
-        // giroscopio: si no, la UI los seguía mostrando en SÍ
-        // con la TV apagada o sin conexión. El reseteo de los
-        // flags es SIEMPRE (también en silent: tryNextTransport
-        // desconecta antes de reconectar por otro método y el
-        // connect() siguiente no toca estos flags, así que sin
-        // esto quedarían en SÍ tras el cambio de método). El
-        // giroscopio se apaga con setGyroEnabled(false), que
-        // para el sensor Y guarda el apagado; los botones del
-        // ratón mantenidos también se sueltan.
+        // P8: al desconectar se resetean teclado y ratón: si no,
+        // la UI los seguía mostrando en SÍ con la TV apagada o
+        // sin conexión. El reseteo de los flags es SIEMPRE
+        // (también en silent: tryNextTransport desconecta antes
+        // de reconectar por otro método y el connect() siguiente
+        // no toca estos flags, así que sin esto quedarían en SÍ
+        // tras el cambio de método). El giroscopio SOLO para el
+        // sensor (stopGyroSensor): su preferencia guardada NO se
+        // toca — antes setGyroEnabled(false) la persistía en OFF
+        // y cada fallback o desconexión apagaba el giro para
+        // siempre. Al reconectar, connect()/registerHid() lo
+        // rearrancan si seguía activado. Los botones del ratón
+        // mantenidos también se sueltan.
         mouseButtons = 0
-        if (_gyroEnabled.value) setGyroEnabled(false) else stopGyroSensor()
+        stopGyroSensor()
         _ui.update { it.copy(keyboardEnabled = false, mouseEnabled = false) }
         GamepadSenderService.resetHealth()
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply { action = GamepadSenderService.ACTION_STOP }
