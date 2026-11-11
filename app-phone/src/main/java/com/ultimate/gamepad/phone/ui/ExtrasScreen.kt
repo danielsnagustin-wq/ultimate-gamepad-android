@@ -49,8 +49,9 @@ import kotlin.math.roundToInt
  * Secciones, en el orden del plan:
  * - Turbo: pulsos automáticos mientras se mantiene el botón.
  * - Macros: grabar una secuencia de botones y reproducirla.
- * - Vibración al pulsar (teléfono). La vibración DEL JUEGO no
- *   existe y la pantalla lo dice (no se promete).
+ * - Vibración al pulsar (teléfono). La vibración DEL JUEGO
+ *   (rumble) existe por Bluetooth HID (ronda REA GFN+OpenNOW);
+ *   por Wi-Fi no se puede y la pantalla lo dice.
  * - Giroscopio: inclinar el teléfono mueve el stick derecho.
  * - Teclado virtual: dispositivo aparte en la TV, para escribir
  *   en el chat de GeForce NOW.
@@ -65,8 +66,11 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
     val turboButtons by vm.turboButtons.collectAsState()
     val turboRate by vm.turboRateHz.collectAsState()
     val vibration by vm.vibrationEnabled.collectAsState()
+    val gameRumble by vm.gameRumbleEnabled.collectAsState()
     val gyroOn by vm.gyroEnabled.collectAsState()
     val gyroSens by vm.gyroSensitivity.collectAsState()
+    val l4Remap by vm.l4Remap.collectAsState()
+    val r4Remap by vm.r4Remap.collectAsState()
     val macros by vm.macros.collectAsState()
     val recording by vm.recordingMacro.collectAsState()
     val recordingProgress by vm.recordingMacroProgress.collectAsState()
@@ -204,6 +208,36 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             Button(onClick = { tick(); vm.stopMacroPlayback() }) { Text("■  Parar reproducción ($playing)") }
         }
 
+        // --- Paletas L4/R4 ---
+        Spacer(Modifier.height(16.dp))
+        Text("Paletas L4/R4 (actúan como L3/R3)", fontSize = 15.sp, color = Color.White)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "GeForce NOW y OpenNOW ignoran las paletas como botones propios y el mando Bluetooth no tiene hueco para ellas: cada paleta actúa como un botón del mando (por defecto L4→L3, R4→R3). En el juego, pulsar L4 es lo mismo que pulsar L3. Funciona por Bluetooth, Wi-Fi y en macros.",
+            color = Color.White,
+            fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("L4 actúa como:", fontSize = 12.sp, color = Color.White)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((bit, label) in listOf(0 to "Ninguna", GamepadButtons.L3 to "L3", GamepadButtons.R3 to "R3")) {
+                Button(onClick = { tick(); vm.setL4Remap(bit) }, modifier = Modifier.weight(1f)) {
+                    Text(if (l4Remap == bit) "$label ✓" else label, color = Color.White)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("R4 actúa como:", fontSize = 12.sp, color = Color.White)
+        Spacer(Modifier.height(4.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((bit, label) in listOf(0 to "Ninguna", GamepadButtons.L3 to "L3", GamepadButtons.R3 to "R3")) {
+                Button(onClick = { tick(); vm.setR4Remap(bit) }, modifier = Modifier.weight(1f)) {
+                    Text(if (r4Remap == bit) "$label ✓" else label, color = Color.White)
+                }
+            }
+        }
+
         // --- Vibración ---
         Spacer(Modifier.height(16.dp))
         Text("Vibración al pulsar (teléfono)", fontSize = 15.sp, color = Color.White)
@@ -217,12 +251,20 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         Button(onClick = { tick(); vm.setVibrationEnabled(!vibration) }) {
             Text(if (vibration) "Vibración: SÍ (toca para apagar)" else "Vibración: NO (toca para encender)", color = Color.White)
         }
+
+        // --- Vibración del juego (rumble por Bluetooth HID) ---
+        Spacer(Modifier.height(16.dp))
+        Text("Vibración del juego (rumble)", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
-            "La vibración DEL JUEGO (que el juego haga vibrar el mando) NO existe: necesitaría force feedback (EV_FF / FF_RUMBLE) en el mando virtual y no está implementado. Ninguna pantalla la promete.",
-            color = Color(0xFFFFC107),
+            "Cuando el juego hace vibrar el mando (explosiones, choques, disparos), el teléfono vibra. Solo por Bluetooth HID: el mando declara force feedback y la TV le manda los efectos. Por Wi-Fi no se puede (la TV no puede leer los efectos del mando virtual sin Shizuku). El teléfono tiene un solo motor: fuerte y débil vibran igual.",
+            color = Color.White,
             fontSize = 12.sp,
         )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { tick(); vm.setGameRumbleEnabled(!gameRumble) }) {
+            Text(if (gameRumble) "Rumble del juego: SÍ (toca para apagar)" else "Rumble del juego: NO (toca para encender)", color = Color.White)
+        }
 
         // --- Giroscopio ---
         Spacer(Modifier.height(16.dp))
