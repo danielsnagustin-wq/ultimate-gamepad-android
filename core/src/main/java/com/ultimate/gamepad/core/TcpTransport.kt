@@ -13,9 +13,9 @@ import java.net.SocketTimeoutException
  * Mismo paquete de 32 bytes que UDP, pero TCP es un flujo continuo:
  * no hay límites de datagrama. Por eso cada paquete se envía tal
  * cual (32 bytes exactos) y el receptor lee exactamente 32 bytes
- * con [DataInputStream.readFully]. Si la lectura es parcial o el
- * socket se cierra, el receptor lo detecta y el remitente debe
- * reconectar (no se rellenan bytes inventados).
+ * con una lectura manual con cuenta de bytes. Si la lectura es
+ * parcial o el socket se cierra, el receptor lo detecta y el
+ * remitente debe reconectar (no se rellenan bytes inventados).
  *
  * Cuándo usarlo: si UDP se pierde mucho o el router bloquea UDP.
  * Latencia algo mayor que UDP y con retransmisión de TCP (un
@@ -60,20 +60,35 @@ class TcpGamepadTransport(
 
     /**
      * Lee exactamente 32 bytes con timeout; null solo por timeout
-     * (no es un error). Lanza IOException si el socket murió: el
-     * llamador debe cerrar y reconectar, no seguir leyendo de un
-     * socket muerto.
+     * SIN bytes leídos (no es un error). Lanza IOException si el
+     * socket murió o si el timeout llega CON una lectura parcial:
+     * el flujo quedó desalineado (los bytes que faltan pertenecen
+     * al paquete siguiente) y seguir leyendo solo produciría CRC
+     * inválidos en bucle. El llamador debe cerrar y reconectar,
+     * no seguir leyendo de un socket desalineado (el lector de
+     * GamepadSenderService rompe y el bucle principal reconecta).
      */
     fun readRaw(timeoutMs: Int): ByteArray? {
         val stream = input ?: throw java.io.IOException("TCP no conectado")
         socket?.soTimeout = timeoutMs
         val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
-        return try {
-            stream.readFully(buf)
-            buf
-        } catch (_: SocketTimeoutException) {
-            null
+        // Lectura manual con cuenta de bytes (Codex-4): readFully
+        // no dice cuántos bytes consumió antes de un timeout.
+        var read = 0
+        while (read < buf.size) {
+            try {
+                val n = stream.read(buf, read, buf.size - read)
+                if (n == -1) throw java.io.EOFException("TCP cerrado por la TV")
+                read += n
+            } catch (_: SocketTimeoutException) {
+                if (read == 0) return null
+                // Lectura parcial: el flujo quedó desalineado; se
+                // cierra el socket para reconectar con uno alineado.
+                runCatching { close() }
+                throw java.io.IOException("Lectura TCP parcial ($read/${buf.size} bytes): flujo desalineado, reconectar")
+            }
         }
+        return buf
     }
 
     /** Reconexión: cierra y vuelve a conectar. Devuelve false si sigue sin haber TV. */
@@ -133,7 +148,23 @@ class TcpGamepadReceiver(
         client?.soTimeout = timeoutMs
         val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
         return try {
-            stream.readFully(buf)
+            // Lectura manual con cuenta de bytes (Codex-4): igual
+            // que en readRaw, un timeout con bytes leídos deja el
+            // flujo desalineado. Timeout sin bytes = sin datos, se
+            // mantiene la conexión; timeout con bytes = se cierra
+            // el cliente y la próxima receive() acepta uno nuevo.
+            var read = 0
+            while (read < buf.size) {
+                try {
+                    val n = stream.read(buf, read, buf.size - read)
+                    if (n == -1) throw java.io.EOFException()
+                    read += n
+                } catch (_: SocketTimeoutException) {
+                    if (read == 0) return null
+                    closeClient()
+                    return null
+                }
+            }
             if (GamepadProtocol.isPing(buf)) {
                 // Eco TCP (Fase 1): el ping se devuelve tal cual por
                 // el mismo socket y NO se trata como entrada. Sin
@@ -154,8 +185,6 @@ class TcpGamepadReceiver(
             }
             val state = GamepadProtocol.decode(buf) ?: return null
             state to GamepadProtocol.profileIdOf(buf)
-        } catch (_: SocketTimeoutException) {
-            null
         } catch (_: java.io.EOFException) {
             // La TV / el teléfono cerró: la próxima receive() acepta de nuevo.
             closeClient()
