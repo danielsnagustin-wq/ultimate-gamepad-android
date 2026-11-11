@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -87,7 +88,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
@@ -136,7 +137,7 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         )
         Text(
             "2. Receptor recibe: " + when {
-                ui.tvReceivingPackets -> "SÍ — la TV ha recibido ${ui.tvPacketsReceived} paquetes de mando. Si el juego no responde con paquetes llegando, falta Shizuku en la TV."
+                ui.tvReceivingPackets -> "SÍ — la TV ha recibido ${ui.tvPacketsReceived} paquetes de mando. Si el juego no responde con paquetes llegando, el juego solo ve el mando por Bluetooth HID: empareja el teléfono en Ajustes > Bluetooth de la TV (Shizuku está descartado en esta TV)."
                 ui.tvResponding -> "NO — la TV responde al ping pero no recibe paquetes de mando."
                 else -> "Sin datos — conecta primero (el teléfono aún no tiene eco de la TV)."
             },
