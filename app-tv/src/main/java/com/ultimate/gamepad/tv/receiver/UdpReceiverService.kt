@@ -140,8 +140,15 @@ class UdpReceiverService : Service() {
 
         fun isConnected(): Boolean = ConnectionHealth.isAlive(lastPacketAtMs)
 
-        /** Punto único de entrada para UDP y TCP: mismo paquete, mismo registro. */
-        fun recordPacket(state: GamepadState, method: TransportMethod) {
+        /**
+         * Punto único de entrada para UDP y TCP: mismo paquete, mismo registro.
+         * Devuelve true si el paquete fue ACEPTADO (se registra y se puede
+         * entregar) y false si se rechazó por secuencia vieja o duplicada:
+         * el llamador solo debe llamar a deliver() cuando devuelve true
+         * (antes se entregaba siempre y un duplicado inyectaba un botón
+         * o un stick viejos mientras las estadísticas lo descartaban).
+         */
+        fun recordPacket(state: GamepadState, method: TransportMethod): Boolean {
             val now = System.currentTimeMillis()
             // Secuencia con wrap uint16 + reinicio de sesión. La
             // comparación vieja (sequence <= lastSequence) tiraba
@@ -157,7 +164,7 @@ class UdpReceiverService : Service() {
             // secuencia). El hueco máximo de entrada queda en ~2 s.
             val forward = (state.sequence - lastSequence + 65536) % 65536
             val freshSession = lastSequence == -1 || now - lastPacketAtMs > ConnectionHealth.TIMEOUT_MS
-            if (!freshSession && (forward == 0 || forward > 32768)) return
+            if (!freshSession && (forward == 0 || forward > 32768)) return false
             // Pérdida real (Fase 3): hueco entre la última secuencia
             // aceptada y esta. En sesión nueva no se cuenta (el
             // teléfono reinicia su secuencia en 0 al reconectar).
@@ -176,6 +183,7 @@ class UdpReceiverService : Service() {
             lastPacketAtMs = now
             lastState = state
             activeTransport = method
+            return true
         }
 
         /**
@@ -374,8 +382,12 @@ class UdpReceiverService : Service() {
                             continue
                         }
                         val state = GamepadProtocol.decode(data) ?: continue
-                        recordPacket(state, TransportMethod.WIFI_UDP)
-                        deliver(this@UdpReceiverService, state, data)
+                        // Codex-1: solo se entrega si el paquete fue
+                        // aceptado (secuencia nueva); un duplicado o
+                        // uno viejo no se inyecta.
+                        if (recordPacket(state, TransportMethod.WIFI_UDP)) {
+                            deliver(this@UdpReceiverService, state, data)
+                        }
                     } catch (e: Exception) {
                         // Un error en un paquete no mata el receptor:
                         // se anota y se sigue. Si es nuestro propio
