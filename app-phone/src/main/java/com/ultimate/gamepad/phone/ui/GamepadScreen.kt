@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -139,10 +140,10 @@ fun GamepadScreen(vm: GamepadViewModel) {
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
-            // AMOLED: negro puro (los píxeles apagados no gastan
-            // batería y el neón resalta más); el degradado azulado
-            // de antes se veía gris en pantallas AMOLED.
-            .background(Color.Black)
+            // Fondo del tema (por defecto negro puro AMOLED: los
+            // píxeles apagados no gastan batería y el neón resalta
+            // más); "Gris muy oscuro" se ve aquí también.
+            .background(MaterialTheme.colorScheme.background)
             .border(
                 1.5.dp,
                 Brush.linearGradient(listOf(Color(0xFF00E5FF).copy(alpha = 0.35f), Color(0xFF7C4DFF).copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.35f))),
@@ -180,7 +181,7 @@ fun GamepadBody(
     interaction: GamepadInteraction,
     modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(modifier = modifier.background(Color.Black)) {
+    BoxWithConstraints(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
         val isLandscape = maxWidth > maxHeight
         // Tamaño real del mando con la escala y el desplazamiento
         // del usuario: antes se escalaba por un fijo (500 dp) y el
