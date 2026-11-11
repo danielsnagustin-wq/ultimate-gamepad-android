@@ -75,11 +75,10 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 selected = ui.transportMode == TransportMode.AUTO,
                 dotColor = Color(0xFF4CAF50),
             ) { tick(); vm.setTransportMode(TransportMode.AUTO) }
-            Chip(
-                label = if (ui.hotspotMode) "● Hotspot" else "Sin router / Hotspot",
-                selected = ui.hotspotMode,
-                dotColor = Color(0xFF4CAF50),
-            ) { tick(); vm.setHotspotMode(!ui.hotspotMode) }
+            // UI-6: el chip "Hotspot" se quitó: no hacía nada (nadie
+            // leía hotspotMode). El hotspot sigue funcionando igual
+            // sin él — es el mismo Wi-Fi UDP/TCP por la red del
+            // hotspot, como explica Ajustes.
             for ((method, status) in ui.transportStatus) {
                 // Mientras la comprobación HID no ha resuelto, el
                 // chip lo dice ("Comprobando…") en vez del "No
