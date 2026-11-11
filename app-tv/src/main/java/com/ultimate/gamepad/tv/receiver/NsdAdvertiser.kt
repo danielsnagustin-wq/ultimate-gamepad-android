@@ -13,8 +13,9 @@ import com.ultimate.gamepad.core.GamepadProtocol
  * La TV se anuncia en la red local como servicio DNS-SD para que
  * el teléfono la encuentre sin broadcast UDP y sin escribir la IP:
  * tipo "_ultimate-gamepad._tcp.", nombre "TV Ultimate Gamepad",
- * puerto 51999 (el mismo que UDP/TCP de juego: el teléfono
- * conecta al puerto anunciado, no a uno distinto).
+ * puerto 52000 (el TCP de juego: el tipo es ._tcp. y el receptor
+ * TCP escucha en DEFAULT_PORT + 1; el teléfono conecta al puerto
+ * anunciado, no a uno distinto).
  *
  * El broadcast UDP ("UGDISC1" -> "UGRSP1|...|pin") SIGUE siendo
  * el camino principal y queda intacto: NSD es ADICIONAL. El
@@ -67,8 +68,13 @@ object NsdAdvertiser {
     /** Nombre con el que la TV se anuncia (sin modelo de TV). */
     const val SERVICE_NAME: String = "TV Ultimate Gamepad"
 
-    /** Puerto anunciado: el mismo que UDP/TCP de juego. */
-    const val SERVICE_PORT: Int = GamepadProtocol.DEFAULT_PORT // 51999
+    /**
+     * Puerto anunciado: el TCP de juego (52000). El tipo es
+     * "._tcp." y el receptor TCP escucha en DEFAULT_PORT + 1:
+     * antes se anunciaba 51999 (UDP) y un cliente NSD que
+     * conectara por TCP al puerto anunciado no encontraba nada.
+     */
+    const val SERVICE_PORT: Int = GamepadProtocol.DEFAULT_PORT + 1 // 52000
 
     /** Intentos máximos de re-registro tras un fallo. */
     private const val MAX_RETRY_ATTEMPTS: Int = 5
