@@ -21,12 +21,12 @@ import android.widget.TextView
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import com.ultimate.gamepad.core.ControllerTestChecklist
+import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadExtraButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadProtocol
 import com.ultimate.gamepad.tv.receiver.Diagnostics
-import com.ultimate.gamepad.tv.receiver.ReceiverConfig
 import com.ultimate.gamepad.tv.receiver.BluetoothDataReceiverService
 import com.ultimate.gamepad.tv.receiver.TcpReceiverService
 import com.ultimate.gamepad.tv.receiver.TvTestPrefs
@@ -51,16 +51,16 @@ import java.util.Locale
  *   paquetes/s, que es lo que la TV sí sabe.)
  * - Tarjeta "Conectar": IP y PIN grandes + QR real escaneable
  *   (payload UGP1|ip|puerto|pin, el mismo que lee el teléfono).
- * - Tarjeta Shizuku: estado + el paso siguiente en UNA frase.
- *   Sin Shizuku no hay mando virtual posible y la tarjeta lo dice
- *   claro. Shizuku NO puede ir dentro de la APK: su servidor corre
- *   como usuario shell (uid 2000) y solo arranca por ADB desde
- *   fuera; el cliente Shizuku 13.1.5 YA está dentro de la APK.
+ * - Tarjeta Bluetooth HID: el juego solo ve el mando por
+ *   Bluetooth HID directo del teléfono (Shizuku está descartado
+ *   en esta TV: no está adaptado y no tiene depuración de red).
+ *   Por Wi-Fi la TV recibe los paquetes y los muestra en vivo,
+ *   pero OpenNOW no los ve como mando sin Bluetooth HID.
  * - Tarjeta "Parece mando real: SÍ / NO" con el motivo en claro.
  * - Última entrada EN VIVO: al pulsar A/B/X/Y o mover el stick en
  *   el teléfono, la TV lo muestra aquí. Si esto no cambia, el Wi-Fi
  *   no está llegando, aunque el teléfono diga "Conectado".
- * - Pasos 1-2-3: instala Shizuku → conecta el teléfono → juega.
+ * - Pasos 1-2-3: empareja por Bluetooth HID → conecta el teléfono → juega.
  * - Botones INICIAR / DETENER receptor y PRUEBA DE MANDO (Fase 3).
  *
  * REGLA DE FALLO: si el Wi-Fi funciona pero ningún dispositivo
@@ -94,9 +94,9 @@ class MainActivity : Activity() {
     private lateinit var qrImageView: ImageView
     private lateinit var qrPayloadView: TextView
     private lateinit var qrHintView: TextView
-    private lateinit var shizukuStatusView: TextView
-    private lateinit var shizukuNextView: TextView
-    private lateinit var shizukuNoteView: TextView
+    private lateinit var btHidStatusView: TextView
+    private lateinit var btHidNextView: TextView
+    private lateinit var btHidNoteView: TextView
     private lateinit var realTitleView: TextView
     private lateinit var realReasonView: TextView
     private lateinit var realInjectionView: TextView
@@ -259,7 +259,7 @@ class MainActivity : Activity() {
         statusCard.addView(statusSubView)
         layout.addView(statusCard, cardParams())
 
-        // ——— Fila: Conectar + Shizuku ———
+        // ——— Fila: Conectar + Bluetooth HID ———
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val rowParams = cardParams()
 
@@ -308,28 +308,28 @@ class MainActivity : Activity() {
             rightMargin = dp(10)
         })
 
-        val shizukuCard = card().apply {
-            addView(sectionLabel("SHIZUKU", purple))
-            shizukuStatusView = TextView(this@MainActivity).apply {
+        val btHidCard = card().apply {
+            addView(sectionLabel("BLUETOOTH HID", purple))
+            btHidStatusView = TextView(this@MainActivity).apply {
                 textSize = 32f
                 setTypeface(null, Typeface.BOLD)
             }
-            addView(shizukuStatusView)
-            shizukuNextView = TextView(this@MainActivity).apply {
+            addView(btHidStatusView)
+            btHidNextView = TextView(this@MainActivity).apply {
                 textSize = 21f
                 setTextColor(Color.WHITE)
                 setPadding(0, dp(12), 0, 0)
             }
-            addView(shizukuNextView)
-            shizukuNoteView = TextView(this@MainActivity).apply {
-                text = "Sin Shizuku no hay mando virtual posible: OpenNOW no verá ningún mando. No es un fallo de tu teléfono."
+            addView(btHidNextView)
+            btHidNoteView = TextView(this@MainActivity).apply {
+                text = "Por Wi-Fi la TV recibe los paquetes y los muestra en vivo, pero OpenNOW no los ve como mando: sin Bluetooth HID no hay juego."
                 textSize = 20f
-                setTextColor(Color.WHITE) // Ítem 2 usuario: texto blanco; el ámbar queda solo para estados.
+                setTextColor(Color.WHITE)
                 setPadding(0, dp(12), 0, 0)
             }
-            addView(shizukuNoteView)
+            addView(btHidNoteView)
         }
-        row.addView(shizukuCard, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+        row.addView(btHidCard, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
             leftMargin = dp(10)
         })
         layout.addView(row, rowParams)
@@ -374,7 +374,7 @@ class MainActivity : Activity() {
         step3StatusView = TextView(this)
         val stepsCard = card().apply {
             addView(sectionLabel("PARA JUGAR — 3 PASOS", purple))
-            addView(stepRow("1", "Instala y arranca Shizuku en la TV", step1StatusView))
+            addView(stepRow("1", "Empareja el teléfono por Bluetooth HID (Ajustes > Bluetooth)", step1StatusView))
             addView(stepRow("2", "Conecta el teléfono con el QR o con IP + PIN", step2StatusView))
             addView(stepRow("3", "Abre OpenNOW y juega", step3StatusView))
         }
@@ -580,32 +580,6 @@ class MainActivity : Activity() {
         return if (names.isEmpty()) "ninguno" else names.joinToString(" ")
     }
 
-    // Estado de Shizuku cacheado: refresh() corre cada 500 ms y
-    // ShizukuHelper.status() hace PackageManager + ping al binder
-    // en cada llamada. El estado cambia pocas veces (el usuario
-    // arranca o para Shizuku a mano), así que basta con mirarlo
-    // cada 5 s.
-    private var lastShizukuStatus: ShizukuHelper.Status? = null
-    private var lastShizukuCheckAtMs: Long = 0L
-
-    private fun shizukuStatusCached(): ShizukuHelper.Status {
-        val now = System.currentTimeMillis()
-        val cached = lastShizukuStatus
-        if (cached != null && now - lastShizukuCheckAtMs < 5000) return cached
-        val fresh = ShizukuHelper.status(this)
-        lastShizukuStatus = fresh
-        lastShizukuCheckAtMs = now
-        return fresh
-    }
-
-    /** El paso siguiente con Shizuku, en UNA frase clara. Decide por estado (T11), no por texto. */
-    private fun shizukuNextStep(status: ShizukuHelper.Status): String = when (status.state) {
-        ShizukuHelper.ShizukuState.READY -> "Listo: el mando virtual ya se puede crear. No tienes que hacer nada más aquí."
-        ShizukuHelper.ShizukuState.NOT_INSTALLED -> "Siguiente paso: instala la app Shizuku (gratis) en la TV y arráncala una vez con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
-        ShizukuHelper.ShizukuState.NOT_RUNNING -> "Siguiente paso: arranca Shizuku con Bugjaeger por ADB :5555 desde el teléfono. Dura hasta reiniciar la TV."
-        ShizukuHelper.ShizukuState.NO_PERMISSION -> "Siguiente paso: abre Shizuku en la TV y permite Ultimate Gamepad TV."
-    }
-
     /** QR real (ZXing) del payload UGP1|ip|puerto|pin; null si no se puede generar. */
     private fun makeQrBitmap(payload: String, sizePx: Int): Bitmap? = runCatching {
         val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, sizePx, sizePx)
@@ -622,14 +596,19 @@ class MainActivity : Activity() {
         // T10: cast comprobado: sin WifiManager no hay IP, pero la
         // pantalla sigue funcionando (antes el cast directo podía
         // lanzar ClassCastException y matar el refresco).
+        // UI-5 (mismo bug A8, segundo sitio): la IP ya no es solo
+        // la de Wi-Fi — por Ethernet localIpFromWifi es null y la
+        // pantalla escondía el QR. Primera IPv4 local de cualquier
+        // interfaz; Wi-Fi solo como respaldo.
         val wifi = applicationContext.getSystemService(android.net.wifi.WifiManager::class.java)
-        val ip = wifi?.let { ShizukuHelper.localIpFromWifi(it) } ?: "sin Wi-Fi"
+        val ip = Discovery.localIpv4Addresses().firstOrNull()?.hostAddress
+            ?: wifi?.let { ShizukuHelper.localIpFromWifi(it) }
+            ?: "sin red"
         val connected = UdpReceiverService.isConnected()
         val agoSec = if (UdpReceiverService.lastPacketAtMs > 0) (System.currentTimeMillis() - UdpReceiverService.lastPacketAtMs) / 1000 else -1
         val profile = GamepadProfiles.fromId(UdpReceiverService.activeProfileId)
         val reports = Diagnostics.scan()
         val real = reports.any { it.looksLikeRealGamepad }
-        val shizuku = shizukuStatusCached()
 
         // ——— Estado grande ———
         statusDotView.setTextColor(if (connected) green else red)
@@ -645,9 +624,9 @@ class MainActivity : Activity() {
         connectIpView.text = "IP  $ip"
         connectPinView.text = "PIN  $pin"
         val qrPayload = "${GamepadProtocol.PAIRING_PREFIX}|$ip|${GamepadProtocol.DEFAULT_PORT}|$pin"
-        if (ip == "sin Wi-Fi") {
+        if (ip == "sin red") {
             qrImageView.visibility = View.GONE
-            qrHintView.text = "Conecta la TV al Wi-Fi para ver el QR."
+            qrHintView.text = "Conecta la TV a la red (Wi-Fi o cable) para ver el QR."
             qrPayloadView.text = ""
             lastQrPayload = null
             currentQrPayload = null
@@ -678,18 +657,15 @@ class MainActivity : Activity() {
             }
         }
 
-        // ——— Shizuku ———
-        if (ReceiverConfig.SHIZUKU_PHASE2_ENABLED) {
-            shizukuStatusView.text = "Shizuku: ${shizuku.label}"
-            shizukuStatusView.setTextColor(if (shizuku.ready) green else amber)
-            shizukuNextView.text = shizukuNextStep(shizuku)
-            shizukuNoteView.visibility = if (shizuku.ready) View.GONE else View.VISIBLE
-        } else {
-            shizukuStatusView.text = "Shizuku: no conectado / segunda opción (Fase 2)"
-            shizukuStatusView.setTextColor(amber)
-            shizukuNextView.text = ""
-            shizukuNoteView.visibility = View.GONE
-        }
+        // ——— Bluetooth HID ———
+        // Shizuku está descartado en esta TV: la única vía para que
+        // el juego vea un mando es el Bluetooth HID directo del
+        // teléfono. El paso 1 se confirma cuando Android ve el
+        // mando (misma señal que "Parece mando real").
+        btHidStatusView.text = if (real) "Bluetooth HID: emparejado" else "Bluetooth HID: sin emparejar"
+        btHidStatusView.setTextColor(if (real) green else amber)
+        btHidNextView.text = "Empareja el teléfono en Ajustes > Bluetooth de la TV y abre el mando en el teléfono."
+        btHidNoteView.visibility = View.VISIBLE
 
         // ——— Parece mando real ———
         val device = reports.firstOrNull { it.looksLikeRealGamepad }
@@ -717,8 +693,8 @@ class MainActivity : Activity() {
             "Paquetes: ${UdpReceiverService.packetsReceived} · ${UdpReceiverService.packetsPerSecond}/s · perdidos (huecos de secuencia): ${UdpReceiverService.packetsLost}"
 
         // ——— Pasos 1-2-3 ———
-        step1StatusView.text = if (shizuku.ready) "✓ Listo" else "○ Pendiente"
-        step1StatusView.setTextColor(if (shizuku.ready) green else amber)
+        step1StatusView.text = if (real) "✓ Emparejado" else "○ Pendiente: empareja el teléfono en Ajustes > Bluetooth"
+        step1StatusView.setTextColor(if (real) green else amber)
         step2StatusView.text = if (connected) "✓ Conectado" else "○ Pendiente"
         step2StatusView.setTextColor(if (connected) green else amber)
         step3StatusView.text = if (real) "✓ Android ve el mando" else "○ Pendiente: Android aún no ve el mando"
@@ -728,7 +704,7 @@ class MainActivity : Activity() {
         if (detailsVisible) {
             // T10: reutiliza el scan() de esta pasada, no otro.
             val details = StringBuilder(Diagnostics.render(reports))
-            details.append("\n\nShizuku: ${shizuku.label}\n${shizuku.guidance}")
+            details.append("\n\nBluetooth HID: el juego solo ve el mando por Bluetooth HID directo del teléfono (Shizuku descartado en esta TV).")
             val lastError = UdpReceiverService.lastError
             if (!lastError.isNullOrBlank()) details.append("\n\nÚltimo error: $lastError")
             diagView.text = details.toString()
