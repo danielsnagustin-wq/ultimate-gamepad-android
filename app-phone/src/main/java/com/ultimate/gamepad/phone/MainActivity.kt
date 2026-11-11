@@ -23,9 +23,8 @@ import com.ultimate.gamepad.phone.ui.rememberUiCustomizationHolder
 import com.ultimate.gamepad.phone.ui.uiColorSchemeFrom
 
 /**
- * Etapa 1: una sola pantalla de mando + conexión.
- * El editor y los perfiles existen como destinos TODO (ver ui/TodoScreens.kt)
- * y NO se presentan como funciones que ya funcionan.
+ * Pantalla principal: mando + conexión, con Ajustes, editor de
+ * botones y perfiles por juego (Fases 3-4) como funciones reales.
  * La tipografía de los botones (labelLarge) va en seminegrita:
  * el texto blanco sobre las píldoras moradas se lee mejor.
  */
