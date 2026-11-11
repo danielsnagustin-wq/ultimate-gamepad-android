@@ -253,8 +253,11 @@ class BluetoothDataReceiverImpl(private val context: Context) : BluetoothDataRec
                 val state = GamepadProtocol.decode(data) ?: continue
                 // Punto único UDP/TCP: mismo registro, misma
                 // entrega, mismo watchdog, mismo perfil (byte 28).
-                UdpReceiverService.recordPacket(state, TransportMethod.BLUETOOTH_DATA)
-                UdpReceiverService.deliver(context, state, data)
+                // Codex-1: solo se entrega si el paquete fue
+                // aceptado (secuencia nueva); igual que UDP/TCP.
+                if (UdpReceiverService.recordPacket(state, TransportMethod.BLUETOOTH_DATA)) {
+                    UdpReceiverService.deliver(context, state, data)
+                }
                 packetsReceived++
                 lastPacketAtMs = System.currentTimeMillis()
                 runCatching { onPacket(state) }
