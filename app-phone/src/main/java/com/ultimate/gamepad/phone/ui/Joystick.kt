@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -239,7 +240,7 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit, interactive
     Box(
         modifier = Modifier.size(196.dp)
             .clip(CircleShape)
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.35f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
