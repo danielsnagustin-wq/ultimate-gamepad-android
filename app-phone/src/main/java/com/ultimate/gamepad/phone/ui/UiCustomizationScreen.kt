@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -89,7 +90,7 @@ fun UiCustomizationScreen(onClose: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -245,7 +246,7 @@ fun UiCustomizationScreen(onClose: () -> Unit) {
                 .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                 .padding(16.dp),
         ) {
-            Text("● Conectado a 192.168.1.71", color = Color.White, fontSize = 15.sp)
+            Text("● Conectado a 192.168.1.20", color = Color.White, fontSize = 15.sp)
             Spacer(Modifier.height(4.dp))
             Text(
                 "Ping: 10 ms · Método: Wi-Fi UDP",
