@@ -1,6 +1,7 @@
 package com.ultimate.gamepad.phone.ui
 
 import android.content.Context
+import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadMacro
 import com.ultimate.gamepad.core.MacroEvent
 import com.ultimate.gamepad.core.TurboConfig
@@ -18,8 +19,13 @@ import org.json.JSONObject
  * - Vibración: vibrar al pulsar en el teléfono (global; el
  *   perfil de juego activo la pisa al aplicarse, ver
  *   GamepadViewModel.applyGameProfile).
+ * - Vibración del juego (rumble por Bluetooth HID, ronda REA
+ *   GFN+OpenNOW): interruptor propio; ningún perfil lo pisa.
  * - Giroscopio: activado + sensibilidad.
  * - Macros: lista guardada (nombre + eventos con tiempos).
+ * - Paletas L4/R4 (ronda REA GFN+OpenNOW): botón del mando que
+ *   actúa al pulsar cada paleta (por defecto L4→L3, R4→R3;
+ *   0 = la paleta no hace nada).
  *
  * Un JSON corrupto no rompe nada: se sanea o se descarta.
  */
@@ -28,9 +34,38 @@ object ExtrasPrefs {
     private const val KEY_TURBO_BUTTONS = "turbo_buttons"
     private const val KEY_TURBO_RATE = "turbo_rate_hz"
     private const val KEY_VIBRATION = "vibration"
+    private const val KEY_GAME_RUMBLE = "game_rumble"
     private const val KEY_GYRO_ENABLED = "gyro_enabled"
     private const val KEY_GYRO_SENSITIVITY = "gyro_sensitivity"
     private const val KEY_MACROS = "macros_json"
+    private const val KEY_L4_REMAP = "l4_remap"
+    private const val KEY_R4_REMAP = "r4_remap"
+
+    /** Solo valen 0 (nada), L3 o R3: cualquier otro valor guardado se sanea al defecto. */
+    fun sanitizeRemap(target: Int, default: Int): Int =
+        if (target == 0 || target == GamepadButtons.L3 || target == GamepadButtons.R3) target else default
+
+    fun loadL4Remap(context: Context): Int =
+        sanitizeRemap(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_L4_REMAP, GamepadButtons.L3),
+            GamepadButtons.L3,
+        )
+
+    fun saveL4Remap(context: Context, target: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_L4_REMAP, sanitizeRemap(target, GamepadButtons.L3)).apply()
+    }
+
+    fun loadR4Remap(context: Context): Int =
+        sanitizeRemap(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_R4_REMAP, GamepadButtons.R3),
+            GamepadButtons.R3,
+        )
+
+    fun saveR4Remap(context: Context, target: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_R4_REMAP, sanitizeRemap(target, GamepadButtons.R3)).apply()
+    }
 
     fun loadTurbo(context: Context): TurboConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -57,6 +92,14 @@ object ExtrasPrefs {
     fun saveVibration(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_VIBRATION, enabled).apply()
+    }
+
+    fun loadGameRumble(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_GAME_RUMBLE, true)
+
+    fun saveGameRumble(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_GAME_RUMBLE, enabled).apply()
     }
 
     fun loadGyroEnabled(context: Context): Boolean =
