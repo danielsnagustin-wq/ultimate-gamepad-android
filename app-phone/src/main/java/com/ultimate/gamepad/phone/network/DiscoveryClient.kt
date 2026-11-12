@@ -7,7 +7,10 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -44,7 +47,10 @@ object DiscoveryClient {
             val endAt = System.currentTimeMillis() + timeoutMs
             var nextSendAt = 0L
             val buf = ByteArray(256)
-            while (System.currentTimeMillis() < endAt) {
+            // Ronda 2 P2-8: comprobar isActive en el bucle (si no,
+            // la cancelación se retrasaba hasta 3 s) y no tragar
+            // CancellationException en el catch general.
+            while (currentCoroutineContext().isActive && System.currentTimeMillis() < endAt) {
                 if (System.currentTimeMillis() >= nextSendAt) {
                     for (target in targets) {
                         runCatching {
@@ -61,6 +67,10 @@ object DiscoveryClient {
                     // Sin respuesta en este intervalo: se sigue esperando.
                 }
             }
+        } catch (e: CancellationException) {
+            // La cancelación de la corrutina no es un error: se
+            // re-lanza para que el llamador la vea (ronda 2 P2-8).
+            throw e
         } catch (e: Exception) {
             // Sin red / sin permiso de broadcast: lista vacía.
         } finally {
