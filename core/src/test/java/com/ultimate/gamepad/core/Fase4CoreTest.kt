@@ -220,6 +220,18 @@ class Fase4CoreTest {
         assertEquals(ExtrasProtocol.ACTION_CREATE, create!!.action)
     }
 
+    @Test fun `contrato de acciones del raton: 0 mover-clic, 2 crear, 3 destruir`() {
+        // H-04: el nativo alinea con ExtrasProtocol (2 = crear,
+        // 3 = destruir); la acción 1 no es válida para el ratón
+        // (decodeMouse la rechaza) y el .c ya no la interpreta.
+        assertEquals(2, ExtrasProtocol.ACTION_CREATE)
+        assertEquals(3, ExtrasProtocol.ACTION_DESTROY)
+        assertEquals(ExtrasProtocol.ACTION_PRESS, ExtrasProtocol.decodeMouse(ExtrasProtocol.encodeMouse(0, 0, 0, ExtrasProtocol.ACTION_PRESS))!!.action)
+        assertEquals(ExtrasProtocol.ACTION_CREATE, ExtrasProtocol.decodeMouse(ExtrasProtocol.encodeMouse(0, 0, 0, ExtrasProtocol.ACTION_CREATE))!!.action)
+        assertEquals(ExtrasProtocol.ACTION_DESTROY, ExtrasProtocol.decodeMouse(ExtrasProtocol.encodeMouse(0, 0, 0, ExtrasProtocol.ACTION_DESTROY))!!.action)
+        assertNull(ExtrasProtocol.decodeMouse(ExtrasProtocol.encodeMouse(0, 0, 0, 1)))
+    }
+
     @Test fun `macro con 200 eventos conserva el soltar final`() {
         val r = MacroRecorder()
         r.start(0L)
