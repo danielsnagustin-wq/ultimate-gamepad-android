@@ -67,6 +67,9 @@ class BluetoothScanner(private val context: Context) {
 
     private var receiver: BroadcastReceiver? = null
 
+    /** Lock de la secuencia de escaneo (ronda 2 P2-7). */
+    private val scanLock = Any()
+
     /**
      * Empieza el escaneo clásico (~12 s, lo que dura un
      * startDiscovery). `onDevice` por cada dispositivo encontrado
@@ -77,58 +80,67 @@ class BluetoothScanner(private val context: Context) {
      * escaneando).
      */
     fun startScan(onDevice: (BluetoothDevice, Int?) -> Unit, onFinished: () -> Unit): Boolean {
-        if (isScanning) return false
-        if (missingScanPermission() != null) return false
-        val adapter = adapter() ?: return false
-        if (!isBluetoothOn()) return false
-        val filter = IntentFilter().apply {
-            addAction(BluetoothDevice.ACTION_FOUND)
-            addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
-        }
-        val recv = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                when (intent.action) {
-                    BluetoothDevice.ACTION_FOUND -> {
-                        val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                        }
-                        if (device != null) {
-                            val rssi = if (intent.hasExtra(BluetoothDevice.EXTRA_RSSI)) {
-                                intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
+        // Ronda 2 P2-7: toda la secuencia (comprobar, registrar,
+        // arrancar) bajo el mismo lock: dos startScan() a la vez
+        // registraban dos receivers y el segundo pisaba al primero,
+        // que quedaba sin unregister (fuga).
+        synchronized(scanLock) {
+            if (isScanning) return false
+            if (missingScanPermission() != null) return false
+            val adapter = adapter() ?: return false
+            if (!isBluetoothOn()) return false
+            val filter = IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_FOUND)
+                addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+            }
+            val recv = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    when (intent.action) {
+                        BluetoothDevice.ACTION_FOUND -> {
+                            val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
                             } else {
-                                null
+                                @Suppress("DEPRECATION")
+                                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                             }
-                            onDevice(device, rssi)
+                            if (device != null) {
+                                val rssi = if (intent.hasExtra(BluetoothDevice.EXTRA_RSSI)) {
+                                    intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
+                                } else {
+                                    null
+                                }
+                                onDevice(device, rssi)
+                            }
                         }
-                    }
-                    BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
-                        stopScan()
-                        onFinished()
+                        BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
+                            stopScan()
+                            onFinished()
+                        }
                     }
                 }
             }
+            val registered = runCatching {
+                ContextCompat.registerReceiver(context, recv, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+                true
+            }.getOrDefault(false)
+            if (!registered) return false
+            receiver = recv
+            val started = runCatching { adapter.startDiscovery() }.getOrDefault(false)
+            if (!started) {
+                // No arrancar: deshacer el registro aquí mismo (no
+                // llamar a stopScan(), que tomaría el mismo lock).
+                receiver = null
+                runCatching { context.unregisterReceiver(recv) }
+                return false
+            }
+            isScanning = true
+            return true
         }
-        val registered = runCatching {
-            ContextCompat.registerReceiver(context, recv, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-            true
-        }.getOrDefault(false)
-        if (!registered) return false
-        receiver = recv
-        val started = runCatching { adapter.startDiscovery() }.getOrDefault(false)
-        if (!started) {
-            stopScan()
-            return false
-        }
-        isScanning = true
-        return true
     }
 
     /** Para el escaneo (a mano o al terminar). Idempotente. */
-    fun stopScan() {
-        if (!isScanning && receiver == null) return
+    fun stopScan() = synchronized(scanLock) {
+        if (!isScanning && receiver == null) return@synchronized
         isScanning = false
         val recv = receiver
         receiver = null
