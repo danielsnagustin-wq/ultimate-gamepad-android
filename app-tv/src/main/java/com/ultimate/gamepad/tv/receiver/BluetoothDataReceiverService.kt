@@ -31,6 +31,12 @@ class BluetoothDataReceiverService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // H-02: parar el receptor viejo ANTES de crear el nuevo
+        // (espejo de TcpReceiverService): si no, el viejo queda con
+        // su BluetoothServerSocket abierto y su hilo bt-spp-accept
+        // vivo, escuchando el mismo UUID SPP. No se devuelve
+        // temprano sin más: un receptor muerto no debe quedarse.
+        runCatching { receiver?.stop() }; receiver = null
         val recv = BluetoothDataReceiverImpl(applicationContext)
         receiver = recv
         recv.start { _ ->
