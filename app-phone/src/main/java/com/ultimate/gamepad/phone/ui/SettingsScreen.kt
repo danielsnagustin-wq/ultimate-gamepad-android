@@ -137,7 +137,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         // con fallback, el chip elegido no es el que se usa).
         val methodShown = if (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) ui.attemptMethod else ui.selectedMethod
         Text(
-            text = "Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}   ·   Método: ${methodShown.label} (${ui.transportMode})",
+            text = "Ping: ${ui.pingMs?.let { "$it ms" } ?: "sin datos"}   ·   Método: ${methodShown.label} (${ui.transportMode})",
             color = Color.White,
             fontSize = 13.sp,
         )
@@ -177,7 +177,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         for (tv in ui.discoveredTvs) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = { tick(); vm.connectToDiscovered(tv) }, modifier = Modifier.fillMaxWidth()) {
-                Text("${tv.name} — ${tv.ip}", color = Color.White)
+                Text("${tv.name} · ${tv.ip}", color = Color.White)
             }
         }
         // El error de búsqueda ANTES no se veía aquí: discoverTvs()
@@ -198,7 +198,7 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Text("Método de conexión", fontSize = 15.sp, color = Color.White)
         TransportSelectorRow(vm, ui)
         Spacer(Modifier.height(12.dp))
-        Text("Conectar a la TV — misma red Wi-Fi", fontSize = 15.sp, color = Color.White)
+        Text("Conectar a la TV: misma red Wi-Fi", fontSize = 15.sp, color = Color.White)
         Spacer(Modifier.height(8.dp))
         Text("1) Abre Ultimate Gamepad en la TV y anota su IP y PIN, o escanea su QR.", color = Color.White)
         Spacer(Modifier.height(4.dp))
