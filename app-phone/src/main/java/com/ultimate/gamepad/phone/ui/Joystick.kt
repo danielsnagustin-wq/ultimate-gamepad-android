@@ -78,6 +78,14 @@ fun Modifier.pointerPress(onPress: (Boolean) -> Unit): Modifier = this.pointerIn
                         presses = (presses - 1).coerceAtLeast(0)
                         if (presses == 0) onPress(false)
                     }
+                    androidx.compose.ui.input.pointer.PointerEventType.Cancel -> {
+                        // Ronda 2 P2-6: el KDoc promete liberar en
+                        // Cancel y el código no lo hacía (el finally
+                        // solo cubre la cancelación de la corrutina,
+                        // no la del gesto).
+                        presses = 0
+                        onPress(false)
+                    }
                 }
             }
         } finally {
@@ -135,6 +143,10 @@ fun JoystickView(
     interactive: Boolean = true,
 ) {
     var knob by remember { mutableStateOf(Offset.Zero) }
+    // Ronda 2 P2-11: el acento del usuario (MaterialTheme) — se
+    // iza aquí porque dentro del Canvas (DrawScope) no se puede
+    // leer MaterialTheme (es @Composable).
+    val accent = MaterialTheme.colorScheme.primary
     // P4 (auditoría): `radius` eran 80 PÍXELES, no dp, sobre una
     // base de 180 dp: en ~400 dpi el pomo daba deflexión máxima a
     // 1/5 del recorrido (hipersensible y dependiente de la
@@ -177,7 +189,7 @@ fun JoystickView(
             // Halo neón suave detrás del stick.
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.22f), Color.Transparent),
+                    colors = listOf(accent.copy(alpha = 0.22f), Color.Transparent),
                     center = c,
                     radius = size.minDimension / 2f,
                 ),
@@ -187,7 +199,7 @@ fun JoystickView(
             // Base AMOLED (negro puro) con doble anillo neón (morado + cian tenue).
             drawCircle(color = Color.Black, radius = size.minDimension / 2f - 4.dp.toPx(), center = c)
             drawCircle(
-                brush = Brush.sweepGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF), Color(0xFF7C4DFF))),
+                brush = Brush.sweepGradient(listOf(accent, Color(0xFF00E5FF), accent)),
                 radius = size.minDimension / 2f - 4.dp.toPx(),
                 center = c,
                 style = Stroke(width = 2.5.dp.toPx()),
@@ -221,7 +233,7 @@ fun JoystickView(
                 center = knobCenter,
                 style = Stroke(width = 1.dp.toPx()),
             )
-            drawCircle(color = Color(0xFF7C4DFF), radius = 10.dp.toPx(), center = knobCenter)
+            drawCircle(color = accent, radius = 10.dp.toPx(), center = knobCenter)
         }
     }
 }
@@ -241,7 +253,7 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit, interactive
         modifier = Modifier.size(196.dp)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.background)
-            .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.35f), CircleShape),
+            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Column {
@@ -272,11 +284,11 @@ fun DpadKey(label: String, interactive: Boolean = true, onPress: (Boolean) -> Un
             .clip(RoundedCornerShape(16.dp))
             .background(
                 Brush.verticalGradient(
-                    if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
+                    if (pressed) listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
                     else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
-            .border(1.5.dp, Color(0xFF7C4DFF).copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
             .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
