@@ -21,6 +21,7 @@ import com.ultimate.gamepad.core.HidInputReport
 import com.ultimate.gamepad.core.RumbleReport
 import com.ultimate.gamepad.core.TransportStatus
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "BluetoothHid"
 
@@ -154,14 +155,21 @@ class BluetoothHidService(private val context: Context) {
      * registro fallaba, o al revés. Los callbacks con otra
      * generación se ignoran.
      */
-    @Volatile private var proxyRequestId = 0
+    // Ronda 2 P2-6: el ++ sobre @Volatile no es atómico (leer +
+    // escribir en dos pasos): dos hilos podían generar el mismo
+    // id y resucitar un proxy cerrado. AtomicInteger lo hace
+    // atómico de verdad.
+    private val proxyRequestId = AtomicInteger(0)
+
+    /** true mientras unregister() está en curso: el callback asíncrono no debe poner FAILED (P2-4 ronda 2). */
+    @Volatile private var unregistering: Boolean = false
 
     /** Cierra el proxy de perfil anterior: cada getProfileProxy sin su closeProfileProxy acumulaba un listener y un proxy. */
     private fun closeProfileProxy() {
         // Invalidar los callbacks pendientes de la petición vieja:
         // si su onServiceConnected llega tarde, se ignora (ver
         // proxyRequestId) en vez de resucitar un proxy cerrado.
-        proxyRequestId++
+        proxyRequestId.incrementAndGet()
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
         val proxy = hidDevice
         if (adapter != null && proxy != null) {
@@ -179,7 +187,7 @@ class BluetoothHidService(private val context: Context) {
      */
     private fun requestProxy(onResult: (HidAvailability) -> Unit) {
         closeProfileProxy()
-        val myId = ++proxyRequestId
+        val myId = proxyRequestId.incrementAndGet()
         // Sin BLUETOOTH_CONNECT (Android 12+) adapter.isEnabled y
         // getProfileProxy lanzan SecurityException: antes se llegaba
         // a isEnabled sin comprobar el permiso y fuera de
@@ -212,7 +220,7 @@ class BluetoothHidService(private val context: Context) {
         val result = runCatching {
             adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                    if (myId != proxyRequestId) return
+                    if (myId != proxyRequestId.get()) return
                     if (profile == BluetoothProfile.HID_DEVICE) {
                         hidDevice = proxy as BluetoothHidDevice
                         proxyReady = true
@@ -222,7 +230,7 @@ class BluetoothHidService(private val context: Context) {
                     }
                 }
                 override fun onServiceDisconnected(profile: Int) {
-                    if (myId != proxyRequestId) return
+                    if (myId != proxyRequestId.get()) return
                     if (profile == BluetoothProfile.HID_DEVICE) {
                         proxyReady = false
                         availability = HidAvailability.UNAVAILABLE
@@ -286,7 +294,11 @@ class BluetoothHidService(private val context: Context) {
         }
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
             appRegistered = registered
-            if (!registered) {
+            // Ronda 2 P2-4: tras unregister() limpio, este callback
+            // llegaba con registered=false y pisaba el UNAVAILABLE
+            // con FAILED. Si se está des-registrando a propósito,
+            // no es un fallo.
+            if (!registered && !unregistering) {
                 status = TransportStatus.FAILED
                 onConnectionChanged?.invoke(status)
             }
@@ -409,6 +421,7 @@ class BluetoothHidService(private val context: Context) {
      *  ruta uinput de la TV. Por Bluetooth la identidad es el nombre
      *  expuesto + el descriptor de Game Pad. */
     fun register(profileId: Int = GamepadProfiles.XBOX_360_ID): Boolean {
+        unregistering = false
         val profile = GamepadProfiles.fromId(profileId)
         val hid = hidDevice ?: return false
         val sdp = BluetoothHidDeviceAppSdpSettings(
@@ -516,6 +529,7 @@ class BluetoothHidService(private val context: Context) {
      * onAppStatusChanged lo pondría en FAILED después).
      */
     fun unregister() {
+        unregistering = true
         runCatching { hidDevice?.unregisterApp() }
         appRegistered = false
         connectedDevice = null
