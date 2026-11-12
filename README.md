@@ -4,7 +4,7 @@ Mando virtual multi-transporte para jugar en una **Hyundai Google TV** con **Ope
 
 Teléfono (MediaTek Helio G99) → TV Hyundai → OpenNOW.
 
-> **Estado honesto — Etapa 1 (2026-11-07):** esqueleto funcional real, NO un mando completo y NO verificado en TV. El protocolo, el mando básico del teléfono y el receptor de la TV existen y compilan por GitHub Actions. **No está verificado que OpenNOW reconozca el mando todavía.** Eso es la Etapa 0 y requiere probarlo en la Hyundai real. Lee `docs/VIABILITY-OPENNOW.md` antes de esperar que funcione en un juego.
+> **Estado honesto — 2026-11-11 (ronda 2):** el mando existe de verdad (Fases 1–4 + Bluetooth dos vías) y compila en verde en CI (run #168). **Shizuku está DESCARTADO del todo** (no está adaptado a TV y la TV no tiene depuración de red): la única vía para que el juego vea un mando es el **Bluetooth HID directo del teléfono**; por Wi-Fi la TV recibe y muestra los paquetes en vivo, pero sin Shizuku no puede inyectarlos en el juego. **No está verificado en el teléfono/TV real todavía** (la prueba real es la del usuario). Lee `docs/VIABILITY-OPENNOW.md` antes de esperar que funcione en un juego.
 
 ## Criterio de éxito de la Etapa 0: que lo reconozca como si fuera un mando real
 
@@ -16,12 +16,12 @@ No basta con que "llegue el paquete" por Wi-Fi. El éxito es:
 - OpenNOW lo lista como controller y lo codifica a XInput como un mando físico.
 - La pantalla de diagnóstico de la TV dice **"Parece mando real: SÍ"**.
 
-Si un método no logra esa identidad, se marca como **FALLO** en la UI aunque el Wi-Fi funcione. Ver `docs/VIABILITY-OPENNOW.md` ("Por qué otras apps se ven como control de TV").
+Si un método no logra esa identidad, se marca como **FALLO** en la UI aunque el Wi-Fi funcione. Ver `docs/VIABILITY-OPENNOW.md` ("Por qué otras apps se ven como control de TV"). Matiz honesto (2026-11-11): por **Bluetooth HID** la TV ve el nombre "Xbox 360 Controller" y el descriptor de Game Pad, pero el VID/PID **no** se pueden fijar por la API HID (son los del teléfono); la identidad completa con VID/PID 0x045E/0x028E solo la da la ruta uinput de la TV, que hoy no tiene vía de inyección (Shizuku descartado). Lo que decide al final es la prueba en la TV real.
 
 ## Orden de prioridades
 
 - **Fase 1 = enlace Wi-Fi en la misma red, visible en pantalla.** Primero que teléfono y TV se vean y que la TV muestre en vivo cada botón/stick.
-- **Fase 2 = Shizuku / uinput** para que OpenNOW lo vea como mando real.
+- **Fase 2 = Bluetooth HID directo del teléfono** para que OpenNOW lo vea como mando real. **Shizuku / uinput está DESCARTADO** (2026-11-07): Shizuku no está adaptado a TV y la TV no tiene depuración de red ni inalámbrica, solo USB. No se reabre.
 - **Multi-método:** todos los métodos posibles como fallback, por si uno falla. El modo Automático prueba en orden UDP → TCP → Bluetooth datos → Bluetooth HID.
 
 ## Transportes teléfono → TV
@@ -31,25 +31,25 @@ Si un método no logra esa identidad, se marca como **FALLO** en la UI aunque el
 | 1 | Wi-Fi UDP, misma red | Principal | Misma Wi-Fi, TV con receptor en puerto 51999 | Pasa a TCP | Completo |
 | 2 | Wi-Fi TCP, misma red | Respaldo | Misma Wi-Fi, puerto TCP 52000 | Pasa a Bluetooth datos | Completo (básico) |
 | 3 | Hotspot del teléfono | Sin router | Hotspot del teléfono, TV conectada a él, IP 192.168.43.x | Volver a Wi-Fi con router | Mismo UDP/TCP, modo en UI + docs |
-| 5 | Bluetooth datos (BLE/SPP) a la app receptora | Respaldo si falla todo el Wi-Fi | Emparejamiento BT, app receptora | Pasa a Bluetooth HID | Estructura / interfaz, Pendiente Etapa 2 |
-| 4 | Bluetooth HID, teléfono como mando real | Directo, sin receptora ni Shizuku | el teléfono expone HID_DEVICE, emparejar "Xbox 360 Controller" | Ninguno (último) | Estructura + comprobación de disponibilidad |
+| 5 | Bluetooth datos (BLE/SPP) a la app receptora | Respaldo si falla todo el Wi-Fi | Emparejamiento BT, app receptora | Pasa a Bluetooth HID | Completo (SPP real, Fase 5) |
+| 4 | Bluetooth HID, teléfono como mando real | Directo, sin receptora ni Shizuku | el teléfono expone HID_DEVICE, emparejar "Xbox 360 Controller" | Ninguno (último) | Completo: descriptor HID 486 B, 16 botones en orden Android, gatillos analógicos, rumble, escaneo BT desde el teléfono |
 
-El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un método manualmente. Ningún método se muestra "Conectado" sin paquetes reales; lo no implementado dice "Pendiente Etapa 2".
+El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un método manualmente. Ningún método se muestra "Conectado" sin paquetes reales.
 
 ## Inyección en la TV → OpenNOW
 
-| Método | Qué es | Si falla | Estado Etapa 1 |
+| Método | Qué es | Si falla | Estado 2026-11-11 |
 |---|---|---|---|
-| A. Shizuku + /dev/uinput, mando virtual Xbox 360 | Principal | Pasa a B | Implementado, .so nativo compilado en CI; falta verificar en la TV real (Fase 0) |
-| B. Shizuku + `injectInputEvent`, SOURCE_GAMEPAD | Respaldo si uinput falla | Queda en "ninguno", UI lo dice | Fallback implementado |
-| C. Bluetooth HID | Inyección directa, no necesita Shizuku | Ninguno | Estructura + comprobación |
+| A. Shizuku + /dev/uinput, mando virtual Xbox 360 | Principal en el diseño original | — | **DESCARTADO**: Shizuku no está adaptado a TV; el código uinput sigue en la app de TV pero no tiene vía de inyección |
+| B. Shizuku + `injectInputEvent`, SOURCE_GAMEPAD | Respaldo si uinput falla | — | **DESCARTADO** (mismo motivo) |
+| C. Bluetooth HID | Inyección directa, no necesita Shizuku | Ninguno | **Principal y único camino real**: el teléfono expone el mando por HID; la TV lo empareja como "Xbox 360 Controller" |
 
 ## Cómo funciona (resumen)
 
 1. La TV muestra su IP, puertos (UDP 51999 / TCP 52000) y un PIN, o un QR `UGP1|<ip>|51999|<pin>`.
 2. El teléfono escanea el QR (CameraX + ML Kit, real) o escribe IP/PIN, y envía el estado del mando a 120 Hz por UDP (o TCP) en paquetes binarios de 32 bytes (`:core`, ver `docs/ARCHITECTURE.md`).
-3. La TV recibe los paquetes en un servicio en primer plano, los muestra en vivo (botones, sticks, último paquete, paquetes recibidos) y hace eco de ping.
-4. Si Shizuku está activo (Fase 2), el proceso shell intenta crear el **mando virtual vía `/dev/uinput` con el perfil de emulación activo** (Xbox 360, Xbox One, DualShock 4, DualSense o genérico; por defecto "Xbox 360 Controller"), y si falla, usa `injectInputEvent()` con SOURCE_GAMEPAD. Si Shizuku no está, la inyección queda en "ninguno" y la pantalla lo dice claro. El touchpad de DS4/DualSense no se emula en esta versión (ver `docs/PLAN-GAMEPAD-PRO.md`, Fase 2).
+3. La TV recibe los paquetes en un servicio en primer plano, los muestra en vivo (botones, sticks, último paquete, paquetes recibidos) y hace eco de ping. Por Wi-Fi la TV **recibe** pero **no inyecta** en el juego (sin Shizuku no hay vía): para jugar, el teléfono se conecta por **Bluetooth HID directo** y la TV lo ve como mando físico.
+4. El perfil de emulación activo (Xbox 360, Xbox One, DualShock 4, DualSense o genérico; por defecto "Xbox 360 Controller") viaja en el byte 28 del paquete y en el nombre expuesto por HID. El touchpad de DS4/DualSense no se emula en esta versión (ver `docs/PLAN-GAMEPAD-PRO.md`, Fase 2).
 
 ## Qué hay en Etapa 1
 
@@ -57,9 +57,9 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 |---|---|
 | `:core` | Protocolo 32 bytes (magic, versión, secuencia, timestamp, bitmask, sticks, gatillos, CRC-16), dead zones, curvas, emparejamiento QR/PIN, UDP + TCP, selector multi-transporte, clasificación GAMEPAD, tests unitarios |
 | `:app-phone` | Mando completo estilo Xbox (dos sticks, cruceta, A/B/X/Y, LB/RB, LT/RT analógicos, L3/R3, VIEW/MENU/SHARE) + editor visual de botones, zona muerta ajustable; selector de método con estado real por método; modo Automático y manual; Hotspot; ping real por eco (UDP y TCP); conexión por QR real o IP/PIN; comprobación Bluetooth HID |
-| `:app-tv` | Receptor UDP 51999 + TCP 52000, pantalla de estado en vivo, diagnóstico "¿Cómo me ve Android?" con "Parece mando real: SÍ/NO", Shizuku UserService + fallback `injectInputEvent` |
+| `:app-tv` | Receptor UDP 51999 + TCP 52000, pantalla de estado en vivo, diagnóstico "¿Cómo me ve Android?" con "Parece mando real: SÍ/NO"; receptor Bluetooth datos (SPP); código uinput presente pero sin vía de inyección (Shizuku descartado) |
 
-**No hay en Etapa 1 (y no se finge):** import/export de perfiles, Bluetooth datos completo. Los perfiles por juego, TIPO DE MANDO, PRUEBA DE MANDO y Rendimiento YA existen (Fase 3, Gamepad PRO). El mando completo (stick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3), el editor de controles y el mando virtual uinput nativo YA existen; lo que falta es verificarlos en la TV real (Fase 0). Los extras de la Fase 4 TAMBIÉN existen (L4/R4, turbo, macros, vibración al pulsar en el teléfono, teclado virtual y modo ratón como dispositivos aparte, giroscopio); la vibración DEL JUEGO (force feedback) NO existe y no se promete. Todo sigue sin verificar en TV real. Lo demás llega en Etapas 2–3 y está marcado TODO / "Pendiente Etapa 2" en el código y la UI.
+**No hay (y no se finge):** import/export de perfiles, touchpad de DS4/DualSense, háptica avanzada/adaptativa de DualSense. Los perfiles por juego, TIPO DE MANDO, PRUEBA DE MANDO y Rendimiento YA existen (Fase 3, Gamepad PRO). El mando completo (stick derecho, gatillos analógicos LT/RT, LB/RB, L3/R3), el editor de controles y el mando virtual uinput nativo YA existen; lo que falta es verificarlos en la TV real (Fase 0). Los extras de la Fase 4 TAMBIÉN existen (L4/R4 como alias de L3/R3, turbo, macros, vibración al pulsar en el teléfono, teclado virtual y modo ratón como dispositivos aparte, giroscopio); la vibración DEL JUEGO (rumble) existe por Bluetooth HID (hay que re-emparejar tras el cambio de descriptor). Todo sigue sin verificar en TV real.
 
 ## Compilar sin PC
 
@@ -71,9 +71,13 @@ El modo Automático prueba en orden **1 → 2 → 5 → 4**. Se puede forzar un 
 
 ## Probar en la TV (Etapa 0, imprescindible)
 
-La Hyundai **no tiene depuración inalámbrica**. Shizuku se arranca por **ADB por red en el puerto 5555**, con el teléfono como host ADB (app Bugjaeger). Pasos exactos en `docs/SETUP-SIN-PC.md`.
+La Hyundai **no tiene depuración inalámbrica** (solo "Depuración por USB") y **Shizuku está descartado**: no hay ADB por red (:5555) que arrancar. El camino para jugar es el **Bluetooth HID directo**:
 
-Prueba mínima: en la TV, abre el diagnóstico "¿Cómo me ve Android?" — ¿dice **"Parece mando real: SÍ"**? Y en OpenNOW, ¿responde el juego a A / joystick? Si dice NO, anota el motivo que muestra el diagnóstico (nombre, vendor/product, sources, ejes que faltan) y no sigas a Etapa 2 hasta resolverlo.
+1. Teléfono: abre Ultimate Gamepad → Ajustes → Bluetooth HID (el teléfono se registra y se hace visible 300 s).
+2. TV: Ajustes → Bluetooth → buscar → emparejar **"Xbox 360 Controller"** (o usa "Buscar TV por Bluetooth" desde el teléfono: ambas direcciones funcionan).
+3. Abre OpenNOW y prueba A / joystick. Si la TV no lo ve como mando, revisa el diagnóstico "¿Cómo me ve Android?" de la app de TV.
+
+Prueba mínima por Wi-Fi (sin jugar): en la TV, abre el diagnóstico — ¿dice **"Parece mando real: SÍ"**? Y en "Paquetes", ¿sube el contador al pulsar A en el teléfono? Si dice NO, anota el motivo que muestra el diagnóstico (nombre, vendor/product, sources, ejes que faltan).
 
 ## Estructura
 
@@ -81,7 +85,7 @@ Prueba mínima: en la TV, abre el diagnóstico "¿Cómo me ve Android?" — ¿di
 settings.gradle.kts  build.gradle.kts  gradle/libs.versions.toml
 core/        # protocolo, estado, UDP/TCP, pairing, transportes, clasificación + tests
 app-phone/   # mando virtual (Compose, CameraX QR, Bluetooth HID)
-app-tv/      # receptor UDP/TCP + diagnóstico + Shizuku + uinput (Etapa 0)
+app-tv/      # receptor UDP/TCP + Bluetooth datos + diagnóstico + uinput sin inyección (Shizuku descartado)
 .github/workflows/android.yml
 docs/VIABILITY-OPENNOW.md  docs/ARCHITECTURE.md  docs/SETUP-SIN-PC.md
 ```
