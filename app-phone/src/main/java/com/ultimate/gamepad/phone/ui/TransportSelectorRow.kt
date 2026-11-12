@@ -164,7 +164,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         if (ui.selectedMethod == TransportMethod.BLUETOOTH_DATA) {
             Text(
-                "Por Bluetooth datos los gatillos LT/RT son analógicos (0..255), como por Wi-Fi. La latencia real depende del enlace; sin eco, el ping muestra '—'.",
+                "Por Bluetooth datos los gatillos LT/RT son analógicos (0..255), como por Wi-Fi. La latencia real depende del enlace; sin eco, el ping muestra 'sin datos'.",
                 color = Color.White, fontSize = 12.sp,
             )
         }
