@@ -53,6 +53,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.ultimate.gamepad.core.PairingInfo
+import com.ultimate.gamepad.core.TransportMethod
 
 /**
  * Ajustes y conexión (⚙). La pantalla del mando es solo el
@@ -85,11 +86,17 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     ) {
         Text("⚙  Configuración y conexión", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(8.dp))
+        // P1-4: por HID no hay IP (`host` está vacío): el estado
+        // dice el nombre del dispositivo conectado, no "a ".
+        val peerText = when {
+            ui.attemptMethod == TransportMethod.BLUETOOTH_HID -> ui.hidPeerName?.let { " a $it" } ?: " por Bluetooth HID"
+            else -> " a ${ui.host}"
+        }
         Text(
             text = when (ui.status) {
                 ConnectionStatus.DISCONNECTED -> "● Desconectado"
-                ConnectionStatus.CONNECTING -> "● Conectando por ${ui.attemptMethod.label} a ${ui.host}…"
-                ConnectionStatus.CONNECTED -> "● Conectado a ${ui.host}"
+                ConnectionStatus.CONNECTING -> "● Conectando por ${ui.attemptMethod.label}$peerText…"
+                ConnectionStatus.CONNECTED -> "● Conectado$peerText"
                 ConnectionStatus.ERROR -> "● Error: ${ui.error ?: ""}"
             },
             color = when (ui.status) {
@@ -119,6 +126,11 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         if (ui.status == ConnectionStatus.CONNECTED) {
             Spacer(Modifier.height(8.dp))
             Button(onClick = { tick(); vm.disconnect() }) { Text("Desconectar") }
+        }
+        // P0-4: cancelar un intento en curso también desde Ajustes.
+        if (ui.status == ConnectionStatus.CONNECTING) {
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { tick(); vm.disconnect() }) { Text("Cancelar") }
         }
         Spacer(Modifier.height(16.dp))
         // --- Buscar TV en la red (sin escribir IP ni PIN) ---
