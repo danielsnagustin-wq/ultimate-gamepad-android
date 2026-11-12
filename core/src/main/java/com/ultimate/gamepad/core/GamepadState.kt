@@ -14,8 +14,8 @@ import kotlin.math.sqrt
  * bitmask de 16 bits (GamepadExtraButtons: L4/R4). Viajan en el
  * byte reservado 29 del protocolo (GamepadProtocol), NO en el
  * bitmask; por eso el remapeo de GameProfile NO los cubre. El
- * descriptor HID (12/14 botones) tampoco los envía como botones
- * propios: el ViewModel los remapea a L3/R3 en publish()
+ * descriptor HID (16 botones, todos estándar) tampoco los envía
+ * como botones propios: el ViewModel los remapea a L3/R3 en publish()
  * (GamepadButtons.extraRemapBits, ronda REA GFN+OpenNOW), que
  * GeForce NOW y OpenNOW sí pasan al juego por todos los
  * transportes, incluido Bluetooth HID.
@@ -116,8 +116,9 @@ object GamepadButtons {
  * guardan en GamepadState.extraButtons, separados del bitmask.
  * En la TV se inyectan como BTN_TRIGGER_HAPPY2/3 (uinput), que
  * GeForce NOW y OpenNOW ignoran; por Bluetooth HID NO se envían
- * como botones propios (el descriptor declara 12/14 botones y no
- * hay hueco para L4/R4) y el remapeo por juego tampoco los cubre.
+ * como botones propios (el descriptor declara 16 botones y los 16
+ * son botones estándar, sin hueco para las paletas) y el remapeo
+ * por juego tampoco los cubre.
  * Lo que sí llega al juego por todos los transportes es el
  * remapeo a L3/R3 (GamepadButtons.extraRemapBits, aplicado en
  * GamepadViewModel.publish()).
