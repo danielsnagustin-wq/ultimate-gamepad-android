@@ -101,19 +101,19 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         Spacer(Modifier.height(8.dp))
         Text("Perfil: ${profile.name} (${profile.deviceName})", fontSize = 14.sp, color = Color.White)
         Text(
-            "Método: ${ui.attemptMethod.label} · Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}",
+            "Método: ${ui.attemptMethod.label} · Ping: ${ui.pingMs?.let { "$it ms" } ?: "sin datos"}",
             color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "En vivo — Stick izq: (${String.format(Locale.US, "%.2f", state.leftX)}, ${String.format(Locale.US, "%.2f", state.leftY)})  " +
+            "En vivo · Stick izq: (${String.format(Locale.US, "%.2f", state.leftX)}, ${String.format(Locale.US, "%.2f", state.leftY)})  " +
                 "Stick der: (${String.format(Locale.US, "%.2f", state.rightX)}, ${String.format(Locale.US, "%.2f", state.rightY)})  " +
                 "LT: ${String.format(Locale.US, "%.2f", state.leftTrigger)} RT: ${String.format(Locale.US, "%.2f", state.rightTrigger)}",
             fontSize = 14.sp,
             color = Color.White,
         )
         Spacer(Modifier.height(12.dp))
-        Text("Checklist — ${checklist.testedCount}/${checklist.totalCount} controles probados", fontSize = 15.sp, color = Color.White)
+        Text("Checklist: ${checklist.testedCount}/${checklist.totalCount} controles probados", fontSize = 15.sp, color = Color.White)
         for (item in checklist.items(ui.activeProfileId)) {
             Text(
                 (if (item.tested) "✓ " else "○ ") + item.label,
@@ -128,29 +128,29 @@ fun ControllerTestScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
         Spacer(Modifier.height(4.dp))
         Text(
             "1. Teléfono envía: " + when (ui.status) {
-                ConnectionStatus.CONNECTED -> "SÍ — conectado, enviando a ${transportSendRateHz(ui.attemptMethod)} Hz por ${ui.attemptMethod.label}."
-                ConnectionStatus.CONNECTING -> "Aún no — conectando…"
-                else -> "NO — sin conexión."
+                ConnectionStatus.CONNECTED -> "SÍ: conectado, enviando a ${transportSendRateHz(ui.attemptMethod)} Hz por ${ui.attemptMethod.label}."
+                ConnectionStatus.CONNECTING -> "Aún no: conectando…"
+                else -> "NO: sin conexión."
             },
             fontSize = 14.sp,
             color = Color.White,
         )
         Text(
             "2. Receptor recibe: " + when {
-                ui.tvReceivingPackets -> "SÍ — la TV ha recibido ${ui.tvPacketsReceived} paquetes de mando. Si el juego no responde con paquetes llegando, el juego solo ve el mando por Bluetooth HID: empareja el teléfono en Ajustes > Bluetooth de la TV (Shizuku está descartado en esta TV)."
-                ui.tvResponding -> "NO — la TV responde al ping pero no recibe paquetes de mando."
-                else -> "Sin datos — conecta primero (el teléfono aún no tiene eco de la TV)."
+                ui.tvReceivingPackets -> "SÍ: la TV ha recibido ${ui.tvPacketsReceived} paquetes de mando. Si el juego no responde con paquetes llegando, el juego solo ve el mando por Bluetooth HID: empareja el teléfono en Ajustes > Bluetooth de la TV (Shizuku está descartado en esta TV)."
+                ui.tvResponding -> "NO: la TV responde al ping pero no recibe paquetes de mando."
+                else -> "Sin datos: conecta primero (el teléfono aún no tiene eco de la TV)."
             },
             fontSize = 14.sp,
             color = Color.White,
         )
         Text(
-            "3. Android registra: sin datos en el teléfono — míralo en el diagnóstico de la TV (\"Parece mando real\").",
+            "3. Android registra: sin datos en el teléfono: míralo en el diagnóstico de la TV (\"Parece mando real\").",
             fontSize = 14.sp,
             color = Color.White,
         )
         Text(
-            "4. OpenNOW recibe: " + if (openNowConfirmed) "SÍ — confirmado por ti tras probar un juego." else "PENDIENTE — solo se marca tras probar un juego.",
+            "4. OpenNOW recibe: " + if (openNowConfirmed) "SÍ: confirmado por ti tras probar un juego." else "PENDIENTE: solo se marca tras probar un juego.",
             color = if (openNowConfirmed) Color(0xFF4CAF50) else Color(0xFFFFC107),
             fontSize = 14.sp,
         )
