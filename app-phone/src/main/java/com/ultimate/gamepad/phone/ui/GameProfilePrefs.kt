@@ -26,6 +26,8 @@ object GameProfilePrefs {
     private const val PREFS = "ultimate_gamepad_game_profiles"
     private const val KEY_JSON = "profiles_json"
     private const val KEY_ACTIVE = "active_profile_name"
+    /** Respaldo del JSON crudo cuando la raíz no parsea (ronda 2 P2-10). */
+    private const val KEY_CORRUPT_BACKUP = "profiles_json_corrupt_backup"
 
     fun loadAll(context: Context): List<GameProfile> {
         val json = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_JSON, null)
@@ -35,7 +37,15 @@ object GameProfilePrefs {
             (0 until arr.length()).mapNotNull { i ->
                 runCatching { fromJson(arr.getJSONObject(i)) }.getOrNull()
             }.map { it.sanitized() }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            // Ronda 2 P2-10: JSON raíz corrupto: guardar el texto
+            // crudo en una clave de respaldo antes de devolver
+            // vacío, o el siguiente saveAll() lo borraba para
+            // siempre sin que nadie pudiera recuperarlo.
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_CORRUPT_BACKUP, json).apply()
+            emptyList()
+        }
     }
 
     fun saveAll(context: Context, profiles: List<GameProfile>) {
