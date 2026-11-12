@@ -60,17 +60,9 @@ object GamepadClassification {
     const val SOURCE_GAMEPAD: Int = 0x00000400
     const val SOURCE_JOYSTICK: Int = 0x01000000
     const val SOURCE_GAMEPAD_JOYSTICK: Int = SOURCE_GAMEPAD or SOURCE_JOYSTICK
-    // Fuentes PROHIBIDAS para eventos de juego (causan "control de TV").
-    const val SOURCE_DPAD: Int = 0x00000200
-    const val SOURCE_KEYBOARD: Int = 0x00000100
-    const val SOURCE_TOUCHSCREEN: Int = 0x00001000
 
     fun isGamepadSource(sources: Int): Boolean =
         (sources and SOURCE_GAMEPAD) != 0 || (sources and SOURCE_JOYSTICK) != 0
-
-    fun hasForbiddenSourceOnly(sources: Int): Boolean =
-        !isGamepadSource(sources) &&
-            ((sources and SOURCE_DPAD) != 0 || (sources and SOURCE_KEYBOARD) != 0)
 }
 
 /** Especificación exacta del mando virtual uinput Xbox 360. */
@@ -200,8 +192,8 @@ object HidGamepadDescriptor {
         0xA1.toByte(), 0x01.toByte(), // Collection (Application)
         // Report ID (1): al haber reportes PID con ID (2-7), el
         // reporte de entrada también lleva ID; sin él, el host no
-        // puede distinguir los reportes. En el cable son 8 bytes
-        // (ID + 7 de datos); la API entrega los 7 datos sin el ID.
+        // puede distinguir los reportes. En el cable son 10 bytes
+        // (ID + 9 de datos); la API entrega los 9 datos sin el ID.
         0x85.toByte(), 0x01.toByte(), // Report ID (1)
         0x09.toByte(), 0x01.toByte(), //   Usage (Pointer)
         0xA1.toByte(), 0x00.toByte(), //   Collection (Physical)
