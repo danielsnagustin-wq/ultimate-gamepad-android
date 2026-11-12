@@ -21,7 +21,7 @@ import org.junit.Test
  * flecha abajo usa el ancho de ventana real (757 dp).
  *
  * Tolerancias: 1 dp en alto (en las pantallas más bajas con
- * escala 1.6 el ajuste toca el suelo de 0.45 y el contenido puede
+ * escala 1.6 el ajuste toca el suelo de 0.43 y el contenido puede
  * pasarse <1 dp: invisible, menos de 2 px) y 0.5 dp en ancho
  * (redondeo de Float).
  */
@@ -113,7 +113,7 @@ class LayoutGeometryTest {
         for (c in landscapeCases()) {
             val cols = L.landscapeColumns(c.layout)
             val fit = fitOf(c)
-            assertTrue("${c.name}: fit $fit fuera de [0.45, 1]", fit in L.MIN_FIT..L.MAX_FIT)
+            assertTrue("${c.name}: fit $fit fuera de [0.43, 1]", fit in L.MIN_FIT..L.MAX_FIT)
             val scaledH = cols.maxSpanH * fit
             assertTrue("${c.name}: alto escalado $scaledH > disponible ${availH(c.screenH)}", scaledH <= availH(c.screenH) + 1f)
             val scaledW = cols.contentW * fit
@@ -301,7 +301,7 @@ class LayoutGeometryTest {
             val avH = screenH - 2 * L.OUTER_PADDING_DP - L.SHOULDER_ROW_H
             val cols = L.landscapeColumns(layout)
             val fit = L.fitFor(aw, avH, cols.maxSpanH, cols.contentW)
-            assertTrue("$name: fit $fit fuera de [0.45, 1]", fit in L.MIN_FIT..L.MAX_FIT)
+            assertTrue("$name: fit $fit fuera de [0.43, 1]", fit in L.MIN_FIT..L.MAX_FIT)
             // La cruceta entera (plato) dentro del hueco, con margen.
             val dishBottom = newDpadBottomVisual(avH, fit, cols, layout)
             assertTrue("$name: el plato de la cruceta se sale ($dishBottom > $avH)", dishBottom <= avH)
