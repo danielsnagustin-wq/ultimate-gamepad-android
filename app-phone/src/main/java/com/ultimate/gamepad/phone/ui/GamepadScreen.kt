@@ -149,7 +149,7 @@ fun GamepadScreen(vm: GamepadViewModel) {
             .background(MaterialTheme.colorScheme.background)
             .border(
                 1.5.dp,
-                Brush.linearGradient(listOf(Color(0xFF00E5FF).copy(alpha = 0.35f), Color(0xFF7C4DFF).copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.35f))),
+                Brush.linearGradient(listOf(Color(0xFF00E5FF).copy(alpha = 0.35f), MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), Color(0xFF00E5FF).copy(alpha = 0.35f))),
                 RoundedCornerShape(24.dp),
             )
             .padding(12.dp),
@@ -157,7 +157,7 @@ fun GamepadScreen(vm: GamepadViewModel) {
         GamepadBody(vm, ui, layout, GamepadInteraction.Game(vm, ui), Modifier.fillMaxSize())
         if (ui.showSettings) SettingsScreen(vm, ui)
         if (ui.showLayoutEditor) LayoutEditorScreen(vm) { vm.closeLayoutEditor() }
-        if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeSettings() }, vibrationEnabled = vm.vibrationEnabled.collectAsState().value)
+        if (ui.showQrScanner) QrScannerScreen(onResult = { vm.connectFromQr(it) }, onClose = { vm.closeQrScanner() }, vibrationEnabled = vm.vibrationEnabled.collectAsState().value)
         // Pantallas Fase 3 (se abren desde Ajustes, vuelven a Ajustes al cerrar).
         if (ui.showControllerType) ControllerTypeScreen(vm, ui) { vm.closeControllerType() }
         if (ui.showGameProfiles) GameProfilesScreen(vm) { vm.closeGameProfiles() }
@@ -314,12 +314,16 @@ fun GamepadBody(
  * negro siga siendo negro (AMOLED). */
 @Composable
 private fun NeonBackground(modifier: Modifier = Modifier) {
+    // Ronda 2 P2-11: el acento del usuario (MaterialTheme) — se
+    // iza aquí porque dentro del Canvas (DrawScope) no se puede
+    // leer MaterialTheme (es @Composable).
+    val accent = MaterialTheme.colorScheme.primary
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF7C4DFF).copy(alpha = 0.12f), Color.Transparent),
+                colors = listOf(accent.copy(alpha = 0.12f), Color.Transparent),
                 center = Offset(w * 0.15f, h * 0.2f),
                 radius = w * 0.35f,
             ),
@@ -339,7 +343,7 @@ private fun NeonBackground(modifier: Modifier = Modifier) {
             moveTo(0f, h * 0.78f)
             quadraticBezierTo(w * 0.5f, h * 0.35f, w, h * 0.62f)
         }
-        drawPath(curve1, Color(0xFF7C4DFF).copy(alpha = 0.16f), style = Stroke(width = 2.dp.toPx()))
+        drawPath(curve1, accent.copy(alpha = 0.16f), style = Stroke(width = 2.dp.toPx()))
         val curve2 = Path().apply {
             moveTo(0f, h * 0.22f)
             quadraticBezierTo(w * 0.5f, h * 0.62f, w, h * 0.18f)
@@ -480,7 +484,7 @@ private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState, interaction: Ga
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(Color.Black.copy(alpha = 0.92f))
-            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
             .then(if (interaction is GamepadInteraction.Game) Modifier.clickable { vm.openSettings() } else Modifier)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -500,7 +504,7 @@ private fun GearButton(onClick: () -> Unit, interactive: Boolean = true) {
             .pressEffect(pressed)
             .clip(CircleShape)
             .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
-            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.6f), CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape)
             .then(if (interactive) Modifier.pointerPress { p -> pressed = p; if (p) onClick() } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text("⚙", color = Color.White, fontSize = 20.sp) }
@@ -564,7 +568,7 @@ private fun StickLabel(label: String) {
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFF111111))
-                .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 8.dp, vertical = 3.dp),
         ) { Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
         Text("Toca el stick", color = Color(0xFF9AA0B0), fontSize = 11.sp)
@@ -693,11 +697,11 @@ private fun ShoulderButton(label: String, interactive: Boolean = true, onPress: 
             .clip(RoundedCornerShape(19.dp))
             .background(
                 Brush.verticalGradient(
-                    if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
+                    if (pressed) listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
                     else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
-            .border(1.dp, Brush.linearGradient(listOf(Color(0xFF7C4DFF), Color(0xFF00E5FF))), RoundedCornerShape(19.dp))
+            .border(1.dp, Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF00E5FF))), RoundedCornerShape(19.dp))
             .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
@@ -713,11 +717,11 @@ fun SmallButton(label: String, icon: @Composable () -> Unit, interactive: Boolea
             .clip(RoundedCornerShape(14.dp))
             .background(
                 Brush.verticalGradient(
-                    if (pressed) listOf(Color(0xFF7C4DFF), Color(0xFF5E35B1))
+                    if (pressed) listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f))
                     else listOf(Color(0xFF1A1D27), Color(0xFF000000)),
                 ),
             )
-            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
@@ -737,7 +741,7 @@ private fun PulsePill(label: String, icon: @Composable () -> Unit, interactive: 
             .pressEffect(pressed)
             .clip(RoundedCornerShape(14.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF1A1D27), Color(0xFF000000))))
-            .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
             .then(if (interactive) Modifier.pointerPress { p -> pressed = p; if (p) onTap() } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
