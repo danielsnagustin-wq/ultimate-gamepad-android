@@ -183,7 +183,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         if (recording == null) {
             Button(onClick = { tick(); vm.startMacroRecording(macroName) }) { Text("●  Grabar macro") }
         } else {
-            Button(onClick = { tick(); vm.stopMacroRecording() }) { Text("■  Parar y guardar ($recording)") }
+            Button(onClick = { tick(); vm.stopMacroRecording(); macroName = "" }) { Text("■  Parar y guardar ($recording)") }
         }
         for (macro in macros) {
             Spacer(Modifier.height(8.dp))
@@ -346,7 +346,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                 .height(180.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF111111))
-                .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                 .pointerInput(ui.mouseEnabled) {
                     if (!ui.mouseEnabled) return@pointerInput
                     detectDragGestures { change, dragAmount ->
