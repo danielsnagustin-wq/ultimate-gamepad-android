@@ -449,10 +449,13 @@ static int ug_keyboard_event_locked(int code, int action) {
     return 1;
 }
 
-/* action: 0 = mover/clic, 1 = crear el dispositivo, 2 = destruirlo.
+/* action: 0 = mover/clic, 2 = crear el dispositivo, 3 = destruirlo
+ * (alineado con ExtrasProtocol.ACTION_CREATE = 2 / ACTION_DESTROY = 3;
+ * antes era 1 = crear, 2 = destruir y el teléfono enviaba crear=2,
+ * así que activar el modo ratón lo destruía).
  * buttons: bit 0 = izquierdo, bit 1 = derecho, bit 2 = central. */
 static int ug_mouse_event_locked(int dx, int dy, int buttons, int action) {
-    if (action == 2) {
+    if (action == 3) {
         if (mouse_fd >= 0) {
             ioctl(mouse_fd, UI_DEV_DESTROY);
             close(mouse_fd);
@@ -461,7 +464,7 @@ static int ug_mouse_event_locked(int dx, int dy, int buttons, int action) {
         prev_mouse_buttons = 0;
         return 1;
     }
-    if (action == 1) return ug_create_mouse_locked();
+    if (action == 2) return ug_create_mouse_locked();
     if (mouse_fd < 0 && !ug_create_mouse_locked()) return 0;
     if (dx != 0 && write_event_fd(mouse_fd, EV_REL, REL_X, dx) < 0) return 0;
     if (dy != 0 && write_event_fd(mouse_fd, EV_REL, REL_Y, dy) < 0) return 0;
