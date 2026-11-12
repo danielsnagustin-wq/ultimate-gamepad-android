@@ -33,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -132,7 +134,12 @@ fun UiCustomizationScreen(onClose: () -> Unit) {
                                 Modifier.border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
                             },
                         )
-                        .clickable { apply(customization.copy(accentArgb = option.argb)) },
+                        .clickable { apply(customization.copy(accentArgb = option.argb)) }
+                        // R-39: el círculo es solo color (sin texto
+                        // cuando no está seleccionado: la "✓" solo
+                        // aparece si es el activo). Sin descripción,
+                        // TalkBack lo anuncia como botón sin nombre.
+                        .semantics { contentDescription = "Color de acento ${option.label}" },
                 ) {
                     if (selected) {
                         Text("✓", color = Color.White, fontSize = 20.sp)
@@ -167,7 +174,7 @@ fun UiCustomizationScreen(onClose: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Ejemplo: Conectado · 10 ms — la TV recibe paquetes de mando.",
+            "Ejemplo: Conectado · 10 ms: la TV recibe paquetes de mando.",
             color = Color.White,
             fontSize = 15.sp,
         )
