@@ -108,21 +108,6 @@ fun uiColorSchemeFrom(
     onSurface = Color(0xFFE8EAF0),
 )
 
-/** Atajo: mismo esquema construido desde el darkColorScheme base. */
-fun uiColorScheme(accentArgb: Int, backgroundArgb: Int): ColorScheme =
-    uiColorSchemeFrom(
-        base = darkColorScheme(
-            primary = Color(UiCustomizationPrefs.DEFAULT_ACCENT_ARGB),
-            onPrimary = Color.White,
-            background = Color(0xFF0B0E14),
-            surface = Color(0xFF151A26),
-            onBackground = Color(0xFFE8EAF0),
-            onSurface = Color(0xFFE8EAF0),
-        ),
-        accentArgb = accentArgb,
-        backgroundArgb = backgroundArgb,
-    )
-
 /**
  * Envuelve el contenido raíz de la app: proporciona los ajustes
  * (LocalUiCustomization + LocalUiCustomizationHolder) y el
