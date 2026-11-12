@@ -298,7 +298,15 @@ class GamepadSenderService : Service() {
             var sequence = 0
             try {
                 address = runCatching { InetAddress.getByName(host) }.getOrNull()
-                if (address == null) { lastError = "IP no válida: $host"; return@launch }
+                if (address == null) {
+                    lastError = "IP no válida: $host"
+                    // OpenCode P2-4: soltar el WifiLock antes de
+                    // salir: si no, quedaba adquirido hasta
+                    // stopSending/onDestroy. Solo se adquirió para
+                    // Wi-Fi; soltar sin haberlo adquirido rompería.
+                    if (method == TransportMethod.WIFI_UDP || method == TransportMethod.WIFI_TCP) wifiLock.release()
+                    return@launch
+                }
                 var lastPingSentAt = 0L
                 var pingSequence = -1
                 lastTcpSendAtMs = 0L
@@ -453,7 +461,7 @@ class GamepadSenderService : Service() {
                         runCatching { bt?.close() }; bt = null
                         delay(1000)
                     }
-                    delay(8) // ~120 Hz: el mando responde el doble de rápido que a 60 Hz.
+                    delay(8) // ~120 Hz nominal: el bucle tarda 8 ms + el trabajo de envío; la cifra real que se muestra es la medida (recordSent, ventana deslizante de 1 s), no este 8.
                 }
             } finally {
                 // H2: al parar, soltar los controles en la TV con un
