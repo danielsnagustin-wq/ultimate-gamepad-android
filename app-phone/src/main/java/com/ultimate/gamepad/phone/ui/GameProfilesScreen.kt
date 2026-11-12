@@ -317,7 +317,7 @@ private fun GameProfileEditor(
             // Arreglo 10: "✓ Diseño guardado" mentía — esto solo
             // deja el diseño en el borrador; se confirma al pulsar
             // Guardar o Aplicar. El texto lo dice así.
-            Text(if (draft.layoutJson != null) "✓ Diseño de botones en este perfil (borrador) — guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil (borrador: se confirma con Guardar o Aplicar)", color = Color.White)
+            Text(if (draft.layoutJson != null) "✓ Diseño de botones en este perfil (borrador): guardar el actual de nuevo" else "Guardar el diseño de botones actual en este perfil (borrador: se confirma con Guardar o Aplicar)", color = Color.White)
         }
         Spacer(Modifier.height(12.dp))
         Button(onClick = { tick(); onApply(draft.copy(name = name)) }, modifier = Modifier.fillMaxWidth()) { Text("Aplicar este perfil") }
