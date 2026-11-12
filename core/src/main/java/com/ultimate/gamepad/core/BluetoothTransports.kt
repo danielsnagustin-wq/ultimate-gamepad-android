@@ -54,7 +54,7 @@ object HidDescriptor {
 /** Receptor Bluetooth-datos en la TV: misma entrada, distinto canal. */
 interface BluetoothDataReceiver {
     val method: TransportMethod get() = TransportMethod.BLUETOOTH_DATA
-    /** Estado real: en Etapa 1 siempre PENDING_STAGE2 hasta que se implemente. */
+    /** Estado real del receptor (Fase 5: AVAILABLE / CONNECTED / FAILED según el enlace SPP). */
     val status: TransportStatus
     fun start(onPacket: (GamepadState) -> Unit)
     fun stop()
