@@ -78,17 +78,12 @@ fun Modifier.pointerPress(onPress: (Boolean) -> Unit): Modifier = this.pointerIn
                         presses = (presses - 1).coerceAtLeast(0)
                         if (presses == 0) onPress(false)
                     }
-                    androidx.compose.ui.input.pointer.PointerEventType.Cancel -> {
-                        // Ronda 2 P2-6: el KDoc promete liberar en
-                        // Cancel y el código no lo hacía (el finally
-                        // solo cubre la cancelación de la corrutina,
-                        // no la del gesto).
-                        presses = 0
-                        onPress(false)
-                    }
                 }
             }
         } finally {
+            // Al cancelarse el gesto, Compose cancela esta
+            // corrutina y el finally libera el botón: no existe
+            // un evento PointerEventType.Cancel en este Compose.
             if (presses > 0) {
                 presses = 0
                 onPress(false)
