@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.ultimate.gamepad.core.PairingInfo
 import com.ultimate.gamepad.core.TransportMethod
+import kotlinx.coroutines.delay
 
 /**
  * Ajustes y conexión (⚙). La pantalla del mando es solo el
@@ -70,6 +72,27 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
     // Arreglo 12: IP/PIN sobreviven a la rotación.
     var host by rememberSaveable { mutableStateOf("") }
     var pin by rememberSaveable { mutableStateOf("") }
+    // Ronda 2 P1-3: pre-rellenar con la IP/PIN del estado (TV
+    // descubierta o NSD sin PIN): antes los campos nacían vacíos
+    // y "Conectar por IP / PIN" pedía la IP aunque ya se supiera.
+    // Solo se copia cuando cambia el estado (no mientras el
+    // usuario teclea: teclear no cambia ui.host/ui.pin).
+    LaunchedEffect(ui.host, ui.pin) {
+        if (ui.host.isNotBlank()) host = ui.host
+        if (ui.pin.isNotBlank()) pin = ui.pin
+    }
+    // Ronda 2 P2-15: el emparejado HID es manual en la TV y tarda:
+    // un ticker local de 1 s para mostrar los segundos esperando
+    // en la línea de estado (se cancela al salir de CONECTANDO).
+    var tickerMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(ui.status) {
+        if (ui.status == ConnectionStatus.CONNECTING) {
+            while (true) {
+                delay(1000)
+                tickerMs = System.currentTimeMillis()
+            }
+        }
+    }
     // Pantalla completa OPACA con scroll: el fondo opaco tapa el
     // mando y el clickable vacío se traga los toques para que no
     // lleguen al joystick de detrás.
@@ -88,14 +111,17 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
         Spacer(Modifier.height(8.dp))
         // P1-4: por HID no hay IP (`host` está vacío): el estado
         // dice el nombre del dispositivo conectado, no "a ".
+        // Ronda 2 P2-3: lo mismo por Bluetooth datos (SPP).
         val peerText = when {
             ui.attemptMethod == TransportMethod.BLUETOOTH_HID -> ui.hidPeerName?.let { " a $it" } ?: " por Bluetooth HID"
+            ui.attemptMethod == TransportMethod.BLUETOOTH_DATA -> ui.btDataPeerName?.let { " a $it" } ?: " por Bluetooth datos"
             else -> " a ${ui.host}"
         }
         Text(
             text = when (ui.status) {
                 ConnectionStatus.DISCONNECTED -> "● Desconectado"
-                ConnectionStatus.CONNECTING -> "● Conectando por ${ui.attemptMethod.label}$peerText…"
+                // Ronda 2 P2-15: segundos esperando en HID.
+                ConnectionStatus.CONNECTING -> "● Conectando por ${ui.attemptMethod.label}$peerText…${if (ui.attemptMethod == TransportMethod.BLUETOOTH_HID && ui.connectingSinceMs > 0) " (${(tickerMs - ui.connectingSinceMs) / 1000} s)" else ""}"
                 ConnectionStatus.CONNECTED -> "● Conectado$peerText"
                 ConnectionStatus.ERROR -> "● Error: ${ui.error ?: ""}"
             },
@@ -107,8 +133,11 @@ fun SettingsScreen(vm: GamepadViewModel, ui: GamepadUiState) {
             },
             fontSize = 15.sp,
         )
+        // Ronda 2 P2-2: método REAL del intento en curso (en AUTO
+        // con fallback, el chip elegido no es el que se usa).
+        val methodShown = if (ui.status == ConnectionStatus.CONNECTED || ui.status == ConnectionStatus.CONNECTING) ui.attemptMethod else ui.selectedMethod
         Text(
-            text = "Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}   ·   Método: ${ui.selectedMethod.label} (${ui.transportMode})",
+            text = "Ping: ${ui.pingMs?.let { "$it ms" } ?: "—"}   ·   Método: ${methodShown.label} (${ui.transportMode})",
             color = Color.White,
             fontSize = 13.sp,
         )
