@@ -38,6 +38,8 @@ object ExtrasPrefs {
     private const val KEY_GYRO_ENABLED = "gyro_enabled"
     private const val KEY_GYRO_SENSITIVITY = "gyro_sensitivity"
     private const val KEY_MACROS = "macros_json"
+    /** Respaldo del JSON crudo cuando la raíz no parsea (ronda 2 P2-10). */
+    private const val KEY_MACROS_CORRUPT_BACKUP = "macros_json_corrupt_backup"
     private const val KEY_L4_REMAP = "l4_remap"
     private const val KEY_R4_REMAP = "r4_remap"
 
@@ -127,7 +129,13 @@ object ExtrasPrefs {
             (0 until arr.length()).mapNotNull { i ->
                 runCatching { macroFromJson(arr.getJSONObject(i)) }.getOrNull()
             }.map { it.sanitized() }.filter { it.events.isNotEmpty() }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            // Ronda 2 P2-10: igual que en GameProfilePrefs: el
+            // texto crudo queda en respaldo antes de devolver vacío.
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(KEY_MACROS_CORRUPT_BACKUP, json).apply()
+            emptyList()
+        }
     }
 
     fun saveMacros(context: Context, macros: List<GamepadMacro>) {
