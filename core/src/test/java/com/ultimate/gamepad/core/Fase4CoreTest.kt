@@ -220,7 +220,7 @@ class Fase4CoreTest {
         assertEquals(ExtrasProtocol.ACTION_CREATE, create!!.action)
     }
 
-    @Test fun `contrato de acciones del raton: 0 mover-clic, 2 crear, 3 destruir`() {
+    @Test fun `contrato de acciones del raton - 0 mover-clic, 2 crear, 3 destruir`() {
         // H-04: el nativo alinea con ExtrasProtocol (2 = crear,
         // 3 = destruir); la acción 1 no es válida para el ratón
         // (decodeMouse la rechaza) y el .c ya no la interpreta.
