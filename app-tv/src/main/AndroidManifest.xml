@@ -4,7 +4,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Ronda 2 P1: igual que en el teléfono: el receptor recibe
+         datos continuamente; tipo dataSync (sin permiso BT en
+         tiempo de ejecución). Antes connectedDevice. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- A4: igual que en el teléfono (Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -37,7 +40,7 @@
         </activity>
         <service
             android:name=".receiver.UdpReceiverService"
-            android:foregroundServiceType="connectedDevice"
+            android:foregroundServiceType="dataSync"
             android:exported="false" />
         <!-- Receptor TCP (puerto 52000): lo arranca UdpReceiverService
              al iniciar. Sin esta declaración, startService() lo ignora
