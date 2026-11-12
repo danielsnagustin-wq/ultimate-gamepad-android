@@ -3,24 +3,20 @@ package com.ultimate.gamepad.tv.receiver
 /**
  * Interruptor de Fase 2 — Shizuku / uinput.
  *
- * Orden de prioridades (no cambia con el multi-transporte):
- *   Fase 1 = enlace Wi-Fi en la misma red, visible en pantalla.
- *   Fase 2 = Shizuku / uinput para que OpenNOW lo vea como mando real.
+ * **Shizuku está DESCARTADO del todo en esta TV** (2026-11-07: no está
+ * adaptado a TV y la TV no tiene depuración de red ni inalámbrica, solo
+ * USB). La única vía para que el juego vea un mando es el **Bluetooth
+ * HID directo del teléfono**. Por eso este flag es **false**: con él en
+ * true, `UdpReceiverService.deliver()` intentaba la inyección Shizuku
+ * en CADA paquete (120 Hz) y sobrescribía `lastError` con el mensaje de
+ * Shizuku 120 veces por segundo, sin que nada pudiera funcionar.
  *
- * Este flag NO apaga el receptor: la Fase 1 funciona sin Shizuku
- * (recibe, valida, muestra en pantalla y hace eco de ping).
- * Cuando es true, el receptor INTENTA la inyección en este orden:
- *   A. Shizuku + /dev/uinput mando virtual Xbox 360 (principal)
- *   B. Shizuku + InputManager.injectInputEvent SOURCE_GAMEPAD (respaldo)
- *   C. Bluetooth HID (no pasa por aquí: es inyección directa)
- * Si Shizuku no está activo, la inyección queda en "ninguno" y la
- * pantalla lo dice: "Shizuku: no conectado / segunda opción
- * (Fase 2)". Nunca se finge que OpenNOW ya reconoce el mando.
- *
- * Para la Etapa 0, poner en true y probar en la Hyundai; si
- * UinputGamepad.create(profileId) sigue en false (sin .so nativo), la
- * inyección cae a B y la UI lo muestra.
+ * Con el flag en false, `deliver()` vuelve al instante con
+ * `injectionMethod = "ninguno"` y la TV es solo receptora: recibe,
+ * valida, muestra en pantalla y hace eco de ping (Fase 1). El flag
+ * queda como interruptor por si algún día existe una vía real de
+ * inyección en la TV; hasta entonces, NO se vuelve a poner en true.
  */
 object ReceiverConfig {
-    const val SHIZUKU_PHASE2_ENABLED: Boolean = true
+    const val SHIZUKU_PHASE2_ENABLED: Boolean = false
 }
