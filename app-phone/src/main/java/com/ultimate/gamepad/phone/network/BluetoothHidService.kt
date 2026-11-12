@@ -14,12 +14,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadProfiles
 import com.ultimate.gamepad.core.GamepadState
 import com.ultimate.gamepad.core.HidAvailability
+import com.ultimate.gamepad.core.HidInputReport
 import com.ultimate.gamepad.core.RumbleReport
 import com.ultimate.gamepad.core.TransportStatus
+import java.util.concurrent.Executors
 
 private const val TAG = "BluetoothHid"
 
@@ -35,24 +36,29 @@ private const val TAG = "BluetoothHid"
  * empareja y OpenNOW responde) solo se sabe probándolo en la
  * Hyundai — es parte de la Etapa 0 de Bluetooth.
  *
- * Descriptor (Fase 2 + rumble, ronda REA GFN+OpenNOW): el del perfil activo
- * (HidGamepadDescriptor.descriptorFor): Xbox y genérico 12 botones,
- * DS4/DualSense 14 botones. Reporte HID de 7 bytes DE DATOS + Report
- * ID (1) = 8 bytes en el cable, EXACTO según el descriptor del perfil:
- *   byte 0: botones 1-8 (A, B, X, Y, LB, RB, SELECT, START)
- *   byte 1: botones 9-12 (L3, R3, LT digital, RT digital) + relleno
+ * Descriptor (Fase 2 + rumble, ronda REA GFN+OpenNOW; ORDEN DE
+ * BOTONES + GATILLOS corregidos en la ronda Bluetooth dos vías,
+ * 2026-11-11): UN SOLO descriptor para todos los perfiles
+ * (HidGamepadDescriptor.descriptorFor), 16 botones en el orden que
+ * Android espera + gatillos analógicos Brake/Accelerator. Reporte
+ * HID de 9 bytes DE DATOS + Report ID (1) = 10 bytes en el cable:
+ *   byte 0: A, B, X, Y, LB, RB (usos 1, 2, 4, 5, 7, 8)
+ *   byte 1: LT, RT digitales, SELECT, START, HOME, L3, R3, CAPTURE
+ *           (usos 9-16)
  *   byte 2: hat switch (0=arriba, 1=arriba-derecha, 2=derecha,
  *           3=abajo-derecha, 4=abajo, 5=abajo-izquierda,
  *           6=izquierda, 7=arriba-izquierda, 8=centro)
  *   bytes 3-6: ejes X, Y, Z, Rz CON SIGNO (-127..127, centro 0),
  *   como declara el descriptor (Logical Minimum -127, Maximum 127).
+ *   bytes 7-8: gatillos analógicos LT/RT (0..255).
  * Los valores se escalan desde GamepadState (-1..1 / 0..1).
- * La API de BluetoothHidDevice entrega/recibe los 7 datos SIN el ID
+ * La API de BluetoothHidDevice entrega/recibe los 9 datos SIN el ID
  * (el ID va aparte en sendReport/replyReport/onSetReport): por eso
- * hidReportFrom sigue devolviendo 7 bytes y sendReport pasa el ID 1.
- * Este descriptor es el que usan los proyectos open-source de
- * BluetoothHidDevice; el descriptor exacto se valida en Etapa 0
- * contra la Hyundai (algunas TVs son estrictas con el descriptor).
+ * HidInputReport.from devuelve 9 bytes y sendReport pasa el ID 1.
+ * El reporte se construye en :core (HidInputReport, función pura
+ * con tests); este servicio solo lo envía. El descriptor exacto se
+ * valida en Etapa 0 contra la Hyundai (algunas TVs son estrictas
+ * con el descriptor).
  *
  * Rumble (vibración del juego, ronda REA GFN+OpenNOW): el descriptor
  * añade una colección PID (Usage Page 0x0F, solo fuerza constante,
@@ -68,11 +74,10 @@ private const val TAG = "BluetoothHid"
  * queda documentado como límite en docs/PLAN-GAMEPAD-PRO.md,
  * nunca como hecho.
  *
- * L4/R4 (Fase 4, ronda REA GFN+OpenNOW): el descriptor declara 12
- * botones (14 en DS4/DualSense) y no hay hueco para las paletas
- * como botones propios; ampliar el descriptor cambiaría el
- * reporte de 7 bytes y es trabajo aparte. En su lugar, el
- * ViewModel las remapea a L3/R3 en publish()
+ * L4/R4 (Fase 4, ronda REA GFN+OpenNOW): el descriptor declara 16
+ * botones y los 16 son botones estándar; no queda hueco para las
+ * paletas como botones propios. En su lugar, el ViewModel las
+ * remapea a L3/R3 en publish()
  * (GamepadButtons.extraRemapBits): por HID llegan como L3/R3, que
  * GeForce NOW y OpenNOW sí pasan al juego. Por Wi-Fi, L4/R4
  * siguen viajando además en el byte 29 (uinput en la TV,
@@ -88,6 +93,10 @@ class BluetoothHidService(private val context: Context) {
         private set
     @Volatile var connectedDevice: BluetoothDevice? = null
         private set
+
+    /** Nombre del dispositivo HID conectado (la TV), o null si no hay ninguno. Con runCatching: en Android 12+ leer el nombre exige BLUETOOTH_CONNECT. */
+    val connectedDeviceName: String?
+        get() = runCatching { connectedDevice?.name }.getOrNull()
 
     /**
      * Aviso al ViewModel cuando el enlace HID cambia (conectado /
@@ -105,13 +114,29 @@ class BluetoothHidService(private val context: Context) {
      */
     @Volatile var onRumble: ((strong: Int, weak: Int, durationMs: Int) -> Unit)? = null
 
-    /** Último reporte de entrada enviado (7 bytes de datos, sin el ID 1): para responder a un GET_REPORT de entrada del host. */
-    @Volatile private var lastInputPayload: ByteArray = ByteArray(7)
+    /** Último reporte de entrada enviado (9 bytes de datos, sin el ID 1): para responder a un GET_REPORT de entrada del host. */
+    @Volatile private var lastInputPayload: ByteArray = ByteArray(HidInputReport.SIZE_BYTES)
+    /** Últimos reportes de salida del host (OpenCode P2-2): el host
+     * puede pedirlos con GET_REPORT tras haberlos mandado; si nunca
+     * llegaron, se responde con ceros del tamaño correcto, no con
+     * ERROR_RSP_INVALID_RPT_ID. */
+    @Volatile private var lastSetEffect: ByteArray = ByteArray(RumbleReport.SET_EFFECT_SIZE)
+    @Volatile private var lastConstantForce: ByteArray = ByteArray(RumbleReport.SET_CONSTANT_FORCE_SIZE)
+    @Volatile private var lastEffectOperation: ByteArray = ByteArray(RumbleReport.EFFECT_OPERATION_SIZE)
+    @Volatile private var lastCreateNewEffect: ByteArray = ByteArray(RumbleReport.CREATE_NEW_EFFECT_SIZE)
     /** Estado del efecto de rumble en curso (un solo motor). */
     @Volatile private var rumbleMagnitude: Int = 0
     @Volatile private var rumbleDurationMs: Int = RumbleReport.DURATION_INFINITE
     @Volatile private var rumbleBlockIndex: Int = 0
     @Volatile private var deviceGain: Int = 255
+
+    /** Envío de reportes fuera del hilo principal (OpenCode P1-1):
+     * sendReport() es una llamada IPC al stack Bluetooth y publish()
+     * + el latido la llaman desde el hilo Main. Un solo hilo en
+     * orden (FIFO) mantiene el orden de los reportes y no bloquea
+     * la UI. Vive mientras viva el servicio (una instancia por
+     * ViewModel); el proceso lo cierra al morir la app. */
+    private val sendExecutor = Executors.newSingleThreadExecutor()
 
     /** ¿La app HID está registrada (registerApp devolvió true)? */
     @Volatile var appRegistered: Boolean = false
@@ -286,6 +311,22 @@ class BluetoothHidService(private val context: Context) {
                 type == BluetoothHidDevice.REPORT_TYPE_INPUT &&
                     id.toInt() == RumbleReport.REPORT_ID_INPUT ->
                     lastInputPayload.copyOf()
+                // Tolerancia GET_REPORT (OpenCode P2-2): el host puede
+                // pedir los reportes de salida que ya mandó; se le
+                // devuelve el último recibido (o ceros del tamaño
+                // correcto si nunca llegó), no un error.
+                type == BluetoothHidDevice.REPORT_TYPE_OUTPUT &&
+                    id.toInt() == RumbleReport.REPORT_ID_SET_EFFECT ->
+                    lastSetEffect.copyOf()
+                type == BluetoothHidDevice.REPORT_TYPE_OUTPUT &&
+                    id.toInt() == RumbleReport.REPORT_ID_SET_CONSTANT_FORCE ->
+                    lastConstantForce.copyOf()
+                type == BluetoothHidDevice.REPORT_TYPE_OUTPUT &&
+                    id.toInt() == RumbleReport.REPORT_ID_EFFECT_OPERATION ->
+                    lastEffectOperation.copyOf()
+                type == BluetoothHidDevice.REPORT_TYPE_FEATURE &&
+                    id.toInt() == RumbleReport.REPORT_ID_CREATE_NEW_EFFECT ->
+                    lastCreateNewEffect.copyOf()
                 else -> null
             }
             if (reply != null) {
@@ -317,13 +358,16 @@ class BluetoothHidService(private val context: Context) {
                     Log.d(TAG, "Rumble: Set Effect tipo ${event.effectType} ignorado (solo fuerza constante)")
                     return
                 }
+                lastSetEffect = data.copyOf()
                 rumbleBlockIndex = event.blockIndex
                 rumbleDurationMs = event.durationMs
             }
             is RumbleReport.Event.ConstantForceSet -> {
+                lastConstantForce = data.copyOf()
                 rumbleMagnitude = event.magnitude
             }
             is RumbleReport.Event.Operation -> {
+                lastEffectOperation = data.copyOf()
                 when (event.operation) {
                     RumbleReport.OP_START, RumbleReport.OP_START_SOLO -> {
                         Log.d(TAG, "Rumble: START bloque ${event.blockIndex} magnitud $rumbleMagnitude dur ${rumbleDurationMs}ms")
@@ -336,6 +380,7 @@ class BluetoothHidService(private val context: Context) {
                 }
             }
             is RumbleReport.Event.CreateNewEffect -> {
+                lastCreateNewEffect = data.copyOf()
                 rumbleBlockIndex = 1
                 Log.d(TAG, "Rumble: Create New Effect tipo ${event.effectType} -> bloque 1")
             }
@@ -351,8 +396,9 @@ class BluetoothHidService(private val context: Context) {
      *  "Xbox 360 Controller", "Xbox One Controller", "Wireless
      *  Controller", "DualSense Wireless Controller" o "Generic
      *  Gamepad"). Descriptor: Game Pad (Usage Page 0x01, Usage 0x05)
-     *  de HidGamepadDescriptor.descriptorFor(profileId): Xbox y
-     *  genérico declaran 12 botones; DS4/DualSense declaran 14.
+     *  de HidGamepadDescriptor.descriptorFor(profileId): UN SOLO
+     *  descriptor de 16 botones en el orden Android + gatillos
+     *  analógicos Brake/Accelerator, igual para todos los perfiles.
      *  Sin servicios extra de teclado/ratón/remoto: solo el perfil
      *  HID de gamepad. El touchpad de DS4/DualSense NO se emula
      *  (opción (a) de la Fase 2).
@@ -406,70 +452,56 @@ class BluetoothHidService(private val context: Context) {
         return runCatching { context.startActivity(intent); true }.getOrDefault(false)
     }
 
-    /** Envía un reporte HID. Solo tiene efecto si hay un dispositivo conectado; si no, devuelve false. */
+    /**
+     * ¿Está el teléfono visible por Bluetooth AHORA? (Gemini P1-1)
+     * requestDiscoverable() solo LANZA el diálogo del sistema: si
+     * el usuario lo cancela, la TV no ve el mando y nada lo decía.
+     * Se comprueba con adapter.scanMode: SCAN_MODE_CONNECTABLE_
+     * DISCOVERABLE solo está activo mientras dura la ventana de
+     * visibilidad. Requiere BLUETOOTH_CONNECT (Android 12+).
+     */
+    fun isDiscoverable(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) return false
+        val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+        return runCatching { adapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE }.getOrDefault(false)
+    }
+
+    /**
+     * Envía un reporte HID. Solo tiene efecto si hay un dispositivo conectado; si no, devuelve false.
+     * El envío va por el ejecutor de un solo hilo (OpenCode P1-1):
+     * sendReport() es IPC al stack Bluetooth y los llamadores
+     * (publish y el latido HID) van en el hilo Main; encolar
+     * mantiene el orden y no bloquea la UI. Devuelve true si el
+     * reporte quedó encolado (el envío real puede fallar en
+     * silencio, como antes); los llamadores ignoran el valor.
+     */
     fun sendReport(state: GamepadState): Boolean {
         val hid = hidDevice ?: return false
         val device = connectedDevice ?: return false
-        val report = hidReportFrom(state)
+        val report = HidInputReport.from(state)
         lastInputPayload = report.copyOf()
         // Report ID (1) aparte: los datos NO incluyen el ID
         // ("Report data, not including Report Id"); el stack lo
         // pone primero en el cable.
-        return runCatching { hid.sendReport(device, RumbleReport.REPORT_ID_INPUT, report) }.getOrDefault(false)
+        sendExecutor.execute {
+            runCatching { hid.sendReport(device, RumbleReport.REPORT_ID_INPUT, report) }
+        }
+        return true
     }
 
-    /** Reporte de 7 bytes DE DATOS según el descriptor (sin el
-     * Report ID 1: lo pone el stack en sendReport). La versión anterior
-     * mandaba 13 bytes con otra disposición: el eje izquierdo caía
-     * en el byte del hat (basura), los ejes salían revueltos
-     * (X=leftY, Y=rightX, Z=rightY, Rz=LT), la cruceta nunca se
-     * enviaba como hat y el RT se ignoraba. La TV leía botones y
-     * sticks equivocados por Bluetooth HID. */
-    fun hidReportFrom(state: GamepadState): ByteArray {
-        // Ejes CON SIGNO (-127..127, centro 0), como declara el
-        // descriptor (Logical Minimum -127, Maximum 127). La versión
-        // anterior sumaba 128 (0..255, centro 128) y el parser de la
-        // TV lo leía como signed: en reposo el byte 0x80 era -128
-        // (fuera de rango, el stick quedaba pegado a tope) y la
-        // dirección salía invertida (derecha = -1, izquierda = +1).
-        fun axis(v: Float): Byte = ((v.coerceIn(-1f, 1f) * 127f).toInt()).toByte()
-        var b0 = 0
-        if (state.isPressed(GamepadButtons.A)) b0 = b0 or 0x01
-        if (state.isPressed(GamepadButtons.B)) b0 = b0 or 0x02
-        if (state.isPressed(GamepadButtons.X)) b0 = b0 or 0x04
-        if (state.isPressed(GamepadButtons.Y)) b0 = b0 or 0x08
-        if (state.isPressed(GamepadButtons.LB)) b0 = b0 or 0x10
-        if (state.isPressed(GamepadButtons.RB)) b0 = b0 or 0x20
-        if (state.isPressed(GamepadButtons.SELECT)) b0 = b0 or 0x40
-        if (state.isPressed(GamepadButtons.START)) b0 = b0 or 0x80
-        var b1 = 0
-        if (state.isPressed(GamepadButtons.L3)) b1 = b1 or 0x01
-        if (state.isPressed(GamepadButtons.R3)) b1 = b1 or 0x02
-        // El descriptor no tiene ejes de gatillo: LT/RT van como
-        // botones digitales 11/12 al pasar de la mitad.
-        if (state.leftTrigger > 0.5f) b1 = b1 or 0x04
-        if (state.rightTrigger > 0.5f) b1 = b1 or 0x08
-        val up = state.isPressed(GamepadButtons.DPAD_UP)
-        val down = state.isPressed(GamepadButtons.DPAD_DOWN)
-        val left = state.isPressed(GamepadButtons.DPAD_LEFT)
-        val right = state.isPressed(GamepadButtons.DPAD_RIGHT)
-        val hat = when {
-            up && right -> 1
-            right && down -> 3
-            down && left -> 5
-            left && up -> 7
-            up -> 0
-            right -> 2
-            down -> 4
-            left -> 6
-            else -> 8 // Centro: sin dirección (valor nulo del hat, estándar HID).
-        }
-        return byteArrayOf(
-            b0.toByte(), b1.toByte(), hat.toByte(),
-            axis(state.leftX), axis(state.leftY),
-            axis(state.rightX), axis(state.rightY),
-        )
-    }
+    /**
+     * Reporte de 9 bytes DE DATOS según el descriptor (sin el
+     * Report ID 1: lo pone el stack en sendReport). La construcción
+     * vive en :core (HidInputReport.from, función pura con tests):
+     * botones en el orden Android (A, B, X, Y, LB, RB, LT/RT
+     * digitales, SELECT, START, HOME, L3, R3, CAPTURE), hat,
+     * ejes con signo (-127..127, centro 0) y gatillos analógicos
+     * (0..255). Se mantiene aquí como delegación para no romper a
+     * los llamadores (GamepadViewModel.publish y el latido HID).
+     */
+    fun hidReportFrom(state: GamepadState): ByteArray = HidInputReport.from(state)
 
     /**
      * Da de baja la app HID (la TV deja de ver el mando) SIN cerrar
