@@ -33,7 +33,7 @@ identidad, se marca FALLO en la UI aunque el Wi-Fi funcione.
 | 1 | Wi-Fi UDP, misma red | Principal | Misma Wi-Fi, puerto 51999 | Pasa a TCP | Completo |
 | 2 | Wi-Fi TCP, misma red | Respaldo | Misma Wi-Fi, puerto 52000 | Pasa a Bluetooth datos | Completo (básico) |
 | 3 | Hotspot del teléfono | Sin router | Hotspot del teléfono, TV en esa red, IP 192.168.43.x | Volver a Wi-Fi | Mismo UDP/TCP, modo en UI + docs |
-| 5 | Bluetooth datos (BLE/SPP) | Respaldo si falla todo el Wi-Fi | Emparejamiento BT | Pasa a Bluetooth HID | Estructura, Pendiente Etapa 2 |
+| 5 | Bluetooth datos (SPP) | Respaldo si falla todo el Wi-Fi | Emparejamiento BT | Pasa a Bluetooth HID | Implementado (Fase 5, SPP/RFCOMM real) |
 | 4 | Bluetooth HID | Directo, sin receptora ni Shizuku | el teléfono (Helio G99) expone HID_DEVICE | Ninguno (último) | Estructura + comprobación |
 
 Modo Automático: prueba en orden **1 → 2 → 5 → 4**. Manual: el usuario
@@ -121,10 +121,10 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 ## Teléfono — :app-phone
 
 - `MainActivity`: tema oscuro, una pantalla.
-- `GamepadViewModel`: estado de botones/sticks, dead zone 0.05, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → BLE/SPP → HID, comprobación HID. Extras Fase 4: L4/R4 (bitmask extra, byte 29), turbo (10 Hz), macros (grabar/reproducir), vibración al pulsar (15 ms, respeta el perfil de juego), giroscopio (inclinación → stick derecho), teclado virtual y modo ratón (paquetes `UK`/`UM` por UDP); pantalla Extras (`ExtrasScreen.kt`, ajustes en `ExtrasPrefs.kt`).
+- `GamepadViewModel`: estado de botones/sticks, dead zone 0.05, conexión por QR o IP/PIN, estado DISCONNECTED/CONNECTING/CONNECTED/ERROR, selector multi-transporte (AUTO/MANUAL, Hotspot), estado real por método, fallback automático UDP → TCP → SPP → HID, comprobación HID. Extras Fase 4: L4/R4 (bitmask extra, byte 29), turbo (10 Hz), macros (grabar/reproducir), vibración al pulsar (15 ms, respeta el perfil de juego), giroscopio (inclinación → stick derecho), teclado virtual y modo ratón (paquetes `UK`/`UM` por UDP); pantalla Extras (`ExtrasScreen.kt`, ajustes en `ExtrasPrefs.kt`).
 - `GamepadSenderService`: servicio en primer plano, envía a 120 Hz por UDP o TCP, ping real por eco (UDP y TCP) cada 500 ms, reconexión automática (reintento 1 s sin cerrar el servicio). Si el socket falla, guarda `lastError` y la UI lo muestra.
 - `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el teléfono no expone el perfil, queda en FAILED.
-- `BluetoothDataTransport`: solo interfaz, PENDING_STAGE2.
+- `BluetoothDataTransport`: SPP/RFCOMM real (Fase 5), con eco de ping.
 - `ConnectSheet` / `QrScannerScreen`: escaneo QR real con CameraX + ML Kit. Sin permiso de cámara, queda la entrada manual. Modo Hotspot documentado en la hoja.
 - Editor y perfiles: TODO en `ui/TodoScreens.kt` — Etapa 2 y 3, no se presentan como funciones.
 
@@ -138,7 +138,7 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 - `ShizukuHelper`: comprueba instalación, `pingBinder()`, permiso. Guía específica para Hyundai sin depuración inalámbrica (ADB por red :5555 + Bugjaeger).
 - `GamepadUserService` (AIDL `IGamepadInputService`): corre como shell. `createVirtualGamepad()` / `sendReport()` / `injectGamepadEvent()`. Fase 4: `sendReport()` lleva `extraButtons` (L4/R4 → `BTN_TRIGGER_HAPPY2/3`); `keyboardEvent()` / `mouseEvent()` / `destroyExtras()` para los dispositivos uinput aparte de teclado y ratón.
 - `UinputGamepad`: **pendiente de Etapa 0**. Devuelve false hasta que su librería JNI (.so) exista y se demuestre en la Hyundai. No se finge un mando.
-- `BluetoothDataReceiverStub`: PENDING_STAGE2.
+- `BluetoothDataReceiver` (TV): receptor SPP real (Fase 5).
 
 ## Decisiones que NO se tomaron en Etapa 1
 
