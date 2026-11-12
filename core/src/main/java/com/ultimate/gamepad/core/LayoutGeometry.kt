@@ -37,7 +37,10 @@ import kotlin.math.abs
  * Límites conocidos (no los cubren los tests, a propósito):
  * - En vertical el ajuste tiene un suelo de 0.55: con escala 1.6
  *   en un teléfono vertical el contenido ya no cabe (y con 1.4
- *   tampoco en pantallas de 360 dp). En horizontal el suelo es 0.45.
+ *   tampoco en pantallas de 360 dp). En horizontal el suelo es 0.43:
+ *   con los hombros a 48 dp, en las pantallas más bajas con escala
+ *   1.6 el ajuste honesto es 0.437; con el suelo viejo de 0.45 el
+ *   contenido se pasaba 8 dp y el test lo cazó (run #227).
  * - Con los desplazamientos guardados por el usuario (stick +39,
  *   cruceta +23) la cruceta roza la etiqueta L3 unos 10 dp: los
  *   desplazamientos desiguales se comen el hueco de 6 dp. Se quita
@@ -98,7 +101,7 @@ object LayoutGeometry {
     const val GEAR_GAP = 8f
 
     /** Ajuste mínimo/máximo del mando en horizontal. */
-    const val MIN_FIT = 0.45f
+    const val MIN_FIT = 0.43f
     const val MAX_FIT = 1f
 
     /** Ajuste mínimo/máximo del mando en vertical y ancho de referencia. */
@@ -310,7 +313,7 @@ object LayoutGeometry {
     }
 
     /** Ajuste en horizontal: que el contenido visible quepa en el
-     * hueco disponible, sin pasar de 1 y sin bajar de 0.45. */
+     * hueco disponible, sin pasar de 1 y sin bajar de 0.43. */
     fun fitFor(availW: Float, availH: Float, maxSpanH: Float, contentW: Float): Float =
         minOf(availH / maxSpanH, availW / contentW, MAX_FIT).coerceIn(MIN_FIT, MAX_FIT)
 
