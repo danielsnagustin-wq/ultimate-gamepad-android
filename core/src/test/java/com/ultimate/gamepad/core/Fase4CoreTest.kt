@@ -220,6 +220,32 @@ class Fase4CoreTest {
         assertEquals(ExtrasProtocol.ACTION_CREATE, create!!.action)
     }
 
+    @Test fun `macro con 200 eventos conserva el soltar final`() {
+        val r = MacroRecorder()
+        r.start(0L)
+        for (i in 0 until 200) {
+            r.onState(i.toLong() * 10, if (i % 2 == 0) GamepadButtons.A else GamepadButtons.B, 0)
+        }
+        val macro = r.stop(5000L, "Larga")
+        assertNotNull(macro)
+        macro!!
+        assertEquals(GamepadMacro.MAX_EVENTS, macro.events.size)
+        assertEquals(0, macro.events.last().buttons)
+        assertEquals(0, macro.events.last().extraButtons)
+    }
+
+    @Test fun `macro de mas de 30 s fija el soltar en 30000 ms`() {
+        val r = MacroRecorder()
+        r.start(0L)
+        r.onState(100L, GamepadButtons.A, 0)
+        val macro = r.stop(40_000L, "Larga")
+        assertNotNull(macro)
+        macro!!
+        assertEquals(2, macro.events.size)
+        assertEquals(GamepadMacro.MAX_DURATION_MS, macro.events[1].delayMs)
+        assertEquals(0, macro.events[1].buttons)
+    }
+
     // --- Checklist con L4/R4 ---
 
     @Test fun `la checklist marca L4 y R4 y el total es 22`() {
