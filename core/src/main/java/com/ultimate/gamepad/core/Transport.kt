@@ -20,17 +20,16 @@ package com.ultimate.gamepad.core
  *                   prueba tras TCP, antes que HID.
  *   5. BLUETOOTH_HID  — Teléfono como mando real directo a la TV,
  *                   sin app receptora y sin Shizuku.
- * El modo Automático prueba en orden 1 -> 2 -> 5 -> 4 en la
- * numeración de la tarea (UDP, TCP, SPP, HID). Ver
- * [TransportSelector.AUTO_ORDER]. SPP está en ese orden e
+ * El modo Automático prueba en orden UDP -> TCP -> SPP -> HID.
+ * Ver [TransportSelector.AUTO_ORDER]. SPP está en ese orden e
  * implementado en la Fase 5 (SPP/RFCOMM real).
  */
-enum class TransportMethod(val label: String, val priority: Int) {
-    WIFI_UDP("Wi-Fi UDP", 1),
-    WIFI_TCP("Wi-Fi TCP", 2),
-    HOTSPOT("Hotspot del teléfono", 3),
-    BLUETOOTH_DATA("Bluetooth datos (SPP)", 5),
-    BLUETOOTH_HID("Bluetooth HID", 4),
+enum class TransportMethod(val label: String) {
+    WIFI_UDP("Wi-Fi UDP"),
+    WIFI_TCP("Wi-Fi TCP"),
+    HOTSPOT("Hotspot del teléfono"),
+    BLUETOOTH_DATA("Bluetooth datos (SPP)"),
+    BLUETOOTH_HID("Bluetooth HID"),
 }
 
 /** Estado REAL por método. Nunca "Conectado" sin paquetes reales. */
