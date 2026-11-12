@@ -1,7 +1,6 @@
 package com.ultimate.gamepad.core
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,26 +56,24 @@ class GamepadProfileTest {
         assertEquals(0.toByte(), bytes[31])
     }
 
-    @Test fun `el descriptor HID es por perfil y mantiene 7 bytes de datos (+ Report ID 1)`() {
+    @Test fun `el descriptor HID es UNICO para todos los perfiles y declara 16 botones + gatillos analogicos (9 bytes de datos + Report ID 1)`() {
         val xbox = HidGamepadDescriptor.descriptorFor(GamepadProfiles.XBOX_360_ID)
         val ds4 = HidGamepadDescriptor.descriptorFor(GamepadProfiles.DS4_ID)
         val dualsense = HidGamepadDescriptor.descriptorFor(GamepadProfiles.DUALSENSE_ID)
         val generic = HidGamepadDescriptor.descriptorFor(GamepadProfiles.GENERIC_ID)
-        assertEquals(HidGamepadDescriptor.BYTES.size, xbox.size)
-        assertEquals(HidGamepadDescriptor.BYTES.size, ds4.size)
-        assertEquals(HidGamepadDescriptor.BYTES.size, dualsense.size)
-        assertEquals(HidGamepadDescriptor.BYTES.size, generic.size)
-        // Xbox y genérico: el descriptor de 12 botones de siempre.
+        // Un solo descriptor: el mismo para todos los perfiles (el
+        // perfil solo cambia el nombre expuesto). La variante Sony
+        // de 14 botones desaparece: con otro orden de botones saldría
+        // revuelta en la TV, que no aplica ningún .kl de Sony.
         assertTrue(xbox.contentEquals(HidGamepadDescriptor.BYTES))
+        assertTrue(ds4.contentEquals(HidGamepadDescriptor.BYTES))
+        assertTrue(dualsense.contentEquals(HidGamepadDescriptor.BYTES))
         assertTrue(generic.contentEquals(HidGamepadDescriptor.BYTES))
-        // DS4/DualSense: 14 botones (Usage Maximum y Report Count 14,
-        // relleno 2 en vez de 4); el resto del descriptor es idéntico.
-        // (+2 por el Report ID (1) insertado tras abrir la colección.)
-        assertNotEquals(xbox[17], ds4[17])
-        assertEquals(0x0E.toByte(), ds4[17])
-        assertEquals(0x0E.toByte(), ds4[25])
-        assertEquals(0x02.toByte(), ds4[31])
-        assertTrue(ds4.contentEquals(dualsense))
+        assertEquals(486, HidGamepadDescriptor.BYTES.size)
+        assertEquals(HidInputReport.SIZE_BYTES, HidGamepadDescriptor.INPUT_REPORT_SIZE)
+        // 16 botones (Usage Maximum y Report Count 16), sin relleno.
+        assertEquals(0x10.toByte(), xbox[17])
+        assertEquals(0x10.toByte(), xbox[25])
         // Rumble (ronda REA GFN+OpenNOW): Report ID (1) en la entrada
         // del mando y colección PID (Usage Page 0x0F) con reportes 2-7.
         assertEquals(0x85.toByte(), xbox[6])
@@ -85,6 +82,10 @@ class GamepadProfileTest {
         for (id in 2..7) {
             assertTrue(contains(xbox, byteArrayOf(0x85.toByte(), id.toByte())))
         }
+        // Gatillos analógicos (ronda Bluetooth dos vías): Usage Page
+        // Simulation (0x02) con Brake (0xC5) = LT y Accelerator
+        // (0xC4) = RT, rango lógico 0..255.
+        assertTrue(contains(xbox, byteArrayOf(0x05, 0x02, 0x09, 0xC5.toByte(), 0x09, 0xC4.toByte())))
     }
 
     private fun contains(haystack: ByteArray, needle: ByteArray): Boolean {
