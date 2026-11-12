@@ -39,12 +39,16 @@ package com.ultimate.gamepad.core
  * 5. Descriptor HID Bluetooth: Usage Page 0x01 Generic Desktop,
  *    Usage 0x05 Game Pad (no Joystick ambiguo, no Remote Control
  *    0x0C, no Keyboard 0x07). Colección Application Game Pad,
- *    ejes, hat switch, botones Usage Page 0x09 Button. Hay un
- *    descriptor por perfil (HidGamepadDescriptor.descriptorFor):
- *    Xbox y genérico declaran 12 botones; DS4/DualSense declaran
- *    14 (los 2 extra son los botones del sistema PlayStation y
- *    quedan a 0 en esta versión: el touchpad NO se emula, opción
- *    (a) de la Fase 2).
+ *    ejes, hat switch, botones Usage Page 0x09 Button. UN SOLO
+ *    descriptor para todos los perfiles
+ *    (HidGamepadDescriptor.descriptorFor): 16 botones en el ORDEN
+ *    que Android espera (ver HidGamepadDescriptor: 1=A, 2=B, 4=X,
+ *    5=Y, 7=LB, 8=RB, 9=LT, 10=RT, 11=SELECT, 12=START, 13=HOME,
+ *    14=L3, 15=R3, 16=CAPTURE) + gatillos analógicos Brake/
+ *    Accelerator (Simulation). Solo cambia el nombre expuesto
+ *    según el perfil; el descriptor es el mismo para no depender
+ *    de un .kl de Sony/Microsoft que la TV no tiene por qué
+ *    aplicar (por HID no se puede fijar el VID/PID).
  *
  * En Android, SOURCE_GAMEPAD = 0x400 (1024) y SOURCE_JOYSTICK =
  * 0x1000000 (16777216). Se definen aquí como constantes para que
@@ -126,46 +130,68 @@ object UinputSpec {
  * se ajusta aquí y solo aquí (un solo lugar, no en cada transporte).
  */
 object HidGamepadDescriptor {
+    /** Tamaño del reporte de entrada del mando (datos, sin el Report ID 1). */
+    const val INPUT_REPORT_SIZE: Int = 9
+
     /**
-     * Descriptor HID Bluetooth por perfil de emulación (Fase 2).
+     * Descriptor HID Bluetooth (UN SOLO descriptor para todos los
+     * perfiles; `descriptorFor` lo devuelve igual para todos — el
+     * perfil solo cambia el NOMBRE expuesto, no el descriptor).
      *
-     * Xbox 360 / Xbox One / genérico: el descriptor de 12 botones
-     * de siempre ([BYTES]). DS4 / DualSense: la misma disposición
-     * de reporte de 7 bytes de datos, pero declara 14 botones
-     * (Usage Maximum 14, Report Count 14 + 2 bits de relleno en
-     * vez de 12 + 4): el reporte sigue siendo de 7 bytes de datos
-     * y los 2 botones extra (PS / Create) quedan siempre a 0 en
-     * esta versión. El touchpad NO está en ningún descriptor:
-     * opción (a) del plan, no se implementa en esta versión y se
-     * dice claro en la UI y en docs/PLAN-GAMEPAD-PRO.md. La API de
-     * BluetoothHidDevice no permite fijar VID/PID: por HID la
-     * identidad es nombre + descriptor; la identidad completa
-     * (vendor/product) solo la da uinput en la TV.
+     * Reporte de entrada de 9 bytes de datos (+ Report ID 1):
+     *   bytes 0-1: 16 botones, 1 bit cada uno, en el ORDEN que
+     *     Android espera (ronda Bluetooth dos vías, 2026-11-11):
+     *     el kernel Linux mapea el botón HID nº N al código
+     *     0x130 + (N-1) (hid-input.c, HID_GD_GAMEPAD) y Android
+     *     (Generic.kl) lo traduce a BUTTON_A/B/X/Y/L1/R1/L2/R2/
+     *     SELECT/START/MODE/THUMBL/THUMBR. El orden ANTERIOR
+     *     (1=A, 2=B, 3=X, 4=Y, 5=LB, 6=RB, 7=SELECT, 8=START,
+     *     9=L3, 10=R3, 11=LT, 12=RT) estaba mal: X salía como
+     *     BUTTON_C, Y como BUTTON_X, LB como BUTTON_Y, etc. — solo
+     *     A y B llegaban bien al juego. El orden correcto, verificado
+     *     contra el manual del Mad Catz C.T.R.L.R (estándar Nvidia
+     *     Tegra: X=uso 4, Y=uso 5, L1=uso 7, R1=uso 8), es:
+     *       uso 1=A, 2=B, 4=X, 5=Y, 7=LB, 8=RB, 9=LT digital,
+     *       10=RT digital, 11=SELECT, 12=START, 13=HOME (Xbox/
+     *       Guide → BTN_MODE → BUTTON_MODE), 14=L3, 15=R3,
+     *       16=CAPTURE (→ BUTTON_1; OpenNOW/GFN lo ignoran, pero
+     *       Android lo ve). Los usos 3 y 6 quedan a 0 (mapean a
+     *     BUTTON_C y BUTTON_Z, que los juegos no usan).
+     *   byte 2: hat switch (0-7 direcciones, 8=centro).
+     *   bytes 3-6: ejes X, Y, Z, Rz CON SIGNO (-127..127).
+     *     Z/Rz son el stick DERECHO (convención de Android:
+     *     AXIS_Z/AXIS_RZ), como los lee GFN/OpenNOW; NO se usan
+     *     para los gatillos.
+     *   bytes 7-8: gatillos analógicos LT/RT (0..255): Usage Page
+     *     Simulation (0x02), Brake (0xC5) = LT y Accelerator
+     *     (0xC4) = RT. Linux los mapea a ABS_BRAKE/ABS_GAS y
+     *     Android a AXIS_BRAKE/AXIS_GAS, que GFN (fallback) y
+     *     OpenNOW leen como gatillos analógicos.
+     *
+     * La API de BluetoothHidDevice no permite fijar VID/PID: por
+     * HID la identidad es nombre + descriptor; la identidad
+     * completa (vendor/product) solo la da uinput en la TV. El
+     * touchpad NO está en ningún descriptor: opción (a) del plan,
+     * no se implementa en esta versión y se dice claro en la UI y
+     * en docs/PLAN-GAMEPAD-PRO.md.
      *
      * Rumble (ronda REA GFN+OpenNOW, 2026-11-11): el descriptor
      * lleva ADEMÁS una colección Application PID (Usage Page 0x0F,
      * solo fuerza constante, reportes 2-7). Como hay reportes con
      * ID, el reporte de entrada del mando lleva Report ID (1):
-     * en el cable son 8 bytes (ID + 7 de datos); la API de
-     * BluetoothHidDevice entrega/recibe los 7 datos SIN el ID
+     * en el cable son 10 bytes (ID + 9 de datos); la API de
+     * BluetoothHidDevice entrega/recibe los 9 datos SIN el ID
      * (el ID va aparte en sendReport/replyReport/onSetReport).
      */
     fun descriptorFor(profileId: Int): ByteArray {
-        val profile = GamepadProfiles.fromId(profileId)
-        if (profile.id != GamepadProfiles.DS4_ID && profile.id != GamepadProfiles.DUALSENSE_ID) {
-            return BYTES.copyOf()
-        }
-        // Variante Sony: mismo reporte de 7 bytes de datos, 14 botones.
-        // Índices en BYTES: [17] = Usage Maximum (12), [25] =
-        // Report Count de botones (12), [31] = Report Count del
-        // relleno (4). 14 + 2 = 16 bits = los mismos 2 bytes.
-        // (+2 respecto a antes: el Report ID (1) ocupa 2 bytes
-        // justo después de abrir la colección Application.)
-        val bytes = BYTES.copyOf()
-        bytes[17] = 0x0E.toByte()
-        bytes[25] = 0x0E.toByte()
-        bytes[31] = 0x02.toByte()
-        return bytes
+        // Un solo descriptor para todos los perfiles: el orden de
+        // botones y los ejes son los que Android espera con
+        // Generic.kl; una variante Sony con otro orden saldría
+        // revuelta en la TV, que no aplica ningún .kl de Sony
+        // (por HID no se puede fijar el VID/PID). `fromId` sanea
+        // el id desconocido a Xbox 360, como antes.
+        GamepadProfiles.fromId(profileId)
+        return BYTES.copyOf()
     }
 
     val BYTES: ByteArray = byteArrayOf(
@@ -181,15 +207,13 @@ object HidGamepadDescriptor {
         0xA1.toByte(), 0x00.toByte(), //   Collection (Physical)
         0x05.toByte(), 0x09.toByte(), //     Usage Page (Button)
         0x19.toByte(), 0x01.toByte(), //     Usage Minimum (1)
-        0x29.toByte(), 0x0C.toByte(), //     Usage Maximum (12)
+        0x29.toByte(), 0x10.toByte(), //     Usage Maximum (16)
         0x15.toByte(), 0x00.toByte(), //     Logical Minimum (0)
         0x25.toByte(), 0x01.toByte(), //     Logical Maximum (1)
         0x75.toByte(), 0x01.toByte(), //     Report Size (1)
-        0x95.toByte(), 0x0C.toByte(), //     Report Count (12)
+        0x95.toByte(), 0x10.toByte(), //     Report Count (16)
         0x81.toByte(), 0x02.toByte(), //     Input (Data,Var,Abs)
-        0x75.toByte(), 0x01.toByte(), //     Report Size (1)
-        0x95.toByte(), 0x04.toByte(), //     Report Count (4) padding
-        0x81.toByte(), 0x03.toByte(), //     Input (Const,Var,Abs)
+        // 16 botones = 2 bytes exactos, sin relleno.
         0x05.toByte(), 0x01.toByte(), //     Usage Page (Generic Desktop)
         0x09.toByte(), 0x39.toByte(), //     Usage (Hat switch)
         0x15.toByte(), 0x00.toByte(), //     Logical Minimum (0)
@@ -214,6 +238,23 @@ object HidGamepadDescriptor {
         0x75.toByte(), 0x08.toByte(), //       Report Size (8)
         0x95.toByte(), 0x04.toByte(), //       Report Count (4)
         0x81.toByte(), 0x02.toByte(), //       Input (Data,Var,Abs)
+        // Gatillos analógicos (ronda Bluetooth dos vías, 2026-11-11):
+        // Usage Page Simulation (0x02): Brake (0xC5) = LT y
+        // Accelerator (0xC4) = RT, 0..255. Linux los mapea a
+        // ABS_BRAKE / ABS_GAS y Android (Generic.kl) a AXIS_BRAKE /
+        // AXIS_GAS, que GFN y OpenNOW leen como gatillos (con
+        // fallback desde AXIS_LTRIGGER/RTRIGGER). Van DESPUÉS de
+        // los sticks: NO se usan Z/Rz para los gatillos, porque
+        // Z/Rz son el stick derecho en la convención de Android
+        // (AXIS_Z/AXIS_RZ) y GFN/OpenNOW los leen como stick.
+        0x05.toByte(), 0x02.toByte(), //     Usage Page (Simulation)
+        0x09.toByte(), 0xC5.toByte(), //     Usage (Brake = LT)
+        0x09.toByte(), 0xC4.toByte(), //     Usage (Accelerator = RT)
+        0x15.toByte(), 0x00.toByte(), //     Logical Minimum (0)
+        0x26.toByte(), 0xFF.toByte(), 0x00.toByte(), // Logical Maximum (255)
+        0x75.toByte(), 0x08.toByte(), //     Report Size (8)
+        0x95.toByte(), 0x02.toByte(), //     Report Count (2)
+        0x81.toByte(), 0x02.toByte(), //     Input (Data,Var,Abs)
         0xC0.toByte(), //     End Collection
         0xC0.toByte(), //   End Collection
         0xC0.toByte(), // End Collection
