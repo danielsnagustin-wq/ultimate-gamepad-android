@@ -254,11 +254,15 @@ class BluetoothDataReceiverImpl(private val context: Context) : BluetoothDataRec
                 // entrega, mismo watchdog, mismo perfil (byte 28).
                 // Codex-1: solo se entrega si el paquete fue
                 // aceptado (secuencia nueva); igual que UDP/TCP.
+                // H-08: el contador BT solo cuenta ACEPTADOS, igual
+                // que el contador UDP: un paquete válido pero
+                // rechazado por secuencia vieja/duplicada no cuenta
+                // ni actualiza lastPacketAtMs.
                 if (UdpReceiverService.recordPacket(state, TransportMethod.BLUETOOTH_DATA)) {
                     UdpReceiverService.deliver(context, state, data)
+                    packetsReceived++
+                    lastPacketAtMs = System.currentTimeMillis()
                 }
-                packetsReceived++
-                lastPacketAtMs = System.currentTimeMillis()
                 runCatching { onPacket(state) }
             }
         } catch (_: IOException) {
