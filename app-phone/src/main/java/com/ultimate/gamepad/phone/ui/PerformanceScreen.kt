@@ -55,7 +55,7 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         Text("📶  Rendimiento", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Valores en vivo del envío por Wi-Fi. Sin gráficos: lo que importa es el número.",
+            "Valores en vivo del envío (Wi-Fi / Bluetooth). Sin gráficos: lo que importa es el número.",
             color = Color.White, fontSize = 13.sp,
         )
         Spacer(Modifier.height(12.dp))
