@@ -209,9 +209,13 @@ fun GameProfilesScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                     }
                 },
                 onDelete = {
+                    val wasActive = GameProfilePrefs.loadActiveName(context) == it.name
                     persist(profiles.filter { p -> p.name != it.name })
-                    if (GameProfilePrefs.loadActiveName(context) == it.name) {
-                        GameProfilePrefs.saveActiveName(context, null)
+                    if (wasActive) {
+                        // Ronda 2 P2-9: borrar el perfil activo
+                        // revierte sus ajustes a los valores por
+                        // defecto (antes quedaban aplicados sin perfil).
+                        vm.clearActiveGameProfile()
                         activeName = null
                     }
                     editing = null
@@ -259,7 +263,7 @@ private fun GameProfileEditor(
                     onClick = { tick(); onDraftChange(draft.copy(profileId = profile.id)) },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (draft.profileId == profile.id) Color(0xFF7C4DFF) else Color(0xFF1A1D27),
+                        containerColor = if (draft.profileId == profile.id) MaterialTheme.colorScheme.primary else Color(0xFF1A1D27),
                         contentColor = Color.White,
                     ),
                 ) {
