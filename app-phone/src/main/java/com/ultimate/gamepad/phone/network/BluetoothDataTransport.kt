@@ -98,12 +98,6 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
 
         /** Plazo por defecto de connect(): BluetoothSocket.connect() no admite timeout propio. */
         const val DEFAULT_CONNECT_TIMEOUT_MS: Int = 5000
-
-        /** Tope del backoff de reintento (mismo 1–15 s que el reintento HID). */
-        const val MAX_BACKOFF_MS: Long = 15_000L
-
-        /** Pasos del backoff entre intentos: 1 s, 2 s, 4 s, 8 s, 15 s… */
-        private val BACKOFF_STEPS_MS: LongArray = longArrayOf(1000, 2000, 4000, 8000, 15000)
     }
 
     /** Un dispositivo Bluetooth emparejado, listo para conectar por SPP (nombre + MAC). */
@@ -329,6 +323,15 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
             return false
         }
         synchronized(lock) {
+            // Ronda 2 P2-5: close() durante el connect() bloqueado
+            // dejaba el socket guardado y el transporte "abierto".
+            // Se re-comprueba `closed` antes de guardar el socket.
+            if (closed) {
+                runCatching { sock.close() }
+                status = TransportStatus.UNAVAILABLE
+                lastError = null
+                return false
+            }
             socket = sock
             out = runCatching { DataOutputStream(sock.outputStream) }.getOrNull()
             input = runCatching { DataInputStream(sock.inputStream) }.getOrNull()
@@ -347,28 +350,6 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
         status = TransportStatus.AVAILABLE
         lastError = null
         return true
-    }
-
-    /**
-     * Conecta con reintento y backoff (1 s, 2 s, 4 s, 8 s, 15 s…,
-     * tope 15 s). Se cancela con [close()]: el bucle comprueba
-     * [closed] entre intentos y durante la espera. Devuelve false
-     * si se agotan los intentos o se canceló; el motivo del último
-     * fallo queda en [lastError].
-     */
-    fun connectWithRetry(deviceAddress: String, maxAttempts: Int = 5): Boolean {
-        var attempt = 0
-        while (!closed && attempt < maxAttempts) {
-            if (connect(deviceAddress)) return true
-            attempt++
-            if (attempt >= maxAttempts || closed) break
-            val waitMs = BACKOFF_STEPS_MS.getOrElse(attempt - 1) { MAX_BACKOFF_MS }
-            val deadline = System.currentTimeMillis() + waitMs
-            while (!closed && System.currentTimeMillis() < deadline) {
-                runCatching { Thread.sleep(100) }
-            }
-        }
-        return false
     }
 
     /** ¿Hay un socket SPP abierto ahora mismo? No es "la TV recibe": eso solo lo prueba el eco (ver [recordEcho]). */
@@ -454,10 +435,17 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
      * (GamepadSenderService.recordTvPackets). Si no lo es, devuelve
      * null y no toca nada: un eco viejo o corrupto no finge salud.
      */
-    fun recordEcho(raw: ByteArray, pingSequence: Int): GamepadState? {
+    /**
+     * Eco de ping SPP: acepta el eco si su secuencia está entre
+     * las últimas enviadas (ronda 2 P1-2). Con RTT > 500 ms el eco
+     * del ping anterior llega después de enviar el siguiente: con
+     * igualdad exacta ningún eco se aceptaba nunca y AUTO saltaba
+     * aunque la TV respondiera. El llamador pasa las últimas 3.
+     */
+    fun recordEcho(raw: ByteArray, pingSequences: Set<Int>): GamepadState? {
         if (!GamepadProtocol.isPing(raw)) return null
         val echoed = GamepadProtocol.decode(raw) ?: return null
-        if (echoed.sequence != pingSequence) return null
+        if (echoed.sequence !in pingSequences) return null
         lastPingMs = System.currentTimeMillis() - echoed.timestampMs
         lastEchoAtMs = System.currentTimeMillis()
         status = TransportStatus.CONNECTED
@@ -480,9 +468,9 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
 
     /**
      * Cierre limpio: aborta un connect() en curso, despierta un
-     * readRaw() bloqueado (lanza IOException), cancela el backoff
-     * de [connectWithRetry] y deja el estado en UNAVAILABLE sin
-     * motivo pendiente (un cierre limpio no es un fallo).
+     * readRaw() bloqueado (lanza IOException) y deja el estado en
+     * UNAVAILABLE sin motivo pendiente (un cierre limpio no es un
+     * fallo).
      */
     override fun close() {
         closed = true
