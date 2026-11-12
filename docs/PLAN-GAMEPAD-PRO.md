@@ -7,6 +7,58 @@ local de trabajo no es un checkout git (no hay `.git`), así que el HEAD
 se toma del encargo; antes de implementar, verificar que el HEAD remoto
 sigue siendo ese.
 
+## 0. Correcciones 2026-11-11 — este plan es una foto de 2026-11-07
+
+**Lo de abajo es la foto original. Lo que sigue la corrige y manda sobre
+ella; no se reescribe el documento entero.**
+
+- **Shizuku está DESCARTADO del todo en esta TV** (2026-11-07: no está
+  adaptado a TV y la TV no tiene depuración de red ni inalámbrica, solo
+  USB). La Fase 0 ya NO es arrancar Shizuku por ADB :5555 + Bugjaeger:
+  es emparejar el teléfono por **Bluetooth HID directo** (ver
+  `docs/SETUP-SIN-PC.md` §3). Todas las secciones de Fase 0 que hablan
+  de Shizuku / ADB :5555 / `sh .../start.sh` / uid 2000 quedan
+  **anuladas**. La única vía para que el juego vea un mando es el
+  Bluetooth HID. Además, en la ronda 2 se apagó
+  `ReceiverConfig.SHIZUKU_PHASE2_ENABLED` (de `true` a `false`): con él
+  en `true`, `deliver()` intentaba la inyección Shizuku en cada paquete
+  (120 Hz) y sobrescribía `lastError` 120 veces por segundo sin que
+  nada pudiera funcionar.
+- **Los "12 tests unitarios" de §1 son de 2026-11-07**: la suite creció
+  mucho desde entonces (protocolo, rumble, HID, macros, descubrimiento,
+  perfiles, secuencias, curvas).
+
+### Filas que decían NO EXISTE y ya EXISTEN
+
+| Fila (§) | Ahora |
+|---|---|
+| Perfiles Xbox y PlayStation (§2.1), Xbox One (§2.2), DualShock 4, DualSense | **EXISTEN**: `GamepadProfile` en `:core` con 5 perfiles (Xbox 360, Xbox One, DS4, DualSense, genérico); el `profileId` viaja en el byte 28 del paquete. El touchpad de DS4/DualSense **sigue sin existir** y la háptica avanzada / gatillos adaptativos de DualSense **siguen sin ser implementables** por uinput. |
+| Cambio de perfil = cambio de mapeo/descriptor (§2.2) | **EXISTE**: `GamepadViewModel.setActiveProfile()` re-registra el HID al cambiar. |
+| Pantalla "TIPO DE MANDO" (§2.2, §3.3) | **EXISTE**: `ControllerTypeScreen`. |
+| Guardar / aplicar / comprobar reconocimiento (§2.2) | **EXISTE**: `GamepadProfilePrefs`; el cambio re-registra el HID y la UI muestra CONECTANDO durante el cambio. |
+| Informar si hace falta reiniciar el servicio (§2.2) | **EXISTE** en la práctica: el re-registro HID es el "reinicio" y se muestra. |
+| Al perder la conexión, liberar TODOS los controles (§2.3) | **EXISTE**: `disconnect()` llama a `releaseAllInputs()` (estado cero) y la TV tiene watchdog de 2 s. |
+| Perfiles por juego (§2.4) | **EXISTEN**: `GameProfilesScreen` + `GameProfilePrefs` (JSON en SharedPreferences). El **import/export sigue sin existir**. |
+| L4/R4 (§2.4) | **EXISTEN como alias de L3/R3** (`ExtrasPrefs.l4_remap` / `r4_remap`, configurables en ExtrasScreen). No son botones independientes; no hizo falta protocolo v2. |
+| Teclado virtual, modo ratón (§2.4) | **EXISTEN en código y UI** (`ExtrasProtocol`, `ExtrasScreen`), pero su inyección es por uinput en la TV (Shizuku descartado): **hoy NO llegan al juego**. |
+| Turbo, macros, giroscopio (§2.4) | **EXISTEN**: `Turbo`, `MacroRecorder`, `GyroMapper`. |
+| Vibración (§2.4) | **EXISTE**: rumble del juego por Bluetooth HID (`RumbleReport`, colección PID en el descriptor) + vibración al pulsar en el teléfono. Hay que **re-emparejar** tras el cambio de descriptor. |
+| Prueba interactiva (§2.4) | **EXISTE**: `ControllerTestScreen` (PRUEBA DE MANDO, Fase 3). |
+| Rendimiento (§3.3) | **EXISTE**: `PerformanceScreen` (ping, paquetes/s, pérdida). |
+| Bluetooth datos (SPP) | **REAL desde la Fase 5** (`BluetoothDataTransport` / `BluetoothDataReceiver`): ya no es "Pendiente Etapa 2". |
+| Receptor TV: "crea gamepad virtual" (§2.1) | **PARCIAL**: recibe y muestra en vivo; el mando virtual uinput existe como código (el `.so` compila en CI) pero **sin vía de inyección** (Shizuku descartado). |
+| Acceso por Shizuku, comprobación SELinux (§2.2) | **OBSOLETOS**: sin Shizuku no aplican. |
+| Estado del servicio y de conexión (§2.5) | **CORREGIDO**: la tarjeta de la TV ya no es Shizuku sino **Bluetooth HID** (ronda 2, UI-1). |
+
+### Sigue sin existir (no se finge)
+
+Detección de app en primer plano / cambio automático (§2.4), panel
+rápido durante el juego (§2.4), lectura de vuelta de los valores del
+dispositivo virtual (§2.4), integración `dumpsys input` / `getevent`
+(§2.4), confirmación de que OpenNOW recibe el gamepad (§2.4: solo el
+usuario en un juego puede confirmarlo), touchpad DS4/DualSense, háptica
+avanzada / gatillos adaptativos de DualSense, import/export de perfiles.
+
 ## 1. Resumen honesto del estado actual
 
 **Lo que es real y funciona en código (sin verificar en la TV real):**
