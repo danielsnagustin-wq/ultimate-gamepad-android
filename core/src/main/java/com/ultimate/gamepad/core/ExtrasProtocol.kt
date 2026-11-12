@@ -29,8 +29,8 @@ import java.nio.ByteOrder
  *   4..5 : dy int16 LE
  *   6 : botones bitmask: bit 0 = izquierdo, bit 1 = derecho,
  *       bit 2 = central
- *   7 : acción: 0 = mover/clic, 1 = crear el dispositivo,
- *       2 = destruir el dispositivo
+ *   7 : acción: 0 = mover/clic, 2 = crear el dispositivo,
+ *       3 = destruir el dispositivo
  *
  * Transporte: solo UDP al mismo puerto del receptor (51999). El
  * receptor crea los dispositivos uinput la primera vez que llega
