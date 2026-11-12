@@ -52,8 +52,7 @@ import java.util.UUID
  * - Si el Bluetooth está apagado, falta BLUETOOTH_CONNECT o
  *   BLUETOOTH_ADVERTISE, o no hay adapter, el estado es
  *   UNAVAILABLE con el motivo real en [statusDetail]; si el listen
- *   falla, FAILED con el motivo. Nunca PENDING_STAGE2: la Fase 5
- *   existe. Nunca "Conectado" sin paquetes.
+ *   falla, FAILED con el motivo. Nunca "Conectado" sin paquetes.
  * - Sin RTT no hay ping en ms: este receptor no inventa latencia;
  *   el eco es el mismo paquete de ping devuelto y el teléfono mide
  *   el RTT.
