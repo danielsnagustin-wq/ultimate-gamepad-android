@@ -12,15 +12,30 @@ class GamepadProtocolTest {
             leftX = 0.5f, leftY = -0.25f, rightX = -1f, rightY = 1f,
             leftTrigger = 0.8f, rightTrigger = 0f,
             sequence = 42, timestampMs = 1_700_000_000_000L,
+            extraButtons = GamepadExtraButtons.L4,
         )
         val decoded = GamepadProtocol.decode(GamepadProtocol.encode(state))
         assertNotNull(decoded)
         decoded!!
         assertEquals(state.buttons, decoded.buttons)
         assertEquals(state.sequence, decoded.sequence)
+        assertEquals(state.timestampMs, decoded.timestampMs)
+        assertEquals(state.extraButtons, decoded.extraButtons)
         assertEquals(0.5f, decoded.leftX, 0.01f)
         assertEquals(-0.25f, decoded.leftY, 0.01f)
+        assertEquals(-1f, decoded.rightX, 0.01f)
+        assertEquals(1f, decoded.rightY, 0.01f)
         assertEquals(0.8f, decoded.leftTrigger, 0.01f)
+    }
+
+    @Test fun `decode rechaza magic, version y longitud invalidos`() {
+        val good = GamepadProtocol.encode(GamepadState(buttons = GamepadButtons.A))
+        val badMagic = good.copyOf().also { it[0] = 0x58 } // 'X'
+        assertNull(GamepadProtocol.decode(badMagic))
+        val badVersion = good.copyOf().also { it[2] = 99 }
+        assertNull(GamepadProtocol.decode(badVersion))
+        assertNull(GamepadProtocol.decode(ByteArray(10)))
+        assertNull(GamepadProtocol.decode(ByteArray(0)))
     }
 
     @Test fun `paquete corrupto se descarta`() {
