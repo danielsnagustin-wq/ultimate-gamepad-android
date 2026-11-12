@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ultimate.gamepad.core.BluetoothDiscovery
+import com.ultimate.gamepad.core.DiscoveredDevice
 import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.TransportStatus
@@ -268,10 +269,15 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                             // No es un filtro: cualquier dispositivo
                             // se puede elegir (los nombres de TV no
                             // son fiables).
+                            // El comparador necesita el tipo explícito:
+                            // sin él el compilador no infiere el
+                            // parámetro de compareByDescending (#211).
+                            val tvFirst = compareByDescending<DiscoveredDevice> { BluetoothDiscovery.looksLikeTv(it) }
+                                .thenBy { it.name.orEmpty() }
                             val bonded = ui.btScanDevices.filter { it.bonded }
-                                .sortedWith(compareByDescending { BluetoothDiscovery.looksLikeTv(it) }.thenBy { it.name.orEmpty() })
+                                .sortedWith(tvFirst)
                             val found = ui.btScanDevices.filter { !it.bonded }
-                                .sortedWith(compareByDescending { BluetoothDiscovery.looksLikeTv(it) }.thenBy { it.name.orEmpty() })
+                                .sortedWith(tvFirst)
                             if (bonded.isNotEmpty()) {
                                 Text("Emparejados", color = Color.White, fontSize = 12.sp)
                                 for (device in bonded) {
