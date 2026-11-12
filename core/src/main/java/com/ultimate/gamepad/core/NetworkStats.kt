@@ -29,14 +29,17 @@ object NetworkStats {
      * (secuencias uint16). 0 si es sesión nueva (lastSequence < 0),
      * si la secuencia se repite o va hacia atrás (duplicado o
      * reordenado: no es pérdida, se descarta en el receptor) o si
-     * son consecutivas. El hueco máximo que se cuenta es 32767
-     * (la mitad del espacio uint16, igual que el criterio de
-     * aceptación del receptor).
+     * son consecutivas. Un salto de exactamente 32768 tampoco se
+     * cuenta: a la mitad del espacio uint16 no se distingue un
+     * avance de un retroceso, y un salto real de 32768 paquetes a
+     * 120 Hz exigiría 273 s sin paquetes — con más de 2 s de
+     * silencio el receptor abre sesión nueva, así que en la
+     * práctica es un duplicado viejo, no pérdida (ronda 2 P2-2).
      */
     fun sequenceGap(lastSequence: Int, newSequence: Int): Int {
         if (lastSequence < 0) return 0
         val forward = (newSequence - lastSequence + 65536) % 65536
-        if (forward == 0 || forward > 32768) return 0
+        if (forward == 0 || forward >= 32768) return 0
         return forward - 1
     }
 }
