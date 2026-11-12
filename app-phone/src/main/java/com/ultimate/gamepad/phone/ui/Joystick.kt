@@ -34,6 +34,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,8 +67,22 @@ fun vibrateTick(context: Context, enabled: Boolean) {
  * el botón no se queda pulsado para siempre. También cuenta
  * dedos: con dos dedos en el mismo botón, no se suelta hasta
  * que se levanten los dos. Antes, una cancelación dejaba el
- * botón pegado (el juego lo seguía recibiendo). */
-fun Modifier.pointerPress(onPress: (Boolean) -> Unit): Modifier = this.pointerInput(Unit) {
+ * botón pegado (el juego lo seguía recibiendo).
+ *
+ * R-39 (TalkBack): `description` es OBLIGATORIA y se anuncia
+ * como el nombre del botón (Role.Button). Un `pointerInput`
+ * propio no da ninguna semántica por sí solo: sin este
+ * `semantics`, TalkBack no ve el botón. Es parámetro y no
+ * `contentDescription` en cada call site para que el
+ * compilador impida añadir un botón pointerPress sin
+ * descripción. Sin acción onClick: son botones de mantener
+ * (el gesto es pulsar y soltar), y un doble toque de TalkBack
+ * no puede expresar mantener; solo se anuncia el nombre y el
+ * rol. La excepción es el stick (JoystickView): su toque ES
+ * un pulso discreto (L3/R3), así que ahí sí hay onClick. */
+fun Modifier.pointerPress(description: String, onPress: (Boolean) -> Unit): Modifier = this
+    .semantics { role = Role.Button; contentDescription = description }
+    .pointerInput(Unit) {
     awaitPointerEventScope {
         var presses = 0
         try {
@@ -130,6 +149,10 @@ fun JoystickView(
     onMove: (Float, Float) -> Unit,
     onRelease: () -> Unit,
     onClick: (() -> Unit)? = null,
+    /** Nombre que anuncia TalkBack, p. ej. "Stick izquierdo
+     * (pulsa L3)". Lo pasa el llamador, que sabe de qué lado
+     * es el stick. */
+    description: String,
     /** En el panel de botones el stick se dibuja igual pero no se
      * mueve ni pulsa L3/R3: el gesto es del editor (arrastrar el
      * stick entero), no del juego. Sin esto, el arrastre del stick
@@ -157,6 +180,19 @@ fun JoystickView(
             .then(
                 if (interactive) {
                     Modifier
+                        // R-39: el stick es a la vez botón (tocar =
+                        // pulso L3/R3) y control continuo (arrastre).
+                        // La semántica lo anuncia como botón con su
+                        // nombre y la acción onClick dispara el
+                        // pulso; el arrastre táctil sigue igual por
+                        // pointerInput, que no se toca.
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = description
+                            if (onClick != null) {
+                                onClick { onClick.invoke(); true }
+                            }
+                        }
                         .pointerInput(Unit) { detectTapGestures(onTap = { onClick?.invoke() }) }
                         .pointerInput(Unit) {
                             detectDragGestures(
@@ -253,15 +289,15 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit, interactive
     ) {
         Column {
             Row {
-                Box(Modifier.size(56.dp)); DpadKey("▲", interactive = interactive) { p -> up = p; emit() }; Box(Modifier.size(56.dp))
+                Box(Modifier.size(56.dp)); DpadKey("▲", "Arriba", interactive = interactive) { p -> up = p; emit() }; Box(Modifier.size(56.dp))
             }
             Row {
-                DpadKey("◀", interactive = interactive) { p -> left = p; emit() }
+                DpadKey("◀", "Izquierda", interactive = interactive) { p -> left = p; emit() }
                 Box(Modifier.size(56.dp))
-                DpadKey("▶", interactive = interactive) { p -> right = p; emit() }
+                DpadKey("▶", "Derecha", interactive = interactive) { p -> right = p; emit() }
             }
             Row {
-                Box(Modifier.size(56.dp)); DpadKey("▼", interactive = interactive) { p -> down = p; emit() }; Box(Modifier.size(56.dp))
+                Box(Modifier.size(56.dp)); DpadKey("▼", "Abajo", interactive = interactive) { p -> down = p; emit() }; Box(Modifier.size(56.dp))
             }
         }
     }
@@ -269,9 +305,12 @@ fun DpadView(onChange: (Boolean, Boolean, Boolean, Boolean) -> Unit, interactive
 
 /** Tecla de cruceta con flecha bien visible: antes era un Button
  * de Material con la flecha casi invisible; ahora es una tecla
- * oscura brillante con borde neón y flecha blanca grande. */
+ * oscura brillante con borde neón y flecha blanca grande.
+ * `label` es el glifo visible ("▲"); `description` es el nombre
+ * real que anuncia TalkBack ("Arriba"), porque el glifo solo no
+ * se entiende por voz. */
 @Composable
-fun DpadKey(label: String, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
+fun DpadKey(label: String, description: String, interactive: Boolean = true, onPress: (Boolean) -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier.size(56.dp)
@@ -284,7 +323,7 @@ fun DpadKey(label: String, interactive: Boolean = true, onPress: (Boolean) -> Un
                 ),
             )
             .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
-            .then(if (interactive) Modifier.pointerPress { p -> pressed = p; onPress(p) } else Modifier),
+            .then(if (interactive) Modifier.pointerPress(description) { p -> pressed = p; onPress(p) } else Modifier),
         contentAlignment = Alignment.Center,
     ) { Text(label, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
 }
