@@ -21,11 +21,15 @@ import com.ultimate.gamepad.core.GamepadProfiles
  *   (Xbox / Ultimate Gamepad / gamepad), y NO es solo DPAD/KEYBOARD.
  *   NUEVO — "Parece mando real": SÍ solo si TODAS estas se cumplen
  *   a la vez (comprobación, no opinión de la app):
- *   nombre, vendor y product coinciden con el perfil de emulación
- *   activo (Fase 2: Xbox 360, Xbox One, DS4, DualSense o genérico;
- *   por defecto Xbox 360), sin "Virtual" ni "Ultimate" en el
- *   nombre, sources incluyen GAMEPAD y JOYSTICK, y ejes incluyen
- *   X, Y, Z, RZ, LTRIGGER, RTRIGGER, HAT_X, HAT_Y. Si falla una,
+ *   nombre exacto del perfil de emulación activo (Fase 2: Xbox 360,
+ *   Xbox One, DS4, DualSense o genérico; por defecto Xbox 360), sin
+ *   "Virtual" ni "Ultimate" en el nombre, sources incluyen GAMEPAD
+ *   y JOYSTICK, y ejes: X, Y, HAT_X, HAT_Y siempre, stick derecho
+ *   Z+RZ o RX+RY, y gatillos LTRIGGER+RTRIGGER, BRAKE+GAS, o Z+RZ
+ *   cuando el stick va en RX+RY (uinput Xbox). El vendor/product
+ *   NO es FALLO: por Bluetooth HID la API no permite fijarlo y
+ *   Android asigna 0 cuando no hay VID/PID disponible; si todo lo
+ *   demás coincide, es SÍ con aviso. Si falla una de las demás,
  *   es NO y el método se marca FALLO aunque el Wi-Fi funcione:
  *   "llegó el paquete" no es éxito.
  * - "Reconocido como: CONTROL DE TV - FALLO" si solo tiene
@@ -61,20 +65,52 @@ object Diagnostics {
         val looksLikeRealReason: String,
     )
 
-    /** Criterio de éxito de la Etapa 0, comprobado contra el sistema, no contra lo que cree la app. [profileId] es el perfil de emulación activo (Fase 2); por defecto Xbox 360. */
+    /** Criterio de éxito de la Etapa 0, comprobado contra el sistema, no contra lo que cree la app. [profileId] es el perfil de emulación activo (Fase 2); por defecto Xbox 360.
+     *
+     * Regla de ejes (H-01): ningún mando Xbox 360 expone los 8 ejes
+     * a la vez, así que el stick derecho y los gatillos se aceptan
+     * en cualquiera de sus formas reales:
+     * - Stick derecho: (Z+RZ) o (RX+RY).
+     * - Gatillos: (LTRIGGER+RTRIGGER) o (BRAKE+GAS) o (Z+RZ cuando
+     *   RX+RY llevan el stick, que es el uinput Xbox: sus gatillos
+     *   son ABS_Z/ABS_RZ).
+     * - X, Y, HAT_X, HAT_Y siempre obligatorios; nombre exacto del
+     *   perfil y GAMEPAD+JOYSTICK obligatorios.
+     * VID/PID: por Bluetooth HID la API no permite fijarlos y
+     * Android asigna 0 cuando no hay VID/PID disponible, así que
+     * si nombre+fuentes+ejes pasan pero el VID/PID no coincide, NO
+     * es FALLO: devuelve true con el motivo avisando que el
+     * vendor/product no es verificable por HID. Solo el uinput
+     * (que sí fija VID/PID) debería fallar por VID/PID, y eso queda
+     * como comportamiento futuro, no en este arreglo.
+     */
     fun looksLikeRealGamepad(name: String, vendorId: Int, productId: Int, sources: Int, axes: List<String>, profileId: Int = GamepadProfiles.XBOX_360_ID): Pair<Boolean, String> {
         val profile = GamepadProfiles.fromId(profileId)
         if (name.contains("virtual", ignoreCase = true)) return false to "el nombre contiene 'Virtual'"
         if (name.contains("ultimate", ignoreCase = true)) return false to "el nombre contiene 'Ultimate'"
         if (!name.equals(profile.deviceName, ignoreCase = true)) return false to "nombre distinto de '${profile.deviceName}' (perfil ${profile.name}): $name"
-        if (vendorId != profile.vendorId || productId != profile.productId) return false to "vendor/product distintos de 0x${profile.vendorId.toString(16)}/0x${profile.productId.toString(16)} (perfil ${profile.name})"
         val hasGamepad = (sources and android.view.InputDevice.SOURCE_GAMEPAD) != 0
         val hasJoystick = (sources and android.view.InputDevice.SOURCE_JOYSTICK) != 0
         if (!hasGamepad || !hasJoystick) return false to "getSources() no incluye GAMEPAD+JOYSTICK"
-        val required = listOf("AXIS_X", "AXIS_Y", "AXIS_Z", "AXIS_RZ", "AXIS_LTRIGGER", "AXIS_RTRIGGER", "AXIS_HAT_X", "AXIS_HAT_Y")
-        val missing = required - axes.toSet()
-        if (missing.isNotEmpty()) return false to "faltan ejes: ${missing.joinToString(", ")}"
-        return true to "nombre, vendor/product, GAMEPAD+JOYSTICK y ejes coinciden con un ${profile.name} físico"
+        val axisSet = axes.toSet()
+        // Ejes base: stick izquierdo + cruceta, siempre obligatorios.
+        val missingBase = listOf("AXIS_X", "AXIS_Y", "AXIS_HAT_X", "AXIS_HAT_Y") - axisSet
+        if (missingBase.isNotEmpty()) return false to "faltan ejes: ${missingBase.joinToString(", ")}"
+        // Stick derecho: Z+RZ (BT HID y DS4) o RX+RY (uinput Xbox).
+        val rightStick = ("AXIS_Z" in axisSet && "AXIS_RZ" in axisSet) || ("AXIS_RX" in axisSet && "AXIS_RY" in axisSet)
+        if (!rightStick) return false to "falta el stick derecho (AXIS_Z+AXIS_RZ o AXIS_RX+AXIS_RY)"
+        // Gatillos: LTRIGGER+RTRIGGER (DS4/.kl), BRAKE+GAS (BT HID)
+        // o Z+RZ cuando RX+RY llevan el stick (uinput Xbox).
+        val triggers = ("AXIS_LTRIGGER" in axisSet && "AXIS_RTRIGGER" in axisSet) ||
+            ("AXIS_BRAKE" in axisSet && "AXIS_GAS" in axisSet) ||
+            ("AXIS_RX" in axisSet && "AXIS_RY" in axisSet && "AXIS_Z" in axisSet && "AXIS_RZ" in axisSet)
+        if (!triggers) return false to "faltan los gatillos (AXIS_LTRIGGER+AXIS_RTRIGGER, AXIS_BRAKE+AXIS_GAS o AXIS_Z+AXIS_RZ con stick en RX/RY)"
+        val vidPidOk = vendorId == profile.vendorId && productId == profile.productId
+        return if (vidPidOk) {
+            true to "nombre, vendor/product, GAMEPAD+JOYSTICK y ejes coinciden con un ${profile.name} físico"
+        } else {
+            true to "nombre, GAMEPAD+JOYSTICK y ejes coinciden con un ${profile.name} físico (vendor/product no verificables por HID: 0x${vendorId.toString(16)}/0x${productId.toString(16)} en vez de 0x${profile.vendorId.toString(16)}/0x${profile.productId.toString(16)})"
+        }
     }
 
     fun anyRealGamepad(): Boolean = scan().any { it.looksLikeRealGamepad }
@@ -88,6 +124,10 @@ object Diagnostics {
         MotionEvent.AXIS_RZ -> "AXIS_RZ"
         MotionEvent.AXIS_LTRIGGER -> "AXIS_LTRIGGER"
         MotionEvent.AXIS_RTRIGGER -> "AXIS_RTRIGGER"
+        // H-10: los gatillos del BT HID llegan como BRAKE/GAS; sin
+        // estos casos la pantalla mostraba "AXIS_22"/"AXIS_23".
+        MotionEvent.AXIS_GAS -> "AXIS_GAS"
+        MotionEvent.AXIS_BRAKE -> "AXIS_BRAKE"
         MotionEvent.AXIS_HAT_X -> "AXIS_HAT_X"
         MotionEvent.AXIS_HAT_Y -> "AXIS_HAT_Y"
         else -> "AXIS_$axis"
