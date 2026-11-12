@@ -112,7 +112,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                 .weight(1f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF050505))
-                .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
                 .padding(12.dp),
         ) {
             GamepadBody(
@@ -173,7 +173,7 @@ fun LayoutEditorScreen(vm: GamepadViewModel, onClose: () -> Unit) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .background(Color(0xFF0B0B0F))
-                        .border(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
                         .padding(20.dp),
                 ) {
                     Text(LayoutConfig.NAMES[dialogId] ?: dialogId, fontSize = 18.sp)
