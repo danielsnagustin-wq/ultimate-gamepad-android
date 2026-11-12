@@ -318,10 +318,10 @@ class LayoutGeometryTest {
             assertTrue("$name: la vieja NO cortaba la cruceta: el test no cazaría el error", oldDishBottom > avH)
         }
         // El centro cuenta la fila L4/R4: 72 (Xbox) + 12 + 48 (SHARE)
-        // + 12 + 38 (L4/R4) = 182 dp, no 140 dp como antes de este arreglo.
+        // + 12 + 48 (L4/R4) = 192 dp, no 140 dp como antes de este arreglo.
         val cols = L.landscapeColumns(layout)
-        assertEquals(182f, cols.center.layoutH, 0.001f)
-        assertEquals(182f, cols.center.spanH, 0.001f)
+        assertEquals(192f, cols.center.layoutH, 0.001f)
+        assertEquals(192f, cols.center.spanH, 0.001f)
     }
 
     @Test fun `la matemática vieja habría tapado la etiqueta y la tuerca`() {
@@ -505,16 +505,16 @@ class LayoutGeometryTest {
      */
     @Test fun `la vista previa pone cada botón donde lo pone la pantalla real`() {
         // Horizontal, ventana del usuario (área 733x341), diseño
-        // por defecto: ajuste 0,7271.
+        // por defecto: ajuste 0,7077.
         val rects = L.elementRects(LayoutGeometry.GeomLayout(), 733f, 341f)
-        assertEquals(188.92f, rects.leftStick!!.centerX, 0.05f)
-        assertEquals(117.07f, rects.leftStick!!.centerY, 0.05f)
-        assertEquals(188.92f, rects.dpad!!.centerX, 0.05f)
-        assertEquals(268.29f, rects.dpad!!.centerY, 0.05f)
-        assertEquals(542.63f, rects.abxy!!.centerX, 0.05f)
-        assertEquals(112.71f, rects.abxy!!.centerY, 0.05f)
-        assertEquals(365.05f, rects.xbox!!.centerX, 0.05f)
-        assertEquals(150.51f, rects.xbox!!.centerY, 0.05f)
+        assertEquals(193.64f, rects.leftStick!!.centerX, 0.05f)
+        assertEquals(123.02f, rects.leftStick!!.centerY, 0.05f)
+        assertEquals(193.64f, rects.dpad!!.centerX, 0.05f)
+        assertEquals(270.23f, rects.dpad!!.centerY, 0.05f)
+        assertEquals(537.95f, rects.abxy!!.centerX, 0.05f)
+        assertEquals(118.77f, rects.abxy!!.centerY, 0.05f)
+        assertEquals(365.08f, rects.xbox!!.centerX, 0.05f)
+        assertEquals(152.04f, rects.xbox!!.centerY, 0.05f)
         // Vertical, teléfono 390x844 (área 366x820): ajuste 0,799,
         // la fila central queda justo dentro (L4 en 0, R4 en 366).
         val layout = LayoutGeometry.GeomLayout()
