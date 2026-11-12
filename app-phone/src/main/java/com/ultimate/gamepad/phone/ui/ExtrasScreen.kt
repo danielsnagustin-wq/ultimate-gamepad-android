@@ -91,7 +91,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
             ) { }
             .padding(16.dp),
     ) {
-        Text("✨  Extras — Fase 4", fontSize = 20.sp, color = Color.White)
+        Text("✨  Extras · Fase 4", fontSize = 20.sp, color = Color.White)
         Spacer(Modifier.height(4.dp))
         Text(
             "Turbo, macros, vibración, giroscopio, teclado virtual y modo ratón. Todo es opcional: el mando funciona igual sin tocar nada aquí.",
@@ -165,7 +165,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
         // estado del ViewModel: parche en el manifiesto).
         if (recording != null) {
             Text(
-                "● Grabando macro «$recording» — pulsa los botones del mando; para con «Parar y guardar». " +
+                "● Grabando macro «$recording»: pulsa los botones del mando; para con «Parar y guardar». " +
                     (recordingProgress?.let { (elapsedMs, events) -> "${elapsedMs / 1000} s / 30 s - $events/200 eventos" } ?: "Límite: 30 s / 200 eventos") + ".",
                 color = Color(0xFFFF5252),
                 fontSize = 13.sp,
@@ -193,7 +193,7 @@ fun ExtrasScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> Unit) 
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${macro.name} — ${macro.durationMs} ms, ${macro.events.size} eventos",
+                    "${macro.name} · ${macro.durationMs} ms, ${macro.events.size} eventos",
                     fontSize = 13.sp,
                     modifier = Modifier.weight(1f),
                 )
