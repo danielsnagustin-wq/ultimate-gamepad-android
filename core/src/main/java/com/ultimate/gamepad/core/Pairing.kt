@@ -22,9 +22,11 @@ data class PairingInfo(val host: String, val port: Int, val pin: String) {
             val parts = payload.trim().split("|")
             if (parts.size != 4) return null
             if (parts[0] != GamepadProtocol.PAIRING_PREFIX) return null
-            val host = parts[1]
-            val port = parts[2].toIntOrNull() ?: return null
-            val pin = parts[3]
+            // Ronda 2 P2-9: un espacio en el QR dejaba el host con
+            // espacios (" 192.168.1.20 ") y la conexión fallaba.
+            val host = parts[1].trim()
+            val port = parts[2].trim().toIntOrNull() ?: return null
+            val pin = parts[3].trim()
             if (host.isBlank() || port !in 1..65535) return null
             if (!isValidPin(pin)) return null
             // Validación mínima de IPv4/hostname, sin resolver DNS aquí.
