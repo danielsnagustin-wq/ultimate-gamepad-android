@@ -9,7 +9,14 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- Escaneo Bluetooth desde el teléfono (ronda Bluetooth dos
+         vías, 2026-11-11): neverForLocation porque el escaneo es
+         solo para encontrar la TV, nunca para ubicar el teléfono;
+         con este flag Android 12+ NO exige el permiso de ubicación.
+         En Android 11 y anteriores el escaneo clásico sí exige
+         ubicación: se declara con maxSdkVersion=30. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
