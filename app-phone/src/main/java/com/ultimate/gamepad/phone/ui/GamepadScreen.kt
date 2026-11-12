@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -52,7 +53,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ultimate.gamepad.core.GamepadButtons
 import com.ultimate.gamepad.core.GamepadExtraButtons
+import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.LayoutGeometry
+import com.ultimate.gamepad.core.TransportMethod
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -218,9 +221,22 @@ fun GamepadBody(
                     Spacer(Modifier.height(6.dp))
                     Text(ui.info!!, color = Color(0xFF9BF00B), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
-                if (ui.status == ConnectionStatus.CONNECTED && !ui.tvResponding) {
+                if (ui.status == ConnectionStatus.CONNECTED && !ui.tvResponding && ui.attemptMethod != TransportMethod.BLUETOOTH_HID) {
+                    // P1-7: por HID no hay eco de ping (el HID nunca
+                    // devuelve eco): sin esta exclusión, cada
+                    // conexión HID correcta mostraba "TV sin
+                    // respuesta" aunque el mando funcionara.
                     Spacer(Modifier.height(6.dp))
                     Text("TV sin respuesta (sin eco de ping en 3 s). En modo Automático se probará el siguiente método.", color = Color(0xFFFFC107), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                }
+                // P0-4: cancelar un intento en curso (antes no había
+                // forma de parar un CONECTANDO, ni siquiera el HID
+                // esperando a que la TV empareje).
+                if (ui.status == ConnectionStatus.CONNECTING) {
+                    Spacer(Modifier.height(6.dp))
+                    Button(onClick = { vm.disconnect() }) {
+                        Text("Cancelar", color = Color.White)
+                    }
                 }
                 // La TV responde al ping pero no recibe paquetes de
                 // mando: el camino funciona pero la entrada no llega
@@ -449,10 +465,15 @@ private fun ShoulderRow(vm: GamepadViewModel, ui: GamepadUiState, layout: Layout
 /** Píldora de estado con borde neón (tocarla abre Ajustes). */
 @Composable
 private fun StatusPill(vm: GamepadViewModel, ui: GamepadUiState, interaction: GamepadInteraction) {
-    val (dot, text) = when (ui.status) {
-        ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) to "Conectado${ui.pingMs?.let { " · $it ms" } ?: ""}"
-        ConnectionStatus.CONNECTING -> Color(0xFFFFC107) to "Conectando por ${ui.attemptMethod.label}…"
-        ConnectionStatus.ERROR -> Color(0xFFFF5252) to "Error"
+    // P1-3: si falta el permiso de Bluetooth, la píldora lo dice
+    // en vez de un "Desconectado" genérico (sin pedir el permiso
+    // al arrancar y sin contexto: el botón "Dar permiso" está en
+    // el selector de método).
+    val (dot, text) = when {
+        ui.hidAvailability == HidAvailability.PERMISSION_DENIED && ui.status == ConnectionStatus.DISCONNECTED -> Color(0xFFFFC107) to "Bluetooth: falta permiso"
+        ui.status == ConnectionStatus.CONNECTED -> Color(0xFF4CAF50) to "Conectado${ui.pingMs?.let { " · $it ms" } ?: ""}"
+        ui.status == ConnectionStatus.CONNECTING -> Color(0xFFFFC107) to "Conectando por ${ui.attemptMethod.label}…"
+        ui.status == ConnectionStatus.ERROR -> Color(0xFFFF5252) to "Error"
         else -> Color(0xFF9AA0B0) to "Desconectado"
     }
     Row(
