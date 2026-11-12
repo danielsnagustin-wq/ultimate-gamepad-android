@@ -49,17 +49,22 @@ object LastConnectionPrefs {
 
     fun load(context: Context): Saved? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val host = prefs.getString(KEY_HOST, null)?.takeIf { it.isNotBlank() } ?: return null
         val method = runCatching {
             TransportMethod.valueOf(prefs.getString(KEY_METHOD, null) ?: "")
         }.getOrNull() ?: return null
         if (method != TransportMethod.WIFI_UDP && method != TransportMethod.WIFI_TCP && method != TransportMethod.BLUETOOTH_DATA) return null
+        val btAddress = prefs.getString(KEY_BT_ADDRESS, null)?.takeIf { it.isNotBlank() }
+        // Ronda 2 P1-2: por Bluetooth datos no hay IP: un host en
+        // blanco con MAC guardada es válido (antes devolvía null y
+        // SPP era imposible sin una Wi-Fi previa).
+        val host = prefs.getString(KEY_HOST, null)?.takeIf { it.isNotBlank() }
+            ?: if (method == TransportMethod.BLUETOOTH_DATA && btAddress != null) "" else return null
         return Saved(
             host = host,
             port = prefs.getInt(KEY_PORT, GamepadProtocol.DEFAULT_PORT),
             pin = prefs.getString(KEY_PIN, "") ?: "",
             method = method,
-            btAddress = prefs.getString(KEY_BT_ADDRESS, null)?.takeIf { it.isNotBlank() },
+            btAddress = btAddress,
         )
     }
 
