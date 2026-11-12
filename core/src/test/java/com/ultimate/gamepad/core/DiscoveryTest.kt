@@ -69,4 +69,22 @@ class DiscoveryTest {
         assertEquals("4821", tv.pin)
         assertNull(Discovery.parseResponse("BASURA".toByteArray(Charsets.UTF_8)))
     }
+
+    @Test fun `respuesta de descubrimiento rechaza puerto e IP invalidos`() {
+        fun resp(ip: String, port: String) =
+            "UGRSP1|TV|$ip|$port|4821".toByteArray(Charsets.UTF_8)
+        assertNull(Discovery.parseResponse(resp("192.168.1.20", "0")))
+        assertNull(Discovery.parseResponse(resp("192.168.1.20", "65536")))
+        assertNull(Discovery.parseResponse(resp("192.168.1.20", "99999")))
+        assertNull(Discovery.parseResponse(resp("192.168.1.20", "-1")))
+        assertNull(Discovery.parseResponse(resp("no-es-ip", "51999")))
+        assertNull(Discovery.parseResponse(resp("192.168.1.999", "51999")))
+        assertNull(Discovery.parseResponse(resp("192.168.1", "51999")))
+        assertNull(Discovery.parseResponse(resp("192.168.1.20.5", "51999")))
+        // Con espacios se recorta y vale (ronda 2 P2-9).
+        val tv = Discovery.parseResponse("UGRSP1| TV | 192.168.1.20 | 51999 | 4821 ".toByteArray(Charsets.UTF_8))
+        assertNotNull(tv)
+        assertEquals("192.168.1.20", tv!!.ip)
+        assertEquals("TV", tv.name)
+    }
 }
