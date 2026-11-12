@@ -34,11 +34,19 @@ class TcpGamepadTransport(
     fun connect(timeoutMs: Int = 3000) {
         close()
         val s = Socket()
-        s.connect(java.net.InetSocketAddress(host, port), timeoutMs)
-        s.tcpNoDelay = true
-        socket = s
-        out = DataOutputStream(s.getOutputStream())
-        input = DataInputStream(s.getInputStream())
+        try {
+            s.connect(java.net.InetSocketAddress(host, port), timeoutMs)
+            s.tcpNoDelay = true
+            socket = s
+            out = DataOutputStream(s.getOutputStream())
+            input = DataInputStream(s.getInputStream())
+        } catch (e: java.io.IOException) {
+            // Ronda 2 P2-1: si connect() o getOutputStream() lanza,
+            // el socket local quedaba abierto y nadie lo cerraba
+            // (close() solo alcanza el campo `socket`, aún null).
+            runCatching { s.close() }
+            throw e
+        }
     }
 
     override fun send(state: GamepadState) = send(state, GamepadProfiles.XBOX_360_ID)
@@ -118,6 +126,8 @@ class TcpGamepadReceiver(
     private var client: Socket? = null
     private var input: DataInputStream? = null
     private var output: DataOutputStream? = null
+    /** Último paquete completo recibido (para expulsar clientes muertos, P1-1 ronda 2). */
+    private var lastValidPacketAtMs: Long = 0L
 
     override fun receive(timeoutMs: Int): GamepadState? = receivePacket(timeoutMs)?.first
 
@@ -136,6 +146,7 @@ class TcpGamepadReceiver(
                 client?.tcpNoDelay = true
                 input = DataInputStream(client?.getInputStream())
                 output = DataOutputStream(client?.getOutputStream())
+                lastValidPacketAtMs = System.currentTimeMillis()
             } catch (_: SocketTimeoutException) {
                 return null
             } catch (_: java.io.IOException) {
@@ -145,6 +156,16 @@ class TcpGamepadReceiver(
             }
         }
         val stream = input ?: return null
+        // Ronda 2 P1-1: expulsar al cliente inactivo. Un socket
+        // semi-abierto (la TV apagó la Wi-Fi, el teléfono cambió de
+        // red) nunca da EOF ni error: sin esto, accept() quedaba
+        // bloqueado para siempre y ningún cliente nuevo entraba.
+        // 5 s sin un paquete completo = muerto (el servicio llama
+        // con timeout 1000 ms y un cliente vivo envía a 120 Hz).
+        if (System.currentTimeMillis() - lastValidPacketAtMs > 5_000L) {
+            closeClient()
+            return null
+        }
         client?.soTimeout = timeoutMs
         val buf = ByteArray(GamepadProtocol.PACKET_SIZE)
         return try {
@@ -165,6 +186,8 @@ class TcpGamepadReceiver(
                     return null
                 }
             }
+            // Paquete completo (ping o estado): el cliente está vivo.
+            lastValidPacketAtMs = System.currentTimeMillis()
             if (GamepadProtocol.isPing(buf)) {
                 // Eco TCP (Fase 1): el ping se devuelve tal cual por
                 // el mismo socket y NO se trata como entrada. Sin
@@ -204,6 +227,7 @@ class TcpGamepadReceiver(
         runCatching { output?.close() }
         runCatching { client?.close() }
         client = null; input = null; output = null
+        lastValidPacketAtMs = 0L
     }
 
     override fun close() {
