@@ -93,4 +93,14 @@ class RumbleReportTest {
         assertEquals(1, reply.size)
         assertEquals(0xC8.toByte(), reply[0])
     }
+
+    @Test fun `Block Load y Device Gain fijan valores fuera de rango`() {
+        // blockLoadReply y deviceGainReply recortan (coerceIn), no
+        // rechazan: fuera de rango se fija al límite, nunca se
+        // inventa un índice o una ganancia (ronda 2, hueco de tests).
+        assertEquals(1.toByte(), RumbleReport.blockLoadReply(0)[0])
+        assertEquals(127.toByte(), RumbleReport.blockLoadReply(200)[0])
+        assertEquals(0.toByte(), RumbleReport.deviceGainReply(-5)[0])
+        assertEquals(0xFF.toByte(), RumbleReport.deviceGainReply(300)[0])
+    }
 }
