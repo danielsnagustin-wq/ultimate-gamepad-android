@@ -73,9 +73,10 @@ object LayoutGeometry {
     const val SHARE_W = 76f
     const val SHARE_H = 48f
     const val L4_W = 58f
-    const val L4_H = 38f
+    /** L4/R4: 58x48 dp (R-03: mínimo táctil 48 dp, igual que el botón dibujado). */
+    const val L4_H = 48f
     const val R4_W = 58f
-    const val R4_H = 38f
+    const val R4_H = 48f
 
     /** Hueco entre piezas de una columna y entre centro y SHARE. */
     const val COLUMN_GAP = 6f
@@ -86,14 +87,14 @@ object LayoutGeometry {
     const val PORTRAIT_CENTER_SPACING = 10f
     const val PORTRAIT_MIDDLE_SPACING = 12f
 
-    /** Alto de la fila de hombros (lo manda la tuerca, 40 dp). */
-    const val SHOULDER_ROW_H = 40f
+    /** Alto de la fila de hombros (lo manda la tuerca, 48 dp; hombros también 48 dp). */
+    const val SHOULDER_ROW_H = 48f
 
     // Hombros: dos píldoras de 58 dp + hueco de 8 dp = 124 dp.
     const val SHOULDER_GROUP_W = 124f
     /** Ancho estimado de la píldora de estado, centrada. */
     const val STATUS_PILL_W = 260f
-    const val GEAR_W = 40f
+    const val GEAR_W = 48f
     const val GEAR_GAP = 8f
 
     /** Ajuste mínimo/máximo del mando en horizontal. */
@@ -458,16 +459,16 @@ object LayoutGeometry {
         // Hombros: no pasan por el ajuste global; su desplazamiento
         // dibujado es el recortado (clampShoulders), como en la real.
         val (leftOffX, rightOffX) = clampShoulders(areaW - 24f, sl, sr)
-        val shoulderRowH = maxOf(38f * sl.scale, 38f * sr.scale, 40f)
+        val shoulderRowH = maxOf(48f * sl.scale, 48f * sr.scale, 48f)
         val shouldersLeftRect = if (sl.visible) {
-            val top = (shoulderRowH - 38f * sl.scale) / 2f + sl.offsetYdp
-            ElementRect(leftOffX, top, leftOffX + SHOULDER_GROUP_W * sl.scale, top + 38f * sl.scale)
+            val top = (shoulderRowH - 48f * sl.scale) / 2f + sl.offsetYdp
+            ElementRect(leftOffX, top, leftOffX + SHOULDER_GROUP_W * sl.scale, top + 48f * sl.scale)
         } else null
         val shouldersRightRect = if (sr.visible) {
             val rightRowW = SHOULDER_GROUP_W * sr.scale + 8f + GEAR_W
             val left = areaW - rightRowW + rightOffX
-            val top = (shoulderRowH - 38f * sr.scale) / 2f + sr.offsetYdp
-            ElementRect(left, top, left + SHOULDER_GROUP_W * sr.scale, top + 38f * sr.scale)
+            val top = (shoulderRowH - 48f * sr.scale) / 2f + sr.offsetYdp
+            ElementRect(left, top, left + SHOULDER_GROUP_W * sr.scale, top + 48f * sr.scale)
         } else null
         if (areaW > areaH) {
             // --- Horizontal: tres columnas, Row SpaceEvenly, ajuste fit. ---
