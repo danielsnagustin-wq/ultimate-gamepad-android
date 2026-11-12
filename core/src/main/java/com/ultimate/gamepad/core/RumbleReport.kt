@@ -15,7 +15,7 @@ package com.ultimate.gamepad.core
  * BluetoothHidDevice lo entrega aparte en onSetReport /
  * onInterruptData / onGetReport, y sendReport / replyReport lo
  * reciben aparte — "Report data, not including Report Id"):
- *   ID 1: entrada del mando (7 bytes de datos, sin el ID).
+ *   ID 1: entrada del mando (9 bytes de datos, sin el ID).
  *   ID 2: Set Effect Report (Output, 17 bytes): índice del
  *     efecto (7 bits) + ROM Flag, tipo (1 = fuerza constante),
  *     duración ms (u16 LE, 0xFFFF = infinita), intervalo de
