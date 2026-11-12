@@ -127,9 +127,16 @@ class GamepadSenderService : Service() {
             val prev = lastTvPacketsStamp
             if (prev >= 0) {
                 val delta = (stamp - prev + 65536) % 65536
-                if (delta > 0) {
+                if (delta in 1..1000) {
                     tvPacketsReceived += delta
                     tvReceivingPackets = true
+                } else if (delta > 1000) {
+                    // Ronda 2 P2-19: la TV reinició y su contador
+                    // volvió a 0: re-sincronizar sin sumar un delta
+                    // fantasma (entre dos ecos a 500 ms caben ~60
+                    // paquetes a 120 Hz; más de 1000 no es real).
+                    tvPacketsReceived = stamp.toLong()
+                    tvReceivingPackets = stamp > 0
                 } else {
                     tvReceivingPackets = false
                 }
@@ -221,6 +228,9 @@ class GamepadSenderService : Service() {
 
         /** Limpia los marcadores de salud (al entrar en HID o al desconectar): un eco viejo de Wi-Fi no debe fingir que la TV responde. */
         fun resetHealth() {
+            // Ronda 2 P2-1: también se limpia lastError, o el
+            // error viejo resucitaba en la UI cada 500 ms.
+            lastError = null
             lastPingMs = null; lastEchoAtMs = 0L; lastTcpSendAtMs = 0L; tcpSessionStartMs = 0L; lastBtSendAtMs = 0L; btSessionStartMs = 0L
             tvPacketsReceived = 0; tvReceivingPackets = false; lastTvPacketsAtMs = 0L; lastTvPacketsStamp = -1
             resetStats()
@@ -253,7 +263,11 @@ class GamepadSenderService : Service() {
         when (action) {
             ACTION_STOP -> { stopSending(); stopSelf(); return START_NOT_STICKY }
             ACTION_START -> {
-                val host = intent.getStringExtra(EXTRA_HOST) ?: return START_NOT_STICKY
+                // Ronda 2 P2-16: si el servicio se arrancó con
+                // startForegroundService y el intent viene sin host,
+                // hay que pararse: sin stopSelf() el sistema lo mata
+                // con ForegroundServiceDidNotStartInTimeException.
+                val host = intent.getStringExtra(EXTRA_HOST) ?: run { stopSelf(); return START_NOT_STICKY }
                 val port = intent.getIntExtra(EXTRA_PORT, GamepadProtocol.DEFAULT_PORT)
                 val method = runCatching { TransportMethod.valueOf(intent.getStringExtra(EXTRA_METHOD) ?: "WIFI_UDP") }
                     .getOrDefault(TransportMethod.WIFI_UDP)
@@ -263,11 +277,25 @@ class GamepadSenderService : Service() {
                 return START_STICKY
             }
         }
+        // Acción desconocida: pararse (mismo motivo que ACTION_START
+        // sin host: un servicio arrancado en primer plano que no se
+        // para lo mata el sistema a los ~5-10 s).
+        stopSelf()
         return START_NOT_STICKY
     }
 
     private fun startSending(host: String, port: Int, method: TransportMethod, btAddress: String? = null) {
-        startForeground(1, notification("Enviando por $method a $host:$port…"))
+        try {
+            startForeground(1, notification("Enviando por $method a $host:$port…"))
+        } catch (e: Exception) {
+            // Ronda 2 P1: con foregroundServiceType="dataSync" no
+            // exige permiso en tiempo de ejecución, pero si el
+            // sistema rechaza el foreground por cualquier motivo,
+            // no crashear: error honesto y servicio parado.
+            lastError = "No se pudo arrancar el servicio en primer plano (${e.message})"
+            stopSelf()
+            return
+        }
         // A3: el servicio está enviando (la UI lo usa al reabrir la app
         // tras la muerte del proceso para no decir DESCONECTADO).
         LastConnectionPrefs.setRunning(this, true)
@@ -309,6 +337,12 @@ class GamepadSenderService : Service() {
                 }
                 var lastPingSentAt = 0L
                 var pingSequence = -1
+                // Ronda 2 P1-2: últimas 3 secuencias de ping enviadas.
+                // Con RTT > 500 ms el eco del ping anterior llega
+                // después de enviar el siguiente: aceptar solo la
+                // última secuencia descartaba todos los ecos y AUTO
+                // saltaba aunque la TV respondiera.
+                val recentPingSequences = ArrayDeque<Int>()
                 lastTcpSendAtMs = 0L
                 lastBtSendAtMs = 0L
                 while (isActive) {
@@ -324,11 +358,11 @@ class GamepadSenderService : Service() {
                                 recordSent()
                                 val now = System.currentTimeMillis()
                                 if (now - lastPingSentAt >= 500) {
-                                    lastPingSentAt = now; pingSequence = sequence
+                                    lastPingSentAt = now; pingSequence = sequence; recentPingSequences.addLast(pingSequence); while (recentPingSequences.size > 3) recentPingSequences.removeFirst()
                                     udp.sendPing(pingSequence, now, address, port)
                                 }
                                 udp.receive(1) { echoed, isPing, _ ->
-                                    if (isPing && echoed.sequence == pingSequence) {
+                                    if (isPing && echoed.sequence in recentPingSequences) {
                                         lastPingMs = System.currentTimeMillis() - echoed.timestampMs
                                         recordPingSample(lastPingMs!!)
                                         lastEchoAtMs = System.currentTimeMillis()
@@ -390,7 +424,7 @@ class GamepadSenderService : Service() {
                                 // vida (ver isTvResponding()).
                                 val now = System.currentTimeMillis()
                                 if (now - lastPingSentAt >= 500) {
-                                    lastPingSentAt = now; pingSequence = sequence
+                                    lastPingSentAt = now; pingSequence = sequence; recentPingSequences.addLast(pingSequence); while (recentPingSequences.size > 3) recentPingSequences.removeFirst()
                                     runCatching { currentTcp.sendPing(pingSequence, now) }
                                 }
                                 lastTcpSendAtMs = System.currentTimeMillis()
@@ -421,7 +455,7 @@ class GamepadSenderService : Service() {
                                                 break // Socket muerto: el bucle principal reconecta.
                                             } ?: continue
                                             if (!GamepadProtocol.isPing(raw)) continue
-                                            val echoed = connectedBt.recordEcho(raw, pingSequence) ?: continue
+                                            val echoed = connectedBt.recordEcho(raw, recentPingSequences.toSet()) ?: continue
                                             lastPingMs = connectedBt.lastPingMs
                                             if (lastPingMs != null) recordPingSample(lastPingMs!!)
                                             lastEchoAtMs = System.currentTimeMillis()
@@ -440,7 +474,7 @@ class GamepadSenderService : Service() {
                                 // igual que por Wi-Fi/TCP.
                                 val now = System.currentTimeMillis()
                                 if (now - lastPingSentAt >= 500) {
-                                    lastPingSentAt = now; pingSequence = sequence
+                                    lastPingSentAt = now; pingSequence = sequence; recentPingSequences.addLast(pingSequence); while (recentPingSequences.size > 3) recentPingSequences.removeFirst()
                                     runCatching { currentBt.sendPing(pingSequence, now) }
                                 }
                                 lastBtSendAtMs = System.currentTimeMillis()
