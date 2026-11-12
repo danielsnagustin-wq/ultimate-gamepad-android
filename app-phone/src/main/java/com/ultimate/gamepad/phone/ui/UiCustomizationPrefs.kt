@@ -110,33 +110,6 @@ object UiCustomizationPrefs {
             .apply()
     }
 
-    fun loadAccentArgb(context: Context): Int =
-        loadAll(context).accentArgb
-
-    fun saveAccentArgb(context: Context, argb: Int) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val clean = UiCustomization(accentArgb = argb).sanitized().accentArgb
-        prefs.edit().putInt(KEY_ACCENT_ARGB, clean).apply()
-    }
-
-    fun loadTextScale(context: Context): Float =
-        loadAll(context).textScale
-
-    fun saveTextScale(context: Context, scale: Float) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val clean = UiCustomization(textScale = scale).sanitized().textScale
-        prefs.edit().putFloat(KEY_TEXT_SCALE, clean).apply()
-    }
-
-    fun loadBackgroundArgb(context: Context): Int =
-        loadAll(context).backgroundArgb
-
-    fun saveBackgroundArgb(context: Context, argb: Int) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val clean = UiCustomization(backgroundArgb = argb).sanitized().backgroundArgb
-        prefs.edit().putInt(KEY_BACKGROUND_ARGB, clean).apply()
-    }
-
     /** Vuelve a los valores por defecto (morado, normal, negro puro). */
     fun reset(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
