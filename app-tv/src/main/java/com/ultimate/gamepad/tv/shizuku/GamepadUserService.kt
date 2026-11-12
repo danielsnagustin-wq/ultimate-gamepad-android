@@ -115,6 +115,12 @@ class GamepadUserService : IGamepadInputService.Stub() {
     /** Destruye los dispositivos de teclado y ratón (Fase 4). El mando no se toca. */
     override fun destroyExtraDevices() { UinputGamepad.destroyExtras() }
 
+    // H-11: sendReport/injectGamepadEvent pueden correr en hilos
+    // Binder concurrentes y previousState se lee y se escribe aquí
+    // sin sincronizar: dos paquetes a la vez podían pisarse y dejar
+    // la lógica T9 (no actualizar si algo falló) inconsistente.
+    // @Synchronized serializa las inyecciones en esta instancia.
+    @Synchronized
     private fun injectState(state: GamepadState): Boolean {
         return runCatching {
             val now = android.os.SystemClock.uptimeMillis()
