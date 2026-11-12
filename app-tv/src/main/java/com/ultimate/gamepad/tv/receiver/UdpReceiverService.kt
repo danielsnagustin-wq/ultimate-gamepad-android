@@ -43,14 +43,14 @@ import java.net.InetSocketAddress
  * Pérdida de conexión: si no llega ningún paquete en 2 s
  * (ConnectionHealth.TIMEOUT_MS), la pantalla muestra "Sin
  * conexión". Cuando vuelve un paquete, se recupera solo.
- * Watchdog (Fase 1): pasados esos 2 s sin paquetes, se envía un
- * estado cero al mando virtual para que ningún botón/stick quede
- * atascado; el último estado en pantalla también vuelve a cero.
+ * Watchdog (Fase 1): pasados esos 2 s sin paquetes, el último estado
+ * en pantalla vuelve a cero. No hay mando virtual que soltar: la
+ * inyección por Shizuku está descartada (ver ReceiverConfig).
  *
- * Inyección (Fase 2, opcional): si ReceiverConfig lo permite y
- * Shizuku está activo, intenta A (uinput con el perfil activo) y luego B
- * (injectInputEvent SOURCE_GAMEPAD). Si Shizuku no está, la
- * inyección queda en "ninguno" y [injectionMethod] lo dice.
+ * Inyección: APAGADA (ReceiverConfig.SHIZUKU_PHASE2_ENABLED = false).
+ * Shizuku está descartado en esta TV; la TV es solo receptora y la
+ * única vía para que el juego vea un mando es el Bluetooth HID
+ * directo del teléfono. [injectionMethod] siempre dice "ninguno".
  * Nunca se finge entrada a OpenNOW.
  */
 class UdpReceiverService : Service() {
@@ -278,7 +278,15 @@ class UdpReceiverService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(1, notification("Receptor Ultimate Gamepad en puerto ${GamepadProtocol.DEFAULT_PORT}"))
+        try {
+            startForeground(1, notification("Receptor Ultimate Gamepad en puerto ${GamepadProtocol.DEFAULT_PORT}"))
+        } catch (e: Exception) {
+            // Ronda 2 P1: si el sistema rechaza el foreground, no
+            // crashear: el receptor no arranca y la UI lo dirá.
+            android.util.Log.e("UdpReceiver", "startForeground falló: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startService(Intent(this, TcpReceiverService::class.java))
         // Cerrar el socket viejo ANTES de crear el nuevo: el bucle
         // viejo está bloqueado en receive() sin timeout y la
