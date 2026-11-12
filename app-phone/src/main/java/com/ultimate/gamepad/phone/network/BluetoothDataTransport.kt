@@ -116,7 +116,7 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
      * (BT apagado, sin permiso, sin adapter); AVAILABLE = socket
      * abierto esperando el primer eco; CONNECTED = primer eco válido
      * recibido (hay paquetes reales); FAILED = se intentó y falló
-     * (ver [lastError]). Nunca PENDING_STAGE2: la Fase 5 existe.
+     * (ver [lastError]).
      */
     @Volatile var status: TransportStatus = TransportStatus.UNAVAILABLE
         private set
