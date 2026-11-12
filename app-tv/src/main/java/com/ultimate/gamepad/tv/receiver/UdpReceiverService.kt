@@ -118,14 +118,21 @@ class UdpReceiverService : Service() {
          * dispositivos extra de teclado/ratón) y resetea la
          * inyección a "ninguno". Solo envía el estado cero si había
          * algo que soltar y había inyección activa: sin Shizuku no
-         * hay nada atascado que liberar.
+         * hay nada atascado que liberar. El lastState en pantalla
+         * se resetea siempre (H-03), aunque no haya inyección: si
+         * no, la TV seguía mostrando los botones viejos tras
+         * Detener.
          */
         fun releaseControls(context: Context) {
             if (lastState != GamepadState() && (virtualGamepadReady || injectionMethod != "ninguno")) {
                 val zero = GamepadState()
                 deliver(context, zero, GamepadProtocol.encode(zero, activeProfileId))
-                lastState = zero
             }
+            // H-03: el estado en pantalla se resetea SIEMPRE, aunque
+            // no haya inyección activa: con Shizuku apagado la
+            // condición de arriba nunca se cumple y la TV seguía
+            // mostrando los botones viejos tras Detener.
+            lastState = GamepadState()
             ShizukuHelper.destroyVirtualGamepad(context)
             ShizukuHelper.destroyExtraDevices(context)
             virtualGamepadReady = false
@@ -148,6 +155,12 @@ class UdpReceiverService : Service() {
          * (antes se entregaba siempre y un duplicado inyectaba un botón
          * o un stick viejos mientras las estadísticas lo descartaban).
          */
+        // H-05: lo llaman 3 hilos (bucle UDP, bucle TCP, hilo SPP
+        // de BT): la comprobación-y-asignación de lastSequence y
+        // los contadores tienen que ser atómicas. @Synchronized en
+        // una función del companion bloquea sobre el companion, el
+        // mismo monitor para los 3 llamadores.
+        @Synchronized
         fun recordPacket(state: GamepadState, method: TransportMethod): Boolean {
             val now = System.currentTimeMillis()
             // Secuencia con wrap uint16 + reinicio de sesión. La
@@ -161,9 +174,18 @@ class UdpReceiverService : Service() {
             // se acepta si la distancia hacia adelante (módulo
             // 65536) está en 1..32768, o si no llegó ningún paquete
             // en más de 2 s (sesión nueva: se acepta cualquier
-            // secuencia). El hueco máximo de entrada queda en ~2 s.
+            // secuencia). El hueco máximo de entrada queda en ~2 s
+            // solo si el teléfono reconecta por el MISMO
+            // transporte; al cambiar de método la sesión nueva se
+            // acepta de inmediato (H-06).
             val forward = (state.sequence - lastSequence + 65536) % 65536
-            val freshSession = lastSequence == -1 || now - lastPacketAtMs > ConnectionHealth.TIMEOUT_MS
+            // H-06: un cambio de transporte es sesión nueva: el
+            // teléfono reinicia su secuencia en 0 al cambiar de
+            // método y la TV no debe esperar 2 s para aceptarlo.
+            // El valor inicial de activeTransport es WIFI_UDP,
+            // pero el primer paquete ya es sesión nueva por
+            // lastSequence == -1, así que no se rompe nada.
+            val freshSession = lastSequence == -1 || now - lastPacketAtMs > ConnectionHealth.TIMEOUT_MS || method != activeTransport
             if (!freshSession && (forward == 0 || forward > 32768)) return false
             // Pérdida real (Fase 3): hueco entre la última secuencia
             // aceptada y esta. En sesión nueva no se cuenta (el
