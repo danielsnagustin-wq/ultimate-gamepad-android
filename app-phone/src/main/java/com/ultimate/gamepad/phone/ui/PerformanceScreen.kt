@@ -67,10 +67,10 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         })
         PerformanceRow("Método activo", "${ui.attemptMethod.label} (${ui.transportMode})")
         PerformanceRow("TV responde", if (ui.tvResponding) "SÍ" else "NO")
-        PerformanceRow("Latencia (ping)", ui.pingMs?.let { "$it ms" } ?: "—")
+        PerformanceRow("Latencia (ping)", ui.pingMs?.let { "$it ms" } ?: "sin datos")
         PerformanceRow(
             "Jitter (variación del ping)",
-            ui.pingJitterMs?.let { "$it ms" } ?: "— (faltan muestras: hacen falta 2 ecos)",
+            ui.pingJitterMs?.let { "$it ms" } ?: "sin datos (faltan muestras: hacen falta 2 ecos)",
         )
         // Arreglo 08: el objetivo depende del método activo
         // (Wi-Fi 120 /s, Bluetooth HID 10 /s), no siempre 120.
@@ -80,8 +80,8 @@ fun PerformanceScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -> U
         PerformanceRow(
             "TV recibe paquetes",
             when {
-                ui.tvReceivingPackets -> "SÍ — ${ui.tvPacketsReceived} recibidos por la TV"
-                ui.tvResponding -> "NO — la TV responde al ping pero no recibe paquetes de mando"
+                ui.tvReceivingPackets -> "SÍ: ${ui.tvPacketsReceived} recibidos por la TV"
+                ui.tvResponding -> "NO: la TV responde al ping pero no recibe paquetes de mando"
                 else -> "Sin datos (sin eco de la TV)"
             },
         )
