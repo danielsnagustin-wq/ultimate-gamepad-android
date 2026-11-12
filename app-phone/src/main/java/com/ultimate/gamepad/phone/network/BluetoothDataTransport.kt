@@ -59,7 +59,7 @@ import java.util.concurrent.TimeUnit
  *   esperando eco"), nunca "Conectado". Sin paquetes reales no
  *   hay "Conectado".
  * - Sin RTT no hay ping en ms: [lastPingMs] es null hasta que
- *   llega un eco con la secuencia pedida; la UI debe mostrar "—".
+ *   llega un eco con la secuencia pedida; la UI debe mostrar "sin datos".
  * - Si el Bluetooth está apagado, falta BLUETOOTH_CONNECT o la
  *   dirección no es válida, el estado es UNAVAILABLE/FAILED con
  *   el motivo real en [lastError], nunca un "Conectado" fingido.
@@ -131,7 +131,7 @@ class BluetoothDataTransport(private val context: Context) : GamepadTransport {
     @Volatile var lastEchoAtMs: Long = 0L
         private set
 
-    /** RTT real del último eco (ms). Null = aún no llegó ningún eco: la UI muestra "—", nunca un número inventado. */
+    /** RTT real del último eco (ms). Null = aún no llegó ningún eco: la UI muestra "sin datos", nunca un número inventado. */
     @Volatile var lastPingMs: Long? = null
         private set
 
