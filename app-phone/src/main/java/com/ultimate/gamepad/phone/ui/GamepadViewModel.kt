@@ -147,6 +147,8 @@ data class GamepadUiState(
     val btDataStatusDetail: String? = null,
     /** Nombre del dispositivo HID conectado (la TV), o null si no hay ninguno. P1-4: `host` es la IP de Wi-Fi y no se sobrecarga con el nombre BT. */
     val hidPeerName: String? = null,
+    /** Nombre de la TV elegida por Bluetooth datos (SPP), o null si no hay ninguna. Espejo de hidPeerName (ronda 2 P2-3): "Conectado a…" no debe mostrar la IP de Wi-Fi cuando se va por SPP. */
+    val btDataPeerName: String? = null,
     // Escaneo Bluetooth desde el teléfono (ronda Bluetooth dos vías).
     val btScanning: Boolean = false,
     val btScanDevices: List<DiscoveredDevice> = emptyList(),
@@ -254,6 +256,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private var macroLastButtons: Int = 0
     private var macroLastExtra: Int = 0
     private var macroCapWarned: Boolean = false
+    /** Temporizador de la grabación de macro (ronda 2 P2-7): tick cada 250 ms, auto-para a los 30 s. */
+    private var macroTimerJob: Job? = null
+    /** Último error del servicio ya copiado a ui.error (ronda 2 P2-1): solo se copia cuando cambia. */
+    private var lastShownServiceError: String? = null
     /** Stick derecho que manda el giroscopio (Fase 4); publish() lo usa en vez del táctil cuando el giro está activado. */
     private var gyroX: Float = 0f
     private var gyroY: Float = 0f
@@ -379,8 +385,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         GamepadSender.setActiveProfile(getApplication(), profile.id)
         if (previous != profile.id) GamepadProfilePrefs.savePrevious(getApplication(), previous)
         if (hidService.appRegistered) {
+            // Ronda 2 P2-5: mientras se re-registra no hay enlace
+            // HID: la UI pasa a CONECTANDO (antes seguía en
+            // "Conectado" en verde sin mando). El callback
+            // onHidConnectionChanged lo resuelve al reconectar.
+            _ui.update { it.copy(status = ConnectionStatus.CONNECTING, attemptMethod = TransportMethod.BLUETOOTH_HID, connectingSinceMs = System.currentTimeMillis()) }
             hidService.unregister()
-            hidService.register(profile.id)
+            if (!hidService.register(profile.id)) {
+                _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "No se pudo re-registrar el mando con el perfil nuevo. Prueba a desconectar y volver a conectar.") }
+            }
         }
         _ui.update {
             it.copy(
@@ -463,6 +476,25 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 info = if (announce) "Perfil de juego aplicado: ${p.name} (${GamepadProfiles.fromId(p.profileId).name})." else it.info,
             )
         }
+    }
+
+    /**
+     * Limpia el perfil de juego activo y vuelve a los valores por
+     * defecto (ronda 2 P2-9): borrar el perfil activo dejaba sus
+     * ajustes aplicados sin ningún perfil que los explicara.
+     * Los valores son los de GameProfile por defecto.
+     */
+    fun clearActiveGameProfile() {
+        setActiveProfile(GamepadProfiles.XBOX_360_ID)
+        setDeadZone(0.05f)
+        setCurve(0.85f)
+        setTriggerScale(1f)
+        setButtonRemap(emptyMap())
+        _vibrationEnabled.value = false
+        _layout.value = LayoutConfig()
+        LayoutPrefs.save(getApplication(), _layout.value)
+        GameProfilePrefs.saveActiveName(getApplication(), null)
+        _ui.update { it.copy(activeGameProfileName = null, info = "Perfil de juego borrado: valores por defecto.") }
     }
 
     fun updateElement(id: String, layout: ButtonLayout) {
@@ -657,11 +689,28 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         macroLastExtra = 0
         macroCapWarned = false
         _recordingMacroProgress.value = 0L to 0
+        // Ronda 2 P2-7: temporizador propio: el tope de 30 s solo
+        // se comprobaba en publish() (sin entrada, la grabación no
+        // se auto-paraba nunca y el progreso no avanzaba). Tick
+        // cada 250 ms: refresca el progreso y auto-para a los 30 s.
+        macroTimerJob?.cancel()
+        macroTimerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(250)
+                val elapsed = System.currentTimeMillis() - macroRecordStartMs
+                _recordingMacroProgress.value = elapsed to macroRecordedChanges
+                if (elapsed >= GamepadMacro.MAX_DURATION_MS) {
+                    stopMacroRecording()
+                    break
+                }
+            }
+        }
         _ui.update { it.copy(info = "Grabando macro \"$clean\": pulsa los botones; para con «Parar y guardar». Máx. 30 s / 200 eventos.") }
     }
 
     /** Para la grabación y guarda la macro (si se pulsó algo). Mismo nombre = se sustituye. */
     fun stopMacroRecording() {
+        macroTimerJob?.cancel(); macroTimerJob = null
         val recorder = macroRecorder ?: return
         val name = _recordingMacro.value ?: return
         val macro = recorder.stop(System.currentTimeMillis(), name)
@@ -675,10 +724,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             _ui.update { it.copy(info = "Macro vacía: no se grabó ningún botón.") }
             return
         }
+        val existed = _macros.value.any { it.name == macro.name }
         val next = (_macros.value.filter { it.name != macro.name } + macro).sortedBy { it.name }
         _macros.value = next
         ExtrasPrefs.saveMacros(getApplication(), next)
-        _ui.update { it.copy(info = "Macro guardada: ${macro.name} (${macro.events.size} eventos, ${macro.durationMs} ms).") }
+        _ui.update { it.copy(info = "Macro guardada: ${macro.name} (${macro.events.size} eventos, ${macro.durationMs} ms)." + if (existed) " Sustituyó a la anterior con ese nombre." else "") }
     }
 
     /** Reproduce una macro (Fase 4): aplica cada evento en su momento, como si se pulsaran esos botones. */
@@ -1092,6 +1142,8 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     fun openSettings() = _ui.update { it.copy(showSettings = true, error = null) }
     fun closeSettings() = _ui.update { it.copy(showSettings = false, showQrScanner = false, showLayoutEditor = false, showControllerType = false, showGameProfiles = false, showControllerTest = false, showPerformance = false, showExtras = false, showUiCustomization = false) }
     fun openQrScanner() = _ui.update { it.copy(showQrScanner = true) }
+    /** Cierra solo el escáner QR y vuelve a Ajustes (ronda 2 P1-4: antes cerraba TODOS los Ajustes). */
+    fun closeQrScanner() = _ui.update { it.copy(showQrScanner = false) }
 
     /** Pantallas Fase 3: se abren desde Ajustes y se vuelve a Ajustes al cerrar. */
     fun openControllerType() = _ui.update { it.copy(showControllerType = true, showSettings = false) }
@@ -1124,6 +1176,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             if (host.isNotBlank() || method == TransportMethod.BLUETOOTH_HID) {
                 disconnect(silent = true)
                 connect(PairingInfo(host, _ui.value.port, _ui.value.pin), method)
+            } else {
+                // Ronda 2 P2-16: sin IP guardada el chip no hacía
+                // nada ni avisaba.
+                _ui.update { it.copy(error = "Sin IP guardada: escribe la IP o busca la TV primero.") }
             }
             return
         }
@@ -1201,6 +1257,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /** Elige la TV emparejada para Bluetooth datos (Fase 5): persiste su MAC y marca el método como disponible si el BT está encendido. */
     fun selectBtDataDevice(address: String) {
         LastConnectionPrefs.save(getApplication(), _ui.value.host, _ui.value.port, _ui.value.pin, TransportMethod.BLUETOOTH_DATA, btAddress = address)
+        // Ronda 2 P2-3: guardar el nombre de la TV elegida para
+        // "Conectado a…" (antes mostraba la IP de Wi-Fi).
+        val peerName = _ui.value.btDataDevices.firstOrNull { it.address.equals(address, ignoreCase = true) }?.name
+            ?: _ui.value.btScanDevices.firstOrNull { it.address.equals(address, ignoreCase = true) }?.name
+        _ui.update { it.copy(btDataPeerName = peerName ?: address) }
         if (btDataTransport.isBluetoothEnabled()) {
             _ui.update { it.copy(transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_DATA to TransportStatus.AVAILABLE), btDataStatusDetail = null) }
         } else {
@@ -1310,7 +1371,14 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                             if (it.address.equals(address, ignoreCase = true)) it.copy(bonded = true, name = name ?: it.name) else it
                         }
                         _ui.update { it.copy(btScanDevices = updated, info = "Emparejado con '${name ?: address}'. Ya puedes conectar por Bluetooth datos o dejar que la TV complete el HID.") }
-                        selectBtDataDevice(address)
+                        // Ronda 2 P1-5: solo auto-elegir si el
+                        // emparejado lo inició nuestro escaneo
+                        // (selectBtScanDevice → createBond): unos
+                        // auriculares o el coche emparejados aparte
+                        // no deben convertirse en "la TV".
+                        if (_ui.value.btScanDevices.any { it.address.equals(address, ignoreCase = true) }) {
+                            selectBtDataDevice(address)
+                        }
                     }
                     BluetoothDevice.BOND_NONE -> {
                         _ui.update { it.copy(btScanError = "El emparejado con '${name ?: address}' no se completó.") }
@@ -1351,7 +1419,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                     hidRetryJob?.cancel(); hidRetryJob = null
                     _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, hidPeerName = peerName, info = "Bluetooth HID conectado con la TV.") }
                 } else {
-                    _ui.update { it.copy(hidPeerName = peerName, info = "Bluetooth disponible de nuevo (sigues por Wi-Fi).") }
+                    // Ronda 2 P2-4: el texto depende del método real,
+                    // no siempre "sigues por Wi-Fi".
+                    val methodText = when (_ui.value.attemptMethod) {
+                        TransportMethod.BLUETOOTH_HID -> "Bluetooth HID"
+                        TransportMethod.BLUETOOTH_DATA -> "Bluetooth datos"
+                        TransportMethod.WIFI_TCP -> "Wi-Fi TCP"
+                        else -> "Wi-Fi UDP"
+                    }
+                    _ui.update { it.copy(hidPeerName = peerName, info = "Bluetooth disponible de nuevo (sigues por $methodText).") }
                 }
             }
             TransportStatus.FAILED -> {
@@ -1641,9 +1717,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     private fun connect(info: PairingInfo, method: TransportMethod) {
         if (method == TransportMethod.BLUETOOTH_HID) { connectHid(); return }
         if (method == TransportMethod.BLUETOOTH_DATA) { connectBtData(info); return }
-        // A3: persistir la última conexión para que el servicio pueda
-        // reanudar solo tras la muerte del proceso (intent nulo).
-        LastConnectionPrefs.save(getApplication(), info.host, info.port, info.pin, method)
+        // Ronda 2 P2-19: la última conexión ya NO se guarda aquí:
+        // se guarda al primer eco en refreshPing(). Guardarla al
+        // lanzar el intento hacía que un intento fallido
+        // sobrescribiera la última conexión buena.
         // CONECTANDO hasta que la TV devuelva el primer eco de ping:
         // antes se marcaba CONECTADO al instante aunque la TV no
         // respondiera, y la app se quedaba "tieso" en Conectado con
@@ -1686,10 +1763,11 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             }
             return
         }
-        // A3: persistir la última conexión (con la MAC) para que el servicio pueda reanudar solo tras la muerte del proceso.
-        LastConnectionPrefs.save(getApplication(), info.host, info.port, info.pin, TransportMethod.BLUETOOTH_DATA, btAddress = mac)
+        // Ronda 2 P2-19: aquí ya NO se guarda la última conexión
+        // (la MAC ya la guardó selectBtDataDevice y el intento se
+        // guarda al primer eco en refreshPing()).
         _ui.update {
-            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_DATA, showSettings = false, showQrScanner = false, error = null, info = null)
+            it.copy(status = ConnectionStatus.CONNECTING, host = info.host, port = info.port, pin = info.pin, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_DATA, showSettings = false, showQrScanner = false, error = null, info = null, btDataPeerName = it.btDataPeerName ?: mac)
         }
         val intent = Intent(getApplication(), GamepadSenderService::class.java).apply {
             action = GamepadSenderService.ACTION_START
@@ -1923,6 +2001,12 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // macro a medias.
         stopMacroPlayback()
         turboJob?.cancel(); turboJob = null; turboPhaseOn = true
+        // Ronda 2 P1-1: soltar los botones ANTES de parar el
+        // servicio: si no, el estado pulsado sobrevivía en
+        // GamepadSender.currentState y se reenviaba al reconectar
+        // (y por el latido HID). releaseAllInputs() publica el
+        // estado cero.
+        releaseAllInputs()
         // P8: al desconectar se resetean teclado y ratón: si no,
         // la UI los seguía mostrando en SÍ con la TV apagada o
         // sin conexión. El reseteo de los flags es SIEMPRE
@@ -1944,12 +2028,13 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Parar es mejor esfuerzo: en segundo plano el sistema puede rechazarlo y el
         // servicio ya estaría muerto o se parará al volver; nunca debe crashear.
         runCatching { getApplication<Application>().startService(intent) }
-        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, hidPeerName = null, info = null) }
+        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, hidPeerName = null, btDataPeerName = null, info = null) }
     }
 
     /** Rendimiento (Fase 3): ping, jitter y paquetes del servicio de envío. */
     fun refreshPerformance() {
         val responding = GamepadSenderService.isTvResponding()
+        val errorToShow = serviceErrorToShow()
         _ui.update {
             it.copy(
                 pingMs = GamepadSenderService.lastPingMs,
@@ -1959,26 +2044,45 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                 tvResponding = responding,
                 tvPacketsReceived = GamepadSenderService.tvPacketsReceived,
                 tvReceivingPackets = GamepadSenderService.tvReceivingPackets,
-                error = GamepadSenderService.lastError,
+                error = errorToShow,
             )
         }
     }
 
+    /**
+     * Error del servicio para la UI (ronda 2 P2-1): solo se copia
+     * cuando CAMBIA. Antes refreshPing()/refreshPerformance() lo
+     * reescribían cada 500 ms: borraban los avisos del VM (p. ej.
+     * el aviso de tope de macro) y resucitaban errores viejos.
+     */
+    private fun serviceErrorToShow(): String? {
+        val serviceError = GamepadSenderService.lastError
+        val shown = if (serviceError != lastShownServiceError) serviceError else _ui.value.error
+        lastShownServiceError = serviceError
+        return shown
+    }
+
     fun refreshPing() {
         val responding = GamepadSenderService.isTvResponding()
+        val errorToShow = serviceErrorToShow()
         _ui.update {
             it.copy(
                 pingMs = GamepadSenderService.lastPingMs,
                 tvResponding = responding,
                 tvPacketsReceived = GamepadSenderService.tvPacketsReceived,
                 tvReceivingPackets = GamepadSenderService.tvReceivingPackets,
-                error = GamepadSenderService.lastError,
+                error = errorToShow,
             )
         }
         when (_ui.value.status) {
             ConnectionStatus.CONNECTING -> {
                 if (responding) {
-                    // Primer eco real: ahora sí CONECTADO.
+                    // Primer eco real: ahora sí CONECTADO. Ronda 2
+                    // P2-19: la última conexión buena se guarda
+                    // AQUÍ (y no al lanzar el intento): un intento
+                    // fallido ya no sobrescribe la buena. La MAC de
+                    // SPP se conserva (save() la mantiene si es null).
+                    LastConnectionPrefs.save(getApplication(), _ui.value.host, _ui.value.port, _ui.value.pin, _ui.value.attemptMethod)
                     _ui.update {
                         it.copy(
                             status = ConnectionStatus.CONNECTED,
