@@ -3,6 +3,7 @@ package com.ultimate.gamepad.phone.ui
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,7 +42,7 @@ import com.ultimate.gamepad.core.TransportStatus
 /**
  * Selector multi-transporte con estado REAL por método.
  * Regla: nunca se muestra un método como "Conectado" sin paquetes
- * reales. "Pendiente Etapa 2" no es "Conectado" ni "Disponible".
+ * reales. "Disponible" solo lo ponen las comprobaciones reales.
  *
  * Es UNA sola fila horizontal con scroll: antes era una lista
  * vertical de 5 filas y en horizontal se comía toda la pantalla
@@ -63,7 +64,16 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             vm.refreshBtDataStatus()
         }
     }
+    // Permiso de escaneo Bluetooth (BLUETOOTH_SCAN en Android 12+,
+    // ubicación en Android 11 y anteriores): al concederlo se
+    // arranca el escaneo de una vez.
+    val scanPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            vm.startBtScan()
+        }
+    }
     var showBtDialog by remember { mutableStateOf(false) }
+    var showBtScanDialog by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -84,29 +94,25 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 // chip lo dice ("Comprobando…") en vez del "No
                 // disponible" inicial, que fingía un veredicto
                 // antes de comprobar nada.
-                // P6: "Disponible" sin comprobar nada mentía (el
-                // mapa inicial marca Wi-Fi como AVAILABLE aunque
-                // el Wi-Fi esté apagado). "Disponible" solo cuando
-                // hay estado real verificado: conectado por ese
-                // método, o la TV responde por él. Si no, el chip
-                // dice "Sin comprobar" (o "Sin Wi-Fi", que sí está
-                // verificado). El parche del ViewModel (manifiesto)
-                // debe dejar de inicializar Wi-Fi como AVAILABLE.
+                // P1-6: "Disponible" solo cuando el estado está
+                // verificado de verdad — y AVAILABLE solo lo ponen
+                // las comprobaciones reales (refreshWifiState con
+                // Wi-Fi, refreshHidStatus, refreshBtDataStatus,
+                // selectBtDataDevice con BT encendido); el mapa
+                // nace todo en UNAVAILABLE, así que un AVAILABLE
+                // nunca es un "Sin comprobar" fingido.
                 val isWifi = method == TransportMethod.WIFI_UDP || method == TransportMethod.WIFI_TCP
-                val verifiedAvailable = status == TransportStatus.CONNECTED ||
-                    (status == TransportStatus.AVAILABLE && ui.status == ConnectionStatus.CONNECTED && ui.attemptMethod == method)
                 val label = if (method == TransportMethod.BLUETOOTH_HID && ui.hidAvailability == HidAvailability.UNKNOWN) {
                     "Bluetooth HID · Comprobando…"
-                } else if (status == TransportStatus.AVAILABLE && !verifiedAvailable) {
-                    if (isWifi && !ui.wifiConnected) "${method.label} · Sin Wi-Fi" else "${method.label} · Sin comprobar"
+                } else if (isWifi && status == TransportStatus.UNAVAILABLE && !ui.wifiConnected) {
+                    "${method.label} · Sin Wi-Fi"
                 } else {
                     "${method.label} · ${statusText(status)}"
                 }
-                val dot = if (status == TransportStatus.AVAILABLE && !verifiedAvailable) Color(0xFF9AA0B0) else statusColor(status)
                 Chip(
                     label = label,
                     selected = ui.selectedMethod == method,
-                    dotColor = dot,
+                    dotColor = statusColor(status),
                 ) { tick(); vm.selectMethod(method) }
             }
         }
@@ -131,18 +137,27 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
         }
         // Bluetooth datos (SPP/RFCOMM, Fase 5): respaldo real si falla
         // todo el Wi-Fi. La TV se elige de la lista de emparejados
-        // (sin escaneo); el PIN sigue siendo el que muestra la TV.
+        // o se busca con el escáner; el PIN sigue siendo el que
+        // muestra la TV.
+        // P1-2: el botón de elegir TV está SIEMPRE disponible,
+        // no solo cuando el método está en NO DISPONIBLE (antes,
+        // con el método en DISPONIBLE, no había forma de cambiar
+        // de TV sin que fallara antes).
         val btStatus = ui.transportStatus[TransportMethod.BLUETOOTH_DATA]
         if (btStatus == TransportStatus.UNAVAILABLE) {
             Text("Bluetooth datos: ${ui.btDataStatusDetail ?: "no disponible"}", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
-            Button(onClick = { tick(); vm.refreshBtDataDevices(); showBtDialog = true }) {
-                Text("Elegir TV emparejada", color = Color.White)
-            }
-            Spacer(Modifier.height(4.dp))
             Button(onClick = { tick(); vm.refreshBtDataStatus() }) {
                 Text("Volver a comprobar Bluetooth", color = Color.White)
             }
+        }
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = { tick(); vm.refreshBtDataDevices(); showBtDialog = true }) {
+            Text("Elegir TV emparejada", color = Color.White)
+        }
+        Spacer(Modifier.height(4.dp))
+        Button(onClick = { tick(); showBtScanDialog = true }) {
+            Text("Buscar TV por Bluetooth", color = Color.White)
         }
         if (ui.selectedMethod == TransportMethod.BLUETOOTH_DATA) {
             Text(
@@ -151,13 +166,20 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             )
         }
         if (ui.selectedMethod == TransportMethod.BLUETOOTH_HID) {
-            // H3 / Fase 1: no prometer lo que el HID no da. Por
-            // Bluetooth HID los gatillos LT/RT son digitales
-            // (pulsados o no), sin recorrido analógico.
+            // Ronda Bluetooth dos vías (2026-11-11): por HID los
+            // gatillos LT/RT YA son analógicos (0..255, Brake/
+            // Accelerator) y los botones siguen el orden estándar
+            // de Android. El texto viejo ("digitales, sin
+            // recorrido") quedó obsoleto con el nuevo descriptor.
             Text(
-                "Por Bluetooth HID los gatillos LT/RT son digitales, sin recorrido analógico.",
+                "Por Bluetooth HID los gatillos LT/RT son analógicos (0..255). La TV inicia la conexión HID: el teléfono se registra, se hace visible y espera a que la TV empareje.",
                 color = Color.White, fontSize = 12.sp,
             )
+        }
+        // Nombre del dispositivo HID conectado (P1-4): `host` es
+        // la IP de Wi-Fi y no se sobrecarga con el nombre BT.
+        if (ui.hidPeerName != null) {
+            Text("Mando HID conectado a: ${ui.hidPeerName}", color = Color.White, fontSize = 12.sp)
         }
         if (ui.hidAvailability == HidAvailability.PERMISSION_DENIED) {
             Spacer(Modifier.height(4.dp))
@@ -213,6 +235,88 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                 },
             )
         }
+        // Diálogo "Buscar TV por Bluetooth" (ronda Bluetooth dos
+        // vías, 2026-11-11): el teléfono ESCANEA dispositivos
+        // cercanos (~12 s) y los lista (emparejados + encontrados).
+        // Al tocar uno sin emparejar, empareja (createBond); al
+        // tocar uno emparejado, lo elige como TV de Bluetooth
+        // datos. Límite honesto: en HID es la TV quien inicia la
+        // conexión; desde el teléfono se empareja y se deja el HID
+        // registrado + visible para que la TV lo complete.
+        if (showBtScanDialog) {
+            AlertDialog(
+                onDismissRequest = { showBtScanDialog = false },
+                title = { Text("Buscar TV por Bluetooth", color = Color.White) },
+                text = {
+                    Column {
+                        Text(
+                            "Para que la TV aparezca, abre sus ajustes de Bluetooth (visible) o empareja antes. Al elegirla, el teléfono empareja y deja el HID registrado + visible: es la TV quien completa la conexión HID.",
+                            color = Color.White, fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        if (ui.btScanError != null) {
+                            Text(ui.btScanError!!, color = Color(0xFFFFC107), fontSize = 12.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (ui.btScanDevices.isEmpty() && !ui.btScanning) {
+                            Text("Aún no hay dispositivos. Toca \"Buscar\" para escanear.", color = Color.White, fontSize = 12.sp)
+                        } else {
+                            val bonded = ui.btScanDevices.filter { it.bonded }
+                            val found = ui.btScanDevices.filter { !it.bonded }
+                            if (bonded.isNotEmpty()) {
+                                Text("Emparejados", color = Color.White, fontSize = 12.sp)
+                                for (device in bonded) {
+                                    Button(
+                                        onClick = { tick(); vm.selectBtScanDevice(device) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text("${device.name ?: "Sin nombre"} (${device.address})", color = Color.White)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                            }
+                            if (found.isNotEmpty()) {
+                                Text("Encontrados", color = Color.White, fontSize = 12.sp)
+                                for (device in found) {
+                                    Button(
+                                        onClick = { tick(); vm.selectBtScanDevice(device) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text("${device.name ?: "Sin nombre"} (${device.address})${if (device.rssi != null) " · ${device.rssi} dBm" else ""}", color = Color.White)
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (ui.btScanning) {
+                                Button(onClick = { tick(); vm.stopBtScan() }) {
+                                    Text("Parar", color = Color.White)
+                                }
+                                Text("Buscando… (~12 s)", color = Color.White, fontSize = 12.sp)
+                            } else {
+                                Button(onClick = { tick(); vm.startBtScan() }) {
+                                    Text("Buscar", color = Color.White)
+                                }
+                            }
+                            Button(onClick = {
+                                tick()
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) scanPermissionLauncher.launch(Manifest.permission.BLUETOOTH_SCAN)
+                                else scanPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            }) {
+                                Text("Dar permiso de escaneo", color = Color.White)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { showBtScanDialog = false }) {
+                        Text("Cerrar", color = Color.White)
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -221,7 +325,6 @@ private fun statusText(status: TransportStatus): String = when (status) {
     TransportStatus.UNAVAILABLE -> "No disponible"
     TransportStatus.CONNECTED -> "Conectado"
     TransportStatus.FAILED -> "Fallo"
-    TransportStatus.PENDING_STAGE2 -> "No implementado"
 }
 
 /**
@@ -240,7 +343,6 @@ private fun statusColor(status: TransportStatus): Color = when (status) {
     TransportStatus.UNAVAILABLE -> Color(0xFF9AA0B0)
     TransportStatus.CONNECTED -> Color(0xFF4CAF50)
     TransportStatus.FAILED -> Color(0xFFFF5252)
-    TransportStatus.PENDING_STAGE2 -> Color(0xFFFFC107)
 }
 
 @Composable
