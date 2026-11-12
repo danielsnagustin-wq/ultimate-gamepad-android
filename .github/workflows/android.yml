@@ -13,19 +13,30 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # H-09: un Gradle colgado no debe consumir el límite por defecto
+    # (6 h); y con los pushes de un commit por archivo solo importa
+    # el HEAD: un run nuevo cancela el anterior en cola o en curso.
+    timeout-minutes: 20
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # H-09: acciones pineadas a SHA (tags mutables): SHAs
+        # verificados con git ls-remote en el repo oficial de cada
+        # acción (checkout v4, setup-java v4, setup-gradle v3,
+        # upload-artifact v4).
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
 
       - name: Set up Gradle 8.7
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@6cfc8b8e8bb586cc164bef1c478c1eea3a4d6a19
         with:
           gradle-version: "8.7"
           cache-disabled: true
@@ -43,7 +54,7 @@ jobs:
         run: gradle :app-phone:assembleRelease :app-tv:assembleRelease --stacktrace
 
       - name: Upload phone APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: app-phone-apks
           path: |
@@ -52,7 +63,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload TV APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: app-tv-apks
           path: |
