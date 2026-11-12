@@ -1,5 +1,7 @@
 # Configuración sin PC — solo con el teléfono Android
 
+> **ESTADO ACTUAL 2026-11-11 (ronda 2):** la §3 de Shizuku de este documento está **anulada** (Shizuku descartado: no está adaptado a TV y la TV no tiene depuración de red). El camino para jugar es el **Bluetooth HID directo** (§3 nueva). Por Wi-Fi la TV recibe y muestra los paquetes en vivo, pero no los inyecta en el juego.
+
 ## 1. Crear el repositorio (1 minuto, desde la app de GitHub)
 
 > Bloqueo conocido (2026-11-07): la creación automática del repo desde la integración de GitHub falló con `403 Resource not accessible by integration`. La integración no tiene permiso para crear repositorios nuevos en la cuenta. Por eso este paso lo hace el usuario a mano; es un solo repo y no se vuelve a repetir.
@@ -19,58 +21,52 @@ Si el workflow falla, abre el log del paso que falló y copia el error: sin ese 
 
 Versiones: teléfono con procesador MediaTek Helio G99 (Mali-G57 MC2), Android con minSdk 26. TV Hyundai Google TV, Android TV / Google TV.
 
-## 3. Shizuku en la Hyundai — paso crítico (Etapa 0)
+## 3. Bluetooth HID directo — el camino para jugar (Etapa 0)
 
-La Hyundai **no tiene depuración inalámbrica**. No busques esa opción: no está.
+La Hyundai **no tiene depuración inalámbrica** (solo "Depuración por USB") y **Shizuku está descartado del todo**: no hay ADB por red (:5555) que arrancar ni Shizuku que instalar. No busques esa opción: no está y no se usa.
 
-### 3.1 Instalar Shizuku y Bugjaeger
+### 3.1 Emparejar el teléfono como mando
 
-- En la TV: instala **Shizuku** (`moe.shizuku.privileged.api`) desde Play Store. Si no aparece en la TV, descarga su APK en el teléfono y envíalo a la TV.
-- En el teléfono: instala **Bugjaeger** (gratis, sin root) desde Play Store. Es el host ADB.
+Hay dos direcciones y las dos funcionan (usa la que te resulte más fácil):
 
-### 3.2 Activar ADB por red en la TV
+**A. La TV busca al teléfono (recomendada):**
 
-1. TV → Ajustes → Sistema → Información → pulsa 7 veces en **Compilación** hasta activar Opciones de desarrollador.
-2. Ajustes → Opciones de desarrollador → activa **Depuración USB / ADB**.
-3. Activa **ADB por red** o **Depuración por red** si aparece, y anota la IP de la TV (Ajustes → Red → Wi-Fi → tu red). El puerto es el **5555**.
+1. Teléfono: abre Ultimate Gamepad → Ajustes → **Bluetooth HID**. El teléfono se registra como "Xbox 360 Controller" y se hace visible 300 s (acepta el diálogo "hacer visible" si aparece).
+2. TV: Ajustes → Bluetooth → buscar dispositivos → empareja **"Xbox 360 Controller"**.
+3. El teléfono debe decir "Conectado" por Bluetooth HID.
 
-Si la TV no muestra ninguna opción de ADB por red, anótalo: es un resultado de Etapa 0 (bloqueo) y habrá que buscar otra vía.
+**B. El teléfono busca a la TV:**
 
-### 3.3 Arrancar Shizuku con Bugjaeger
+1. Teléfono: Ultimate Gamepad → Ajustes → **"Buscar TV por Bluetooth"** → elige tu TV en la lista (las que parecen TV salen primero con 📺) → emparejar.
+2. La TV completa el emparejamiento HID y el teléfono queda "Conectado".
 
-1. Teléfono y TV en la **misma Wi-Fi**.
-2. Bugjaeger → icono de enchufe / `adb connect` → escribe `<IP-TV>:5555` → Connect.
-3. Cuando conecte, abre la consola de Bugjaeger (shell) y ejecuta exactamente:
-   ```
-   sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh
-   ```
-4. En la TV, abre Shizuku: debe decir que el servicio está corriendo.
-5. En Shizuku → busca **Ultimate Gamepad TV** → **Permitir**.
-6. Abre Ultimate Gamepad TV: la pantalla debe decir **Shizuku: ACTIVO**. Si dice otra cosa, sigue su guía en pantalla.
+> Si cambiaste de versión del mando, **re-empareja**: la TV guarda el descriptor HID viejo en caché y sin re-emparejar el rumble y los botones nuevos no aparecen.
 
-> Tras cada reinicio de la TV, Shizuku se detiene. Repite el paso 3.3. Sin root no hay arranque automático.
+### 3.2 Si el Bluetooth de la TV se desconecta solo
+
+La radio Bluetooth de esta TV es débil (hardware/firmware, la app no puede arreglarla). La app lo compensa sola: WifiLock, reconexión y fallback inmediato a Wi-Fi UDP. Consejos: teléfono cerca de la TV, y **pon el teléfono en la Wi-Fi de 5 GHz** (el Bluetooth y la Wi-Fi de 2,4 GHz se estorban; en 5 GHz el Bluetooth respira mejor).
 
 ## 4. Conectar teléfono y TV
 
 1. En la TV, abre Ultimate Gamepad TV → **Iniciar receptor UDP**. Anota IP, puerto y PIN (o el QR en texto).
-2. En el teléfono, abre Ultimate Gamepad → **Conectar** → **Escanear QR** (apunta al QR si la TV lo muestra en una etapa posterior; en Etapa 1 el QR es texto, usa **IP / PIN**) → escribe IP y PIN de 4 dígitos.
+2. En el teléfono, abre Ultimate Gamepad → **Conectar** → **Escanear QR** (apunta al QR de la TV; es CameraX + ML Kit, real) o **IP / PIN** → escribe IP y PIN de 4 dígitos.
 3. La barra debe decir **Conectado** y el ping debe dejar de ser "—" cuando la TV devuelva el eco. Si el ping sigue en "—", la TV recibe pero no devuelve eco: revisa que ambas estén en la misma red y que el receptor esté iniciado.
 
 ## 5. Etapa 0 — criterios de éxito (anotar sí/no)
 
-**Fase 1 (Wi-Fi, sin Shizuku):** 1–4. **Fase 2 (mando real):** 5–7.
+**Fase 1 (Wi-Fi, sin jugar):** 1–4. **Fase 2 (mando real por Bluetooth HID):** 5–7.
 Probar en este orden y anotar el resultado de cada uno:
 
 1. [ ] Teléfono conectado, ping con valor (no "—").
 2. [ ] Al mover el joystick / pulsar A, la pantalla de la TV muestra la entrada en vivo y cuenta paquetes recibidos.
 3. [ ] Si se apaga el Wi-Fi 3 s, la TV dice "Sin conexión"; al volver, se reconecta sola.
 4. [ ] Hotspot (si se prueba): TV conectada al hotspot del teléfono, mismo resultado que con router.
-5. [ ] Shizuku activo en la TV tras el arranque por Bugjaeger (ADB :5555; la Hyundai no tiene depuración inalámbrica).
-6. [ ] **Parece mando real: SÍ** en el diagnóstico de la TV (nombre "Xbox 360 Controller", vendor 0x045E, product 0x028E, GAMEPAD+JOYSTICK, ejes completos). En Etapa 1 se espera **NO** — la librería uinput nativa falta. Anotar NO con su motivo es un resultado válido, no un fracaso: es lo que define el trabajo de Etapa 0.
-7. [ ] En OpenNOW, con el mando virtual o el fallback, ¿responde el menú / el juego a A y al joystick? ¿Lo lista OpenNOW como controller?
+5. [ ] Teléfono emparejado como **"Xbox 360 Controller"** por Bluetooth HID (desde la TV o desde el teléfono: ambas direcciones valen).
+6. [ ] **Parece mando real: SÍ** en el diagnóstico de la TV (nombre "Xbox 360 Controller", GAMEPAD+JOYSTICK, ejes completos). Matiz: el vendor/product 0x045E/0x028E por HID no se puede fijar por la API (son los del teléfono); lo que decide es que OpenNOW lo liste como controller.
+7. [ ] En OpenNOW, con el mando por Bluetooth HID, ¿responde el menú / el juego a A y al joystick? ¿Lo lista OpenNOW como controller?
 
-Con esos 7 sí/no, se decide si Etapa 0 es uinput nativo, si basta injectInputEvent, o si hace falta otra vía. No se pasa a Etapa 2 (editor, stick derecho, gatillos) sin esos datos. **Si Wi-Fi funciona pero "Parece mando real" es NO, el método es FALLO, no éxito.**
+Con esos 7 sí/no, se decide si falta algo en el descriptor, en el emparejamiento o en el fallback. No se da nada por terminado sin esos datos. **Si Wi-Fi funciona pero "Parece mando real" es NO, el método es FALLO, no éxito.**
 
 ## 6. Qué preguntar a Coco con el resultado
 
-Copia y pega: versión de Android de la TV (Ajustes → Información), modelo exacto de Hyundai, si Shizuku arrancó o qué error dio Bugjaeger, y los 6 sí/no de arriba.
+Copia y pega: versión de Android de la TV (Ajustes → Información), modelo exacto de Hyundai, si el emparejamiento Bluetooth HID funcionó o qué error dio, y los 7 sí/no de arriba.
