@@ -15,21 +15,21 @@ package com.ultimate.gamepad.core
  *   3. HOTSPOT    — No es un transporte distinto: es WIFI_UDP/TCP
  *                   con la TV conectada al hotspot del teléfono,
  *                   sin router. Modo de conexión, no código nuevo.
- *   4. BLUETOOTH_DATA — BLE/SPP a la app receptora. Implementado
+ *   4. BLUETOOTH_DATA — SPP a la app receptora. Implementado
  *                   en la Fase 5 (SPP/RFCOMM real): el fallback lo
  *                   prueba tras TCP, antes que HID.
  *   5. BLUETOOTH_HID  — Teléfono como mando real directo a la TV,
  *                   sin app receptora y sin Shizuku.
  * El modo Automático prueba en orden 1 -> 2 -> 5 -> 4 en la
- * numeración de la tarea (UDP, TCP, BLE/SPP, HID). Ver
- * [TransportSelector.AUTO_ORDER]. BLE/SPP está en ese orden e
+ * numeración de la tarea (UDP, TCP, SPP, HID). Ver
+ * [TransportSelector.AUTO_ORDER]. SPP está en ese orden e
  * implementado en la Fase 5 (SPP/RFCOMM real).
  */
 enum class TransportMethod(val label: String, val priority: Int) {
     WIFI_UDP("Wi-Fi UDP", 1),
     WIFI_TCP("Wi-Fi TCP", 2),
     HOTSPOT("Hotspot del teléfono", 3),
-    BLUETOOTH_DATA("Bluetooth datos (BLE/SPP)", 5),
+    BLUETOOTH_DATA("Bluetooth datos (SPP)", 5),
     BLUETOOTH_HID("Bluetooth HID", 4),
 }
 
@@ -39,7 +39,6 @@ enum class TransportStatus {
     UNAVAILABLE,    // No disponible en este dispositivo / sin permiso / sin red.
     CONNECTED,      // Paquetes reales llegando en los últimos 2 s (ConnectionHealth).
     FAILED,         // Se intentó y falló (sin eco, socket roto, HID no expuesto).
-    PENDING_STAGE2, // Estructura lista, implementación completa en Etapa 2 (ya sin uso para BLUETOOTH_DATA: la Fase 5 lo implementó).
 }
 
 data class TransportInfo(
@@ -50,8 +49,8 @@ data class TransportInfo(
 
 object TransportSelector {
     /**
-     * Orden de prueba del modo Automático: UDP -> TCP -> BLE/SPP -> HID.
-     * BLE/SPP está en la lista e implementado en la Fase 5 (SPP/RFCOMM real).
+     * Orden de prueba del modo Automático: UDP -> TCP -> SPP -> HID.
+     * SPP está en la lista e implementado en la Fase 5 (SPP/RFCOMM real).
      */
     val AUTO_ORDER: List<TransportMethod> = listOf(
         TransportMethod.WIFI_UDP,
