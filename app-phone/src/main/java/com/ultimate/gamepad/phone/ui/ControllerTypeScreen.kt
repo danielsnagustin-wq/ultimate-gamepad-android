@@ -92,7 +92,7 @@ fun ControllerTypeScreen(vm: GamepadViewModel, ui: GamepadUiState, onClose: () -
                     .background(if (selected) Color(0xFF1E2436) else Color(0xFF111111))
                     .border(
                         2.dp,
-                        if (selected) Color(0xFF7C4DFF) else Color(0xFF333333),
+                        if (selected) MaterialTheme.colorScheme.primary else Color(0xFF333333),
                         RoundedCornerShape(14.dp),
                     )
                     .clickable { tick(); vm.setActiveProfile(profile.id) }
