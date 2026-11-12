@@ -1,5 +1,7 @@
 # Arquitectura — Ultimate Gamepad Android
 
+> **ESTADO ACTUAL 2026-11-11 (ronda 2):** este documento es una foto de 2026-11-07 con correcciones. **Shizuku está DESCARTADO del todo** (no está adaptado a TV; la TV no tiene depuración de red): la única vía para que el juego vea un mando es el **Bluetooth HID directo del teléfono**. Por Wi-Fi la TV recibe y muestra los paquetes en vivo, pero no los inyecta en el juego. Bluetooth datos (SPP) es real desde la Fase 5; el editor de controles y los perfiles por juego existen (Fase 3); el rumble del juego existe por Bluetooth HID. Todo sigue sin verificar en la TV real.
+
 ## Módulos Gradle
 
 ```
@@ -25,6 +27,10 @@ GAMEPAD+JOYSTICK, OpenNOW lo lista como controller y lo codifica a
 XInput como un mando físico. La pantalla de diagnóstico de la TV muestra
 "Parece mando real: SÍ / NO" con el motivo. Si un método no logra esa
 identidad, se marca FALLO en la UI aunque el Wi-Fi funcione.
+Matiz 2026-11-11: por Bluetooth HID el VID/PID **no** se pueden fijar por
+la API HID (son los del teléfono); la identidad completa con vendor
+0x045E / product 0x028E solo la da la ruta uinput, que hoy no tiene vía
+de inyección (Shizuku descartado).
 
 ## Transportes teléfono → TV
 
@@ -34,7 +40,7 @@ identidad, se marca FALLO en la UI aunque el Wi-Fi funcione.
 | 2 | Wi-Fi TCP, misma red | Respaldo | Misma Wi-Fi, puerto 52000 | Pasa a Bluetooth datos | Completo (básico) |
 | 3 | Hotspot del teléfono | Sin router | Hotspot del teléfono, TV en esa red, IP 192.168.43.x | Volver a Wi-Fi | Mismo UDP/TCP, modo en UI + docs |
 | 5 | Bluetooth datos (SPP) | Respaldo si falla todo el Wi-Fi | Emparejamiento BT | Pasa a Bluetooth HID | Implementado (Fase 5, SPP/RFCOMM real) |
-| 4 | Bluetooth HID | Directo, sin receptora ni Shizuku | el teléfono (Helio G99) expone HID_DEVICE | Ninguno (último) | Estructura + comprobación |
+| 4 | Bluetooth HID | Directo, sin receptora ni Shizuku | el teléfono (Helio G99) expone HID_DEVICE | Ninguno (último) | Completo: descriptor 486 B, 16 botones en orden Android, gatillos analógicos, rumble, escaneo BT desde el teléfono |
 
 Modo Automático: prueba en orden **1 → 2 → 5 → 4**. Manual: el usuario
 fuerza un método. Todos llevan el mismo paquete de 32 bytes de
@@ -43,11 +49,11 @@ no cambia el modelo de entrada.
 
 ## Inyección en la TV → OpenNOW
 
-| Método | Qué es | Si falla | Estado Etapa 1 |
+| Método | Qué es | Si falla | Estado 2026-11-11 |
 |---|---|---|---|
-| A. Shizuku + /dev/uinput Xbox 360 | Principal | Pasa a B | Estructura, .so nativo pendiente Etapa 0 |
-| B. Shizuku + injectInputEvent SOURCE_GAMEPAD | Respaldo | Queda en "ninguno" | Fallback implementado |
-| C. Bluetooth HID | Directa, sin Shizuku | Ninguno | Estructura + comprobación |
+| A. Shizuku + /dev/uinput Xbox 360 | Principal en el diseño original | — | **DESCARTADO** (Shizuku no está adaptado a TV; el .so nativo se compila en CI pero no tiene vía de inyección) |
+| B. Shizuku + injectInputEvent SOURCE_GAMEPAD | Respaldo | — | **DESCARTADO** (mismo motivo) |
+| C. Bluetooth HID | Directa, sin Shizuku | Ninguno | **Principal y único camino real** |
 
 ## Flujo de datos
 
@@ -56,11 +62,13 @@ Teléfono (Compose)                Red Wi-Fi local / BT           TV (Hyundai)
 ┌────────────────────┐   UDP 51999 / TCP 52000, 32 B, 120 Hz  ┌──────────────────────┐
 │ Joystick/D-pad/ABXY│ ─────────────────────────────────────▶│ UdpReceiverService   │
 │ GamepadViewModel   │   eco ping cada 500 ms ◀──────────────── │  + TcpReceiverService│
-│ GamepadSenderService│  (eco ping UDP y TCP)             │  ShizukuHelper       │
-│ BluetoothHidService│ ── HID directo ──────────────────────▶│  GamepadUserService  │
-└────────────────────┘   (sin receptora)                     │   (shell uid 2000)   │
-                                                              │   ├─ uinput Xbox 360 │
-                                                              │   └─ injectInputEvent│
+│ GamepadSenderService│  (eco ping UDP y TCP)             │  (muestra paquetes   │
+│ BluetoothHidService│ ── HID directo ──────────────────────▶│   en vivo, SIN       │
+└────────────────────┘   (sin receptora; único camino        │   inyectar: Shizuku  │
+                         al juego)                          │   descartado)        │
+                                                              │ BluetoothHidService  │
+                                                              │   (teléfono) ──▶    │
+                                                              │   InputDevice real   │
                                                               └──────────┬───────────┘
                                                                          │ InputDevice real
                                                                          ▼
@@ -126,18 +134,18 @@ Emparejamiento: QR `UGP1|<ip>|<puerto>|<pin4>`. El PIN solo evita conectarse a o
 - `BluetoothHidService`: comprueba HID_DEVICE, registra descriptor Game Pad "Xbox 360 Controller", envía reportes HID. Si el teléfono no expone el perfil, queda en FAILED.
 - `BluetoothDataTransport`: SPP/RFCOMM real (Fase 5), con eco de ping.
 - `ConnectSheet` / `QrScannerScreen`: escaneo QR real con CameraX + ML Kit. Sin permiso de cámara, queda la entrada manual. Modo Hotspot documentado en la hoja.
-- Editor y perfiles: TODO en `ui/TodoScreens.kt` — Etapa 2 y 3, no se presentan como funciones.
+- Editor y perfiles: **existen (Fase 3)**: editor visual de controles (`LayoutEditorScreen`), perfiles por juego (`GameProfilesScreen`) y pantalla de tipo de mando. `ui/TodoScreens.kt` es hoy solo un comentario, no una lista de funciones pendientes.
 
 ## TV — :app-tv
 
-- `MainActivity`: pantalla de estado en vivo (500 ms): IP, puertos, transporte activo, conectado sí/no, último paquete, paquetes recibidos, última entrada (botones/sticks), Shizuku, inyección activa, diagnóstico "¿Cómo me ve Android?".
-- `UdpReceiverService`: `DatagramSocket(51999)`, valida, hace eco de ping, descarta secuencias viejas, expone `lastState`/`lastPacketAtMs`/`packetsReceived`/`activeTransport`/`injectionMethod`. Arranca también `TcpReceiverService`. Extras Fase 4: antes del ping, distingue los paquetes `UK`/`UM` (teclado/ratón) y los pasa a `ShizukuHelper` (dispositivos uinput aparte).
+- `MainActivity`: pantalla de estado en vivo (500 ms): IP, puertos, transporte activo, conectado sí/no, último paquete, paquetes recibidos, última entrada (botones/sticks), tarjeta Bluetooth HID (antes Shizuku, descartado), inyección activa, diagnóstico "¿Cómo me ve Android?".
+- `UdpReceiverService`: `DatagramSocket(51999)`, valida, hace eco de ping, descarta secuencias viejas, expone `lastState`/`lastPacketAtMs`/`packetsReceived`/`activeTransport`/`injectionMethod`. Arranca también `TcpReceiverService`. Extras Fase 4: antes del ping, distingue los paquetes `UK`/`UM` (teclado/ratón) y los pasa a `ShizukuHelper` (dispositivos uinput aparte; sin Shizuku no se inyectan).
 - `TcpReceiverService`: `ServerSocket(52000)`, lee 32 bytes, mismo `recordPacket()`.
 - `Diagnostics`: `InputDevice.getDeviceIds()`, sources, ejes, veredicto "MANDO DE JUEGO" / "CONTROL DE TV - FALLO" y "Parece mando real: SÍ / NO" con motivo.
 - `InputMapper`: GamepadState → `KeyEvent` (BUTTON_*) y `MotionEvent` (ejes + HAT) con source `SOURCE_GAMEPAD | SOURCE_JOYSTICK`. Es la inyección B.
-- `ShizukuHelper`: comprueba instalación, `pingBinder()`, permiso. Guía específica para Hyundai sin depuración inalámbrica (ADB por red :5555 + Bugjaeger).
-- `GamepadUserService` (AIDL `IGamepadInputService`): corre como shell. `createVirtualGamepad()` / `sendReport()` / `injectGamepadEvent()`. Fase 4: `sendReport()` lleva `extraButtons` (L4/R4 → `BTN_TRIGGER_HAPPY2/3`); `keyboardEvent()` / `mouseEvent()` / `destroyExtras()` para los dispositivos uinput aparte de teclado y ratón.
-- `UinputGamepad`: **pendiente de Etapa 0**. Devuelve false hasta que su librería JNI (.so) exista y se demuestre en la Hyundai. No se finge un mando.
+- `ShizukuHelper`: **DESCARTADO** — Shizuku no está adaptado a TV y la TV no tiene depuración de red. El código sigue en la app de TV, pero no hay vía para arrancarlo (la guía de ADB por red :5555 + Bugjaeger ya no aplica).
+- `GamepadUserService` (AIDL `IGamepadInputService`): corre como shell. `createVirtualGamepad()` / `sendReport()` / `injectGamepadEvent()`. Fase 4: `sendReport()` lleva `extraButtons` (L4/R4 → `BTN_TRIGGER_HAPPY2/3`); `keyboardEvent()` / `mouseEvent()` / `destroyExtras()` para los dispositivos uinput aparte de teclado y ratón. Sin Shizuku, ninguno se inyecta.
+- `UinputGamepad`: el `.so` nativo **se compila en CI** y crea el dispositivo "Xbox 360 Controller" (0x045E/0x028E) cuando se le llama. Sin Shizuku no hay proceso con permiso para llamarlo, así que hoy no crea el mando. No se finge un mando.
 - `BluetoothDataReceiver` (TV): receptor SPP real (Fase 5).
 
 ## Decisiones que NO se tomaron en Etapa 1
