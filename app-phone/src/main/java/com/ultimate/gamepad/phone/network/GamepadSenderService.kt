@@ -45,7 +45,7 @@ import java.net.InetAddress
  *
  * El ping es real: cada medio segundo se envía un paquete
  * FLAG_PING y se mide el tiempo hasta que la TV lo devuelve
- * (eco). Si la TV no hace eco, el ping se muestra como "—" y
+ * (eco). Si la TV no hace eco, el ping se muestra como "sin datos" y
  * [isTvResponding] es false. Nunca se muestra 0 ms inventado.
  * Por TCP el eco llega por el mismo socket y lo lee una
  * corrutina lectora (Fase 1); antes el ping TCP era "—".
