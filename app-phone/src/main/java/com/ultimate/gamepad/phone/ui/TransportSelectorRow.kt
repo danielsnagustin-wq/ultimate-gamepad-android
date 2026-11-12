@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ultimate.gamepad.core.BluetoothDiscovery
 import com.ultimate.gamepad.core.HidAvailability
 import com.ultimate.gamepad.core.TransportMethod
 import com.ultimate.gamepad.core.TransportStatus
@@ -132,7 +134,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("Bluetooth HID: no disponible en este teléfono (no expone HID_DEVICE o el Bluetooth está apagado).", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
             Button(onClick = { tick(); vm.refreshHidStatus(force = true) }) {
-                Text("Volver a comprobar Bluetooth", color = Color.White)
+                Text("Volver a comprobar Bluetooth HID", color = Color.White)
             }
         }
         // Bluetooth datos (SPP/RFCOMM, Fase 5): respaldo real si falla
@@ -148,7 +150,7 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
             Text("Bluetooth datos: ${ui.btDataStatusDetail ?: "no disponible"}", color = Color.White, fontSize = 12.sp)
             Spacer(Modifier.height(4.dp))
             Button(onClick = { tick(); vm.refreshBtDataStatus() }) {
-                Text("Volver a comprobar Bluetooth", color = Color.White)
+                Text("Volver a comprobar Bluetooth datos", color = Color.White)
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -261,16 +263,23 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                         if (ui.btScanDevices.isEmpty() && !ui.btScanning) {
                             Text("Aún no hay dispositivos. Toca \"Buscar\" para escanear.", color = Color.White, fontSize = 12.sp)
                         } else {
+                            // Ronda 2 P2-14: probables TVs primero
+                            // (con insignia 📺); el resto después.
+                            // No es un filtro: cualquier dispositivo
+                            // se puede elegir (los nombres de TV no
+                            // son fiables).
                             val bonded = ui.btScanDevices.filter { it.bonded }
+                                .sortedWith(compareByDescending { BluetoothDiscovery.looksLikeTv(it) }.thenBy { it.name.orEmpty() })
                             val found = ui.btScanDevices.filter { !it.bonded }
+                                .sortedWith(compareByDescending { BluetoothDiscovery.looksLikeTv(it) }.thenBy { it.name.orEmpty() })
                             if (bonded.isNotEmpty()) {
                                 Text("Emparejados", color = Color.White, fontSize = 12.sp)
                                 for (device in bonded) {
                                     Button(
-                                        onClick = { tick(); vm.selectBtScanDevice(device) },
+                                        onClick = { tick(); vm.selectBtScanDevice(device); showBtScanDialog = false },
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
-                                        Text("${device.name ?: "Sin nombre"} (${device.address})", color = Color.White)
+                                        Text("${if (BluetoothDiscovery.looksLikeTv(device)) "📺 " else ""}${device.name ?: "Sin nombre"} (${device.address})", color = Color.White)
                                     }
                                     Spacer(Modifier.height(4.dp))
                                 }
@@ -279,10 +288,10 @@ fun TransportSelectorRow(vm: GamepadViewModel, ui: GamepadUiState) {
                                 Text("Encontrados", color = Color.White, fontSize = 12.sp)
                                 for (device in found) {
                                     Button(
-                                        onClick = { tick(); vm.selectBtScanDevice(device) },
+                                        onClick = { tick(); vm.selectBtScanDevice(device); showBtScanDialog = false },
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
-                                        Text("${device.name ?: "Sin nombre"} (${device.address})${if (device.rssi != null) " · ${device.rssi} dBm" else ""}", color = Color.White)
+                                        Text("${if (BluetoothDiscovery.looksLikeTv(device)) "📺 " else ""}${device.name ?: "Sin nombre"} (${device.address})${if (device.rssi != null) " · ${device.rssi} dBm" else ""}", color = Color.White)
                                     }
                                     Spacer(Modifier.height(4.dp))
                                 }
@@ -354,14 +363,14 @@ private fun Chip(label: String, selected: Boolean, dotColor: Color, onClick: () 
     Button(
         onClick = onClick,
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) Color(0xFF7C4DFF) else Color(0xFF1A1D27),
+            containerColor = if (selected) MaterialTheme.colorScheme.primary else Color(0xFF1A1D27),
             contentColor = Color.White,
         ),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
         modifier = Modifier.height(36.dp)
             .border(
                 1.dp,
-                if (selected) Color(0xFF7C4DFF) else Color(0xFF7C4DFF).copy(alpha = 0.6f),
+                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 RoundedCornerShape(18.dp),
             ),
     ) {
