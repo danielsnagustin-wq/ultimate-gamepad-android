@@ -333,6 +333,12 @@ class GamepadSenderService : Service() {
                     // stopSending/onDestroy. Solo se adquirió para
                     // Wi-Fi; soltar sin haberlo adquirido rompería.
                     if (method == TransportMethod.WIFI_UDP || method == TransportMethod.WIFI_TCP) wifiLock.release()
+                    // H-07: pararse en vez de quedar en primer plano
+                    // sin bucle (servicio zombi); y no dejar
+                    // "enviando" guardado, para que un reinicio del
+                    // proceso no reintente la misma IP inválida.
+                    LastConnectionPrefs.setRunning(this@GamepadSenderService, false)
+                    stopSelf()
                     return@launch
                 }
                 var lastPingSentAt = 0L
