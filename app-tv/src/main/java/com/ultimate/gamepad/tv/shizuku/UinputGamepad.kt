@@ -127,7 +127,8 @@ object UinputGamepad {
      * Modo ratón (Fase 4): mueve el cursor y actualiza los botones
      * en el dispositivo de ratón aparte (lo crea a demanda).
      * [buttons]: bit 0 = izquierdo, bit 1 = derecho, bit 2 =
-     * central. [action]: 0 = mover/clic, 1 = crear, 2 = destruir.
+     * central. [action]: 0 = mover/clic, 2 = crear, 3 = destruir
+     * (alineado con ExtrasProtocol.ACTION_CREATE/ACTION_DESTROY).
      */
     fun mouseEvent(dx: Int, dy: Int, buttons: Int, action: Int): Boolean {
         if (!nativeLoaded) return false
