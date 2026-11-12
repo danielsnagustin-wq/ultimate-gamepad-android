@@ -24,7 +24,7 @@ sigue siendo ese.
   en el run 42408588893), y la ruta A (uinput) es la primera que se
   intenta; si falla, cae a la B (`injectInputEvent`).
 - Bluetooth HID real en el teléfono: comprobación de disponibilidad,
-  registro del descriptor Game Pad, reportes HID de 7 bytes de datos
+  registro del descriptor Game Pad, reportes HID de 9 bytes de datos
   + Report ID (1), colección PID de force feedback (rumble, ronda REA
   GFN+OpenNOW), reconexión con backoff y fallback inmediato a Wi-Fi al caer.
 - Diagnóstico en la TV que lee los `InputDevice` reales y dice
@@ -35,8 +35,7 @@ sigue siendo ese.
 
 **Lo que es stub, TODO o no existe:**
 
-- BLE/SPP (Bluetooth datos): stub en los dos lados, `PENDING_STAGE2`,
-  `send()` devuelve `false`. No funciona.
+- Bluetooth datos (SPP): implementado en la Fase 5 (SPP/RFCOMM real en los dos lados).
 - Perfiles de mando (Xbox 360 / Xbox One / DS4 / DualSense / genérico):
   no existe ninguno salvo el Xbox 360 cableado a mano. No hay pantalla
   "TIPO DE MANDO", no hay perfiles por juego (solo un texto TODO sin
@@ -105,7 +104,7 @@ incompleto) / **STUB-TODO** (estructura sin funcionar) / **NO EXISTE** /
 | Xbox One | NO EXISTE | Segunda definición de dispositivo: nombre `"Xbox One Controller"`, product 0x02DD (o 0x02FD), mismo mapa de botones/ejes; hoy `uinput_gamepad.c` tiene UNA sola definición cableada |
 | DualShock 4 | NO EXISTE | Definición Sony: vendor 0x054C, product 0x05C4, nombre DS4; Cross/Circle/Square/Triangle sobre los mismos códigos evdev (BTN_SOUTH/EAST/WEST/NORTH = 0x130/0x131/0x133/0x134); Options=START, Share=SELECT, PS=BTN_MODE; **touchpad no existe**: necesitaría BTN_TOUCH + ejes de toque (dispositivo táctil aparte o ABS_MT), hoy no hay nada |
 | DualSense | NO EXISTE | Como DS4 (vendor 0x054C, product 0x0CE6, nombre `"DualSense Wireless Controller"`, botón Create) + touchpad; **háptica avanzada y gatillos adaptativos NO son implementables por uinput** (necesitan reportes HID feature por USB/BT, no existen en evdev) — no prometerlos |
-| Genérico HID | PARCIAL | El descriptor HID genérico ya existe (`GamepadClassification.kt:94-163`, 12 botones + hat + 4 ejes); falta un dispositivo uinput genérico (nombre neutro, sin VID/PID de Microsoft/Sony) y el selector que lo active |
+| Genérico HID | PARCIAL | El descriptor HID genérico ya existe (`GamepadClassification.kt:94-163`, 16 botones + hat + 4 ejes + 2 gatillos analógicos); falta un dispositivo uinput genérico (nombre neutro, sin VID/PID de Microsoft/Sony) y el selector que lo active |
 | Cambio de perfil = cambio de mapeo/descriptor, no solo dibujos | NO EXISTE | No hay concepto de perfil en `GamepadState` (`core/.../GamepadState.kt:11-24`), ni en el protocolo (32 bytes sin campo de perfil), ni en `UinputGamepad` (un solo `create()` sin parámetros), ni en `BluetoothHidService` (un solo descriptor fijo) |
 
 ### 2.4 Cambio de mando en caliente (§4)
@@ -132,9 +131,9 @@ incompleto) / **STUB-TODO** (estructura sin funcionar) / **NO EXISTE** /
 | Punto | Estado | Evidencia |
 |---|---|---|
 | `BluetoothHidDevice`, teléfono como periférico HID gamepad | IMPLEMENTADO + SIN VERIFICAR | `BluetoothHidService.kt:22-263` |
-| Perfil HID gamepad real (no multimedia/remoto) | IMPLEMENTADO + SIN VERIFICAR | Descriptor `HidGamepadDescriptor.BYTES` (`GamepadClassification.kt:94-163`): Usage Page 0x01, Usage 0x05 Game Pad, 12 botones, hat, 4 ejes; sin Usage 0x0C/0x07 |
+| Perfil HID gamepad real (no multimedia/remoto) | IMPLEMENTADO + SIN VERIFICAR | Descriptor `HidGamepadDescriptor.BYTES` (`GamepadClassification.kt:94-163`): Usage Page 0x01, Usage 0x05 Game Pad, 16 botones en el orden Android, hat, 4 ejes, 2 gatillos analógicos (Brake/Accelerator); sin Usage 0x0C/0x07 |
 | VID/PID fijables por HID | **NO (limitación de la API)** | `BluetoothHidService.kt:190-196`: `BluetoothHidDeviceAppSdpSettings(name, description, provider, subclass, descriptors)` **no acepta vendorId/productId**; por HID la identidad es nombre + descriptor, la identidad completa (0x045E/0x028E) solo la da uinput |
-| Gatillos analógicos por HID | **NO (limitación del descriptor actual)** | El descriptor no tiene ejes de gatillo; LT/RT van como botones digitales 11/12 al pasar de 0.5 (`BluetoothHidService.kt:221-224`); ejes de 8 bits (0..255, centro 128) |
+| Gatillos analógicos por HID | **IMPLEMENTADO (ronda Bluetooth dos vías, 2026-11-11)** | Descriptor con Brake (LT) / Accelerator (RT), 0..255, en el reporte de 9 bytes; LT/RT siguen además como botones digitales 9/10 al pasar de 0.5 |
 | Compatibilidad con la versión de Android del teléfono y Google TV | SIN VERIFICAR | Comprobación en tiempo de ejecución (`checkAvailability`, API 28+, permiso `BLUETOOTH_CONNECT`); el firmware del teléfono puede no exponer HID_DEVICE; la TV puede rechazar el descriptor |
 | HID ≠ XInput | Documentado | `docs/VIABILITY-OPENNOW.md` §1: OpenNOW lee eventos Android y los codifica a XInput; HID es solo el transporte hasta Android |
 
@@ -359,10 +358,10 @@ perfiles. Archivos:
   eco TCP (hoy el ping por TCP es "—", `TcpReceiverService.kt:24`)
   para que el fallback y el estado "Conectado" sean reales por TCP.
   Criterio: ping con valor por TCP, no "—".
-- HID: documentar en la UI que por HID no hay gatillos analógicos
-  (botones digitales) y, si se decide, ampliar el descriptor con
-  ejes de gatillo (cambiaría el reporte de 7 bytes; coordinar con
-  la Fase 2). Mínimo: que la UI no prometa gatillos analógicos por HID.
+- HID: gatillos analógicos ya implementados (ronda Bluetooth dos
+  vías, 2026-11-11): descriptor con Brake/Accelerator, reporte de
+  9 bytes; la UI ya no debe decir que por HID no hay gatillos
+  analógicos.
 - Limpieza de documentación: actualizar `GamepadUserService.kt`
   (comentario obsoleto), `README.md:62` y `docs/ARCHITECTURE.md`
   (60 Hz → 120 Hz, zona muerta 0.05, uinput implementado). Criterio:
@@ -384,9 +383,9 @@ tomada: 1 byte reservado (offset 28) como `profileId` (0 = Xbox 360,
 atrás, sin subir a versión 2. `GamepadProfile` en `:core`;
 `uinput_gamepad.c` parametrizado por perfil (nombre, vendor, product);
 `createVirtualGamepad(profileId)` en `IGamepadInputService` (interfaz,
-Stub y Proxy a la vez); un `HidGamepadDescriptor` por perfil
-(Xbox/genérico 12 botones, DS4/DualSense 14); el teléfono envía el
-`profileId` en cada paquete (UDP y TCP) y la TV recrea el dispositivo
+Stub y Proxy a la vez); un solo `HidGamepadDescriptor` (16 botones,
+igual para todos los perfiles; el perfil solo cambia el nombre
+expuesto); el teléfono envía el `profileId` en cada paquete (UDP y TCP) y la TV recrea el dispositivo
 si cambia; el perfil activo se guarda en el teléfono
 (SharedPreferences) y la pantalla TIPO DE MANDO (Fase 3) lo cambiará
 con `GamepadViewModel.setActiveProfile()`. Touchpad: opción (a) — NO
@@ -604,7 +603,7 @@ teclado/ratón pueden hacer que Android reclasifique el conjunto
 como "control de TV" si se mezclan usages (mantener dispositivos
 separados y no mezclar teclas de remoto en el gamepad).
 
-### Fase 5 — Bluetooth datos BLE/SPP (solo si hace falta)
+### Fase 5 — Bluetooth datos SPP (implementada)
 
 **Objetivo:** completar el transporte 5 (respaldo si falla TODO el
 Wi-Fi). Trabajo documentado en `BluetoothDataTransport.kt:15-24`:
@@ -614,7 +613,7 @@ de 32 bytes no cabe en una notificación de 20 bytes: fragmentar en
 clásico). El receptor TV (`BluetoothDataReceiverStub`) ya está
 listo para recibir el mismo paquete.
 
-**Criterio:** conectar por BLE/SPP y jugar 5 minutos sin Wi-Fi.
+**Criterio:** conectar por SPP y jugar 5 minutos sin Wi-Fi.
 **Riesgo:** es el transporte con más trabajo y menos valor si el
 Wi-Fi ya es estable; hacerlo solo si la Fase 0 muestra que el
 Wi-Fi falla en la red del usuario. No es prioritario.
@@ -723,9 +722,9 @@ bug del "control de TV").
 5. **El descriptor HID lo rechaza la TV** → Bluetooth HID es
    firmware-dependiente; probarlo en la Fase 0 antes de prometerlo.
 6. **Alcance**: 6 fases con 2 dispositivos virtuales extra
-   (teclado/ratón), touchpad y BLE/SPP son mucho trabajo; el orden
+   (teclado/ratón), touchpad y SPP son mucho trabajo; el orden
    es Fase 0 → Fase 1 → Fase 2 (perfiles) → Fase 3 (pantallas) →
-   Fase 4 (extras por valor) → Fase 5 (BLE/SPP solo si hace falta)
+   Fase 4 (extras por valor) → Fase 5 (SPP, implementada)
    → Fase 6 (verificación final). No empezar la Fase 2 sin la 0.
 
 ## 9. Primera fase recomendada
