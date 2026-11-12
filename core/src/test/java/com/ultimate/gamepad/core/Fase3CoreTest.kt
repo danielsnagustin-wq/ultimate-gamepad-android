@@ -89,6 +89,10 @@ class Fase3CoreTest {
         assertEquals(3, NetworkStats.sequenceGap(65534, 2))
         assertEquals(0, NetworkStats.sequenceGap(65535, 0))
         assertEquals(1, NetworkStats.sequenceGap(65535, 1))
+        // Mitad del espacio (32768): no se distingue avance de
+        // retroceso, hueco 0 (ronda 2 P2-2).
+        assertEquals(0, NetworkStats.sequenceGap(5, 32773))
+        assertEquals(0, NetworkStats.sequenceGap(0, 32768))
     }
 
     // --- GameProfile ---
