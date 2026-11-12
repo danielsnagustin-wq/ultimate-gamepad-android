@@ -20,7 +20,12 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Ronda 2 P1: el servicio envía datos continuamente (no es un
+         dispositivo conectado): tipo dataSync, que no exige el
+         permiso BLUETOOTH_CONNECT en tiempo de ejecución. Antes era
+         connectedDevice y un usuario solo-Wi-Fi sin ese permiso
+         crasheaba con SecurityException al arrancar el servicio. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- A4: Android 13+ exige declarar este permiso para que la app
          pueda pedirlo y para que el interruptor de notificaciones
@@ -48,7 +53,7 @@
         </activity>
         <service
             android:name=".network.GamepadSenderService"
-            android:foregroundServiceType="connectedDevice"
+            android:foregroundServiceType="dataSync"
             android:exported="false" />
     </application>
 </manifest>
