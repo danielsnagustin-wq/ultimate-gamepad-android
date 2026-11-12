@@ -44,9 +44,28 @@ object Discovery {
         val text = String(data, Charsets.UTF_8)
         val parts = text.split("|")
         if (parts.size != 5 || parts[0] != MAGIC_RESPONSE) return null
-        val port = parts[3].toIntOrNull() ?: return null
-        if (parts[1].isBlank() || parts[2].isBlank() || parts[4].isBlank()) return null
-        return DiscoveredTv(name = parts[1], ip = parts[2], port = port, pin = parts[4])
+        val name = parts[1].trim()
+        val ip = parts[2].trim()
+        val port = parts[3].trim().toIntOrNull() ?: return null
+        val pin = parts[4].trim()
+        if (name.isBlank() || pin.isBlank()) return null
+        if (port !in 1..65535) return null
+        // Ronda 2 P2-9: sin validar la IP, "UGRSP1|TV|no-es-ip|99999|1234"
+        // parseaba como TV válida y el intento de conexión fallaba tarde.
+        if (!isValidIpv4(ip)) return null
+        return DiscoveredTv(name = name, ip = ip, port = port, pin = pin)
+    }
+
+    /** IPv4 con 4 octetos decimales 0..255 (sin resolver DNS). */
+    fun isValidIpv4(ip: String): Boolean {
+        val octets = ip.split(".")
+        if (octets.size != 4) return false
+        for (o in octets) {
+            if (o.isEmpty() || o.length > 3 || !o.all { it.isDigit() }) return false
+            val n = o.toIntOrNull() ?: return false
+            if (n !in 0..255) return false
+        }
+        return true
     }
 
     /**
