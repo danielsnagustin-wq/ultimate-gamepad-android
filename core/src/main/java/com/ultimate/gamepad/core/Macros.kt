@@ -82,7 +82,14 @@ class MacroRecorder {
         if (!recording) return null
         recording = false
         if (lastButtons != 0 || lastExtra != 0) {
-            events += MacroEvent(nowMs - startMs, 0, 0)
+            // El evento final de soltar debe sobrevivir a
+            // sanitized(): se recorta a MAX_EVENTS - 1 antes de
+            // añadirlo (si no, take(200) lo cortaba a él) y su
+            // delay se fija como máximo a MAX_DURATION_MS (si no,
+            // el filter lo descartaba). Sin el soltar, la macro
+            // terminaba con botones pulsados (ronda 2 P2-3).
+            while (events.size >= GamepadMacro.MAX_EVENTS) events.removeAt(events.lastIndex)
+            events += MacroEvent((nowMs - startMs).coerceIn(0L, GamepadMacro.MAX_DURATION_MS), 0, 0)
         }
         if (events.isEmpty()) return null
         return GamepadMacro(name, events.toList()).sanitized()
