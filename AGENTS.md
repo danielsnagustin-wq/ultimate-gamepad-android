@@ -104,3 +104,13 @@ probado en el teléfono ni en la TV. Decirlo siempre así.
   `~/workspace/references/awesome-android-ui`.
 - Estado del proyecto y decisiones: `docs/ARCHITECTURE.md`,
   `docs/VIABILITY-OPENNOW.md`, `docs/PLAN-GAMEPAD-PRO.md`.
+
+<!-- antislop:start -->
+## antislop
+
+Para trabajo de UI, textos visibles o comentarios: lee `~/workspace/custom-skills/anti-slop/SKILL.md` (reglas anti-slop v3.2.28 adaptadas a Android/Compose; original en `upstream-antislop.md` en la misma carpeta). Modo por defecto: `after` para auditar lo que ya existe (lista numerada, el usuario elige qué arreglar), `during` al construir UI nueva. Antes de entregar UI, pasa la Delivery Gate de la skill. Dirección de diseño: mando estilo Xbox Series, AMOLED negro puro, acentos neón (acento configurable por el usuario); nada es decorativo, cada botón envía su bit real.
+<!-- antislop:end -->
+
+## Lecciones run #211 (ronda 2, 2026-11-11)
+- **`PointerEventType.Cancel` NO existe en el Compose del proyecto.** La cancelación de un gesto llega como cancelación de la corrutina `pointerInput` (el `finally` libera el botón), no como un evento. No inventar miembros de un enum: si CI dice `Unresolved reference`, verificar el tipo en el Compose real antes de "arreglarlo" con una rama que no compila.
+- **`compareByDescending { ... }.thenBy { ... }` encadenado no siempre infiere `T`.** Poner el tipo explícito (`compareByDescending<DiscoveredDevice> { ... }`) o guardar el comparador en un `val` con nombre. La puerta `check_push.py` NO caza errores de tipos Kotlin: solo CI los ve.
