@@ -48,6 +48,9 @@ data class GamepadState(
 
     /** Curva de respuesta: 1.0 = lineal, >1 = más suave en el centro. */
     fun withResponseCurve(exponent: Float): GamepadState {
+        // Ronda 2 P2-10: exponente 0 devuelve ±1 (cualquier valor
+        // ^0 = 1) y uno negativo amplifica por encima de 1.
+        require(exponent > 0f) { "exponent debe ser > 0" }
         fun curve(v: Float): Float {
             if (v == 0f) return 0f
             val sign = if (v > 0) 1f else -1f
@@ -58,6 +61,8 @@ data class GamepadState(
 
     companion object {
         fun applyDeadZone1D(value: Float, deadZone: Float): Float {
+            // Ronda 2 P2-10: deadZone = 1 da 0/0 = NaN.
+            require(deadZone in 0f..0.9f) { "deadZone debe estar entre 0 y 0.9" }
             if (abs(value) < deadZone) return 0f
             val sign = if (value > 0) 1f else -1f
             return sign * ((abs(value) - deadZone) / (1f - deadZone)).coerceIn(0f, 1f)
@@ -65,6 +70,7 @@ data class GamepadState(
 
         /** Dead zone radial: ignora el desplazamiento si el vector es corto. */
         fun applyRadialDeadZone(x: Float, y: Float, deadZone: Float): Pair<Float, Float> {
+            require(deadZone in 0f..0.9f) { "deadZone debe estar entre 0 y 0.9" }
             val mag = sqrt(x * x + y * y)
             if (mag < deadZone || mag == 0f) return 0f to 0f
             val scale = ((mag - deadZone) / (1f - deadZone)).coerceIn(0f, 1f) / mag
