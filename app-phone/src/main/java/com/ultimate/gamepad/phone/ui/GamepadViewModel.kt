@@ -2,6 +2,7 @@ package com.ultimate.gamepad.phone.ui
 
 import android.app.Application
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -18,8 +19,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.view.Surface
 import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ultimate.gamepad.core.BluetoothDiscovery
+import com.ultimate.gamepad.core.DiscoveredDevice
 import com.ultimate.gamepad.core.DiscoveredTv
 import com.ultimate.gamepad.core.Discovery
 import com.ultimate.gamepad.core.ExtrasProtocol
@@ -42,6 +46,7 @@ import com.ultimate.gamepad.core.Turbo
 import com.ultimate.gamepad.core.TurboConfig
 import com.ultimate.gamepad.phone.network.BluetoothDataTransport
 import com.ultimate.gamepad.phone.network.BluetoothHidService
+import com.ultimate.gamepad.phone.network.BluetoothScanner
 import com.ultimate.gamepad.phone.network.DiscoveryClient
 import com.ultimate.gamepad.phone.network.NsdDiscovery
 import kotlinx.coroutines.async
@@ -66,7 +71,7 @@ import kotlin.math.sqrt
 
 enum class ConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
-/** Modo de selección: AUTO prueba UDP -> TCP -> BLE/SPP -> HID. Manual fuerza un método. */
+/** Modo de selección: AUTO prueba UDP -> TCP -> SPP -> HID. Manual fuerza un método. */
 enum class TransportMode { AUTO, MANUAL }
 
 data class GamepadUiState(
@@ -140,6 +145,13 @@ data class GamepadUiState(
     val btDataDevices: List<BluetoothDataTransport.BondedBtDevice> = emptyList(),
     /** Motivo real del estado de Bluetooth datos (Fase 5): lo deja refreshBtDataStatus(). */
     val btDataStatusDetail: String? = null,
+    /** Nombre del dispositivo HID conectado (la TV), o null si no hay ninguno. P1-4: `host` es la IP de Wi-Fi y no se sobrecarga con el nombre BT. */
+    val hidPeerName: String? = null,
+    // Escaneo Bluetooth desde el teléfono (ronda Bluetooth dos vías).
+    val btScanning: Boolean = false,
+    val btScanDevices: List<DiscoveredDevice> = emptyList(),
+    /** Error del último escaneo (sin permiso, BT apagado, no empezó). */
+    val btScanError: String? = null,
 )
 
 class GamepadViewModel(application: Application) : AndroidViewModel(application) {
@@ -149,6 +161,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
 
     /** Transporte Bluetooth datos (SPP/RFCOMM, Fase 5): instancia solo para disponibilidad/lista de emparejados; el envío lo hace la instancia del servicio. */
     private val btDataTransport = BluetoothDataTransport(application)
+
+    /** Escáner Bluetooth desde el teléfono (ronda Bluetooth dos vías): el teléfono BUSCA dispositivos cercanos, no solo se hace visible. */
+    private val btScanner = BluetoothScanner(application)
+
+    /** Encontrados del escaneo en curso (se fusionan con los emparejados en startBtScan). */
+    private val btFoundDevices = mutableListOf<DiscoveredDevice>()
+
+    /** Receptor de emparejado Bluetooth (ACTION_BOND_STATE_CHANGED): se desregistra en onCleared. */
+    private var btBondReceiver: BroadcastReceiver? = null
 
     /** Re-registro HID en segundo plano (caída de Bluetooth de la TV). */
     private var hidRetryJob: Job? = null
@@ -258,6 +279,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // sin receptor, la comprobación HID se quedaba en
         // "No disponible" para siempre (foto del usuario 2026-11-07).
         registerBluetoothStateReceiver()
+        // Emparejado Bluetooth desde el teléfono (ronda Bluetooth
+        // dos vías): al completarse, la TV queda elegida como
+        // destino de Bluetooth datos.
+        registerBtBondReceiver()
         // Perfil guardado (Fase 3): el emisor en proceso debe llevar
         // el mismo que el guardado, no el 0 por defecto, o el primer
         // paquete tras arrancar saldría como Xbox 360 con otro perfil
@@ -308,6 +333,10 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         networkCallback = null
         bluetoothReceiver?.let { runCatching { getApplication<Application>().unregisterReceiver(it) } }
         bluetoothReceiver = null
+        btBondReceiver?.let { runCatching { getApplication<Application>().unregisterReceiver(it) } }
+        btBondReceiver = null
+        btScanner.stopScan()
+        hidService.unregister()
         turboJob?.cancel()
         macroPlayJob?.cancel()
         stopGameRumble()
@@ -1015,12 +1044,38 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // aquí; al volver, el usuario reanuda a mano.
         stopMacroPlayback()
         hidCheckJob?.cancel(); hidCheckJob = null
+        // P0-4 (ronda Bluetooth dos vías): si el intento HID aún
+        // estaba en CONECTANDO (la TV no ha emparejado), al irse
+        // a segundo plano se abandona: se da de baja el HID y se
+        // vuelve a DESCONECTADO, en vez de dejar un intento
+        // colgado que nadie puede cancelar. Si ya estaba
+        // CONECTADO, la sesión sobrevive (el reintento en segundo
+        // plano y la reconexión de la TV siguen funcionando como
+        // antes: un vistazo a un mensaje no debe matar el mando).
+        if (_ui.value.status == ConnectionStatus.CONNECTING && _ui.value.attemptMethod == TransportMethod.BLUETOOTH_HID) {
+            hidService.unregister()
+            stopHidHeartbeat()
+            _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, info = null) }
+        }
     }
 
     /** Vuelta a primer plano: el giroscopio vuelve solo si estaba activado. */
     fun onAppForegrounded() {
         appForegrounded = true
         if (_gyroEnabled.value) startGyroSensor()
+        // P1-1: al volver del diálogo "Hacer visible", comprobar si
+        // el teléfono quedó visible de verdad; si no, avisar.
+        refreshHidVisibleNotice()
+    }
+
+    /** Aviso honesto de visibilidad HID (P1-1): si estamos esperando
+     * a que la TV conecte por HID y el teléfono NO está visible,
+     * la TV no puede descubrirlo y hay que decirlo. */
+    private fun refreshHidVisibleNotice() {
+        if (_ui.value.status != ConnectionStatus.CONNECTING || _ui.value.attemptMethod != TransportMethod.BLUETOOTH_HID) return
+        if (hidService.isDiscoverable()) return
+        val deviceName = GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName
+        _ui.update { it.copy(info = "HID registrado como '$deviceName', pero el teléfono NO está visible: la TV no puede descubrirlo. Hazlo visible a mano (Ajustes > Bluetooth).") }
     }
 
     /** Suelta todos los botones, sticks y gatillos y publica el estado cero. */
@@ -1065,8 +1120,17 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         _ui.update { it.copy(selectedMethod = method, transportMode = TransportMode.MANUAL, error = null) }
         // Si ya hay conexión o intento en curso, reconectar con el método nuevo.
         val host = _ui.value.host
-        if ((_ui.value.status == ConnectionStatus.CONNECTED || _ui.value.status == ConnectionStatus.CONNECTING) && host.isNotBlank()) {
-            disconnect(silent = true)
+        if (_ui.value.status == ConnectionStatus.CONNECTED || _ui.value.status == ConnectionStatus.CONNECTING) {
+            if (host.isNotBlank() || method == TransportMethod.BLUETOOTH_HID) {
+                disconnect(silent = true)
+                connect(PairingInfo(host, _ui.value.port, _ui.value.pin), method)
+            }
+            return
+        }
+        // P0-1/P0-3 (ronda Bluetooth dos vías): en DESCONECTADO,
+        // tocar el chip HID arranca el flujo HID (antes no hacía
+        // nada visible: sin IP guardada el chip era un adorno).
+        if (method == TransportMethod.BLUETOOTH_HID) {
             connect(PairingInfo(host, _ui.value.port, _ui.value.pin), method)
         }
     }
@@ -1145,6 +1209,128 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
+     * Escaneo Bluetooth desde el teléfono (ronda Bluetooth dos
+     * vías, 2026-11-11): el teléfono BUSCA dispositivos cercanos
+     * (~12 s) y los lista (emparejados + encontrados, fusionados
+     * sin duplicar por MAC). Antes solo se hacía visible y
+     * esperaba a que la TV buscara ("El Bluetooth ni busca nada").
+     */
+    fun startBtScan() {
+        if (_ui.value.btScanning) return
+        val missing = btScanner.missingScanPermission()
+        if (missing != null) {
+            _ui.update { it.copy(btScanError = "Falta el permiso de escaneo Bluetooth. Toca \"Dar permiso de escaneo\" y vuelve a intentarlo.") }
+            return
+        }
+        if (!btScanner.isBluetoothOn()) {
+            _ui.update { it.copy(btScanError = "El Bluetooth está apagado. Enciéndelo y vuelve a intentarlo.") }
+            return
+        }
+        btFoundDevices.clear()
+        val bonded = btScanner.bondedDevices().mapNotNull { device ->
+            runCatching { DiscoveredDevice(name = device.name, address = device.address, bonded = true) }.getOrNull()
+        }
+        _ui.update { it.copy(btScanning = true, btScanError = null, btScanDevices = BluetoothDiscovery.sortForDisplay(BluetoothDiscovery.merge(bonded, emptyList()))) }
+        val started = btScanner.startScan(
+            onDevice = { device, rssi ->
+                // Leer nombre y MAC exige BLUETOOTH_CONNECT en
+                // Android 12+: sin él, el dispositivo se ignora
+                // (nunca se crashea por un permiso).
+                val address = runCatching { device.address }.getOrNull()
+                if (address != null) {
+                    val name = runCatching { device.name }.getOrNull()
+                    btFoundDevices.add(DiscoveredDevice(name = name, address = address, bonded = false, rssi = rssi))
+                    val merged = BluetoothDiscovery.merge(bonded, btFoundDevices.toList())
+                    _ui.update { it.copy(btScanDevices = BluetoothDiscovery.sortForDisplay(merged)) }
+                }
+            },
+            onFinished = {
+                _ui.update { it.copy(btScanning = false) }
+            },
+        )
+        if (!started) {
+            _ui.update { it.copy(btScanning = false, btScanError = "No se pudo empezar el escaneo. Revisa el Bluetooth y el permiso.") }
+        }
+    }
+
+    /** Para el escaneo a mano. Idempotente. */
+    fun stopBtScan() {
+        btScanner.stopScan()
+        _ui.update { it.copy(btScanning = false) }
+    }
+
+    /**
+     * Tocar un dispositivo del escaneo Bluetooth: si no está
+     * emparejado, empareja (createBond; el resultado llega por
+     * el receptor de emparejado y lo elige solo); si ya lo está,
+     * lo elige como TV de Bluetooth datos (SPP). En ambos casos
+     * el HID queda registrado + visible para que la TV complete
+     * el emparejado HID de vuelta: en HID es el HOST quien inicia
+     * la conexión, el teléfono no puede forzarlo.
+     */
+    fun selectBtScanDevice(device: DiscoveredDevice) {
+        if (device.bonded) {
+            selectBtDataDevice(device.address)
+            _ui.update { it.copy(info = "TV '${device.name ?: device.address}' elegida para Bluetooth datos. Conéctala con el chip 'Bluetooth datos (SPP)'.") }
+            return
+        }
+        val btDevice = btScanner.remoteDevice(device.address)
+        if (btDevice == null) {
+            _ui.update { it.copy(btScanError = "No se pudo emparejar: falta el permiso de Bluetooth.") }
+            return
+        }
+        if (btScanner.createBond(btDevice)) {
+            _ui.update { it.copy(btScanError = null, info = "Emparejando con '${device.name ?: device.address}'… Acepta el emparejado en el teléfono y en la TV si lo pide.") }
+        } else {
+            _ui.update { it.copy(btScanError = "No se pudo empezar el emparejado con '${device.name ?: device.address}'.") }
+        }
+    }
+
+    /**
+     * Receptor de emparejado Bluetooth (ACTION_BOND_STATE_CHANGED):
+     * al completarse el emparejado, la TV queda marcada en la lista
+     * y elegida como destino de Bluetooth datos. Al fallar, se dice.
+     */
+    private fun registerBtBondReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action != BluetoothDevice.ACTION_BOND_STATE_CHANGED) return
+                val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                }
+                if (device == null) return
+                val address = runCatching { device.address }.getOrNull() ?: return
+                val name = runCatching { device.name }.getOrNull()
+                when (intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)) {
+                    BluetoothDevice.BOND_BONDED -> {
+                        val updated = _ui.value.btScanDevices.map {
+                            if (it.address.equals(address, ignoreCase = true)) it.copy(bonded = true, name = name ?: it.name) else it
+                        }
+                        _ui.update { it.copy(btScanDevices = updated, info = "Emparejado con '${name ?: address}'. Ya puedes conectar por Bluetooth datos o dejar que la TV complete el HID.") }
+                        selectBtDataDevice(address)
+                    }
+                    BluetoothDevice.BOND_NONE -> {
+                        _ui.update { it.copy(btScanError = "El emparejado con '${name ?: address}' no se completó.") }
+                    }
+                    else -> {}
+                }
+            }
+        }
+        btBondReceiver = receiver
+        runCatching {
+            ContextCompat.registerReceiver(
+                getApplication(),
+                receiver,
+                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
+    }
+
+    /**
      * La TV cortó el Bluetooth (o volvió). Esto es lo que antes no
      * existía: el callback del HID ponía FAILED en el servicio y
      * nadie se enteraba — la UI seguía en "Conectado" y el modo
@@ -1156,12 +1342,16 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         when (status) {
             TransportStatus.CONNECTED -> {
                 startHidHeartbeat()
+                // P1-4: guardar el nombre del dispositivo HID
+                // conectado (la TV) en su propio campo, sin
+                // sobrecargar `host` (que es la IP de Wi-Fi).
+                val peerName = hidService.connectedDeviceName
                 if (_ui.value.status != ConnectionStatus.CONNECTED) {
                     // Estábamos en ERROR tras la caída y sin Wi-Fi: el mando vuelve a ser HID.
                     hidRetryJob?.cancel(); hidRetryJob = null
-                    _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, info = "Bluetooth HID conectado con la TV.") }
+                    _ui.update { it.copy(status = ConnectionStatus.CONNECTED, attemptMethod = TransportMethod.BLUETOOTH_HID, error = null, hidPeerName = peerName, info = "Bluetooth HID conectado con la TV.") }
                 } else {
-                    _ui.update { it.copy(info = "Bluetooth disponible de nuevo (sigues por Wi-Fi).") }
+                    _ui.update { it.copy(hidPeerName = peerName, info = "Bluetooth disponible de nuevo (sigues por Wi-Fi).") }
                 }
             }
             TransportStatus.FAILED -> {
@@ -1179,6 +1369,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         _ui.update {
             it.copy(
                 error = "Bluetooth desconectado por la TV; cambiando a Wi-Fi…",
+                hidPeerName = null,
                 transportStatus = it.transportStatus + (TransportMethod.BLUETOOTH_HID to TransportStatus.FAILED),
             )
         }
@@ -1219,6 +1410,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         hidRetryJob?.cancel()
         hidRetryJob = viewModelScope.launch {
             var delayMs = 1000L
+            var attempts = 0
             while (isActive && hidService.status != TransportStatus.CONNECTED) {
                 // El callback del proxy puede no llegar nunca si el
                 // firmware no expone el perfil: con timeout no se
@@ -1239,6 +1431,15 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
                     // repetido no ayuda y puede molestar a la TV).
                     delay(15_000)
                 } else {
+                    attempts++
+                    // OpenCode P2-3: en MANUAL el reintento NO es
+                    // infinito: tras 5 intentos fallidos se para y
+                    // se avisa (en AUTO sigue, por diseño: la radio
+                    // de la TV se cae y vuelve sola).
+                    if (_ui.value.transportMode == TransportMode.MANUAL && attempts >= 5) {
+                        _ui.update { it.copy(info = "Se dejó de reintentar Bluetooth tras 5 intentos (modo manual). Toca Conectar para intentarlo de nuevo.") }
+                        break
+                    }
                     delay(delayMs)
                     delayMs = minOf(delayMs * 2, 15_000)
                 }
@@ -1592,12 +1793,21 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // teléfono para emparejarlo. Se pide al registrar (solo
         // aquí, nunca en el reintento en segundo plano).
         val deviceName = GamepadProfiles.fromId(GamepadSender.activeProfileId).deviceName
-        val discoverable = hidService.requestDiscoverable()
+        val launched = hidService.requestDiscoverable()
         _ui.update {
             it.copy(
                 status = ConnectionStatus.CONNECTING, connectingSinceMs = System.currentTimeMillis(), attemptMethod = TransportMethod.BLUETOOTH_HID, error = null,
-                info = if (discoverable) "HID registrado como '$deviceName'. El teléfono está visible 5 min: empareja ese nombre en la TV (Ajustes > Bluetooth). Esperando a que la TV conecte…" else "HID registrado como '$deviceName'. Haz visible el teléfono (Ajustes > Bluetooth) y empareja ese nombre en la TV. Esperando a que la TV conecte…",
+                info = if (launched) "HID registrado como '$deviceName'. Acepta 'Hacer visible' para que la TV pueda emparejarlo. Esperando a que la TV conecte…" else "HID registrado como '$deviceName'. Haz visible el teléfono (Ajustes > Bluetooth) y empareja ese nombre en la TV. Esperando a que la TV conecte…",
             )
+        }
+        // P1-1: requestDiscoverable solo LANZA el diálogo; si el
+        // usuario lo cancela, la TV no ve el mando y nada lo decía.
+        // A los 5 s se comprueba si quedó visible de verdad y, si
+        // no, se avisa; al volver a primer plano se re-comprueba
+        // (onAppForegrounded -> refreshHidVisibleNotice).
+        viewModelScope.launch {
+            delay(5000)
+            refreshHidVisibleNotice()
         }
     }
 
@@ -1607,7 +1817,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
      * cambiaba la entrada (publish): si un reporte se perdía, el
      * botón quedaba en el estado viejo hasta el siguiente cambio
      * (H3 del plan). El reenvío es idempotente (mismo estado) y
-     * barato (7 bytes a 10 Hz); no sustituye al envío por cambio,
+     * barato (9 bytes a 10 Hz); no sustituye al envío por cambio,
      * lo refuerza. Se para al caer el HID o al desconectar.
      */
     private fun startHidHeartbeat() {
@@ -1633,7 +1843,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
     /**
      * Fallback automático (modo AUTO): si no hay eco de la TV en
      * 3 s con UDP, prueba TCP; si TCP también falla, el siguiente
-     * es BLE/SPP (Etapa 2, se salta) y luego HID. Vale tanto en
+     * es SPP y luego HID. Vale tanto en
      * CONECTANDO (sin primer eco) como en CONECTADO (se perdió el
      * eco): en ambos casos la TV no responde por ese método.
      */
@@ -1666,7 +1876,28 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
             _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "Sin respuesta de la TV por $current (último método probado). Revisa la red, el Bluetooth o prueba Hotspot / HID.") }
             return
         }
-        val info = PairingInfo(_ui.value.host, _ui.value.port, _ui.value.pin)
+        // P1-5: sin IP guardada (p. ej. se llegó a HID sin Wi-Fi),
+        // no se construye un PairingInfo vacío: se busca la TV por
+        // broadcast y NSD y se conecta a la primera, como hace
+        // onHidDropped.
+        val host = _ui.value.host
+        if (host.isBlank()) {
+            _ui.update { it.copy(error = "Sin IP guardada, buscando la TV por Wi-Fi…") }
+            viewModelScope.launch {
+                val found = mergeDiscovered(
+                    DiscoveryClient.discover(),
+                    NsdDiscovery.discover(getApplication()),
+                )
+                val tv = found.firstOrNull()
+                if (tv != null) {
+                    connectToDiscovered(tv)
+                } else {
+                    _ui.update { it.copy(status = ConnectionStatus.ERROR, error = "No se encontró la TV por Wi-Fi. Escribe su IP a mano o empareja por Bluetooth.") }
+                }
+            }
+            return
+        }
+        val info = PairingInfo(host, _ui.value.port, _ui.value.pin)
         _ui.update { it.copy(error = "Sin eco por $current, probando $next…", transportStatus = it.transportStatus + (current to TransportStatus.FAILED)) }
         disconnect(silent = true)
         connect(info, next)
@@ -1713,7 +1944,7 @@ class GamepadViewModel(application: Application) : AndroidViewModel(application)
         // Parar es mejor esfuerzo: en segundo plano el sistema puede rechazarlo y el
         // servicio ya estaría muerto o se parará al volver; nunca debe crashear.
         runCatching { getApplication<Application>().startService(intent) }
-        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, info = null) }
+        if (!silent) _ui.update { it.copy(status = ConnectionStatus.DISCONNECTED, pingMs = null, tvResponding = false, hidPeerName = null, info = null) }
     }
 
     /** Rendimiento (Fase 3): ping, jitter y paquetes del servicio de envío. */
